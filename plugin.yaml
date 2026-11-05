@@ -32,3 +32,7 @@ config_schema:
     type: bool
     default: false
     description: "Let /cap send one HTTP HEAD request (public addresses only, no redirects, 3 s timeout) to re-check a 'URL is live' claim (off = no network)"
+  desktop_chips:
+    type: str
+    default: auto
+    description: "Hermes Desktop receipt chips (clickable 🧾/🧢/🤔 that open the cited command, exit code and output line). auto (default): only while No Cap's desktop half is enabled in Desktop and has checked in through the plugin's own local route, so a disabled half never leaves a raw ::nocap line. on: always on Desktop. off: Desktop gets the text footer. Never emitted on any other surface."

@@ -1,0 +1,10 @@
+{
+  "name": "no-cap",
+  "label": "No Cap",
+  "description": "Backend for the No Cap Desktop half: receipt chips and the Receipts panel. Local files only.",
+  "icon": "Receipt",
+  "version": "0.1.0",
+  "tab": { "path": "/no-cap", "hidden": true },
+  "entry": "dist/index.js",
+  "api": "plugin_api.py"
+}

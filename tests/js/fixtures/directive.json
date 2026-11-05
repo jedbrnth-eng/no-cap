@@ -1,0 +1,54 @@
+{
+ "key": "0000000000000000000000000000000000000000000000000000000000000001",
+ "directive": "::nocap{v=\"1\" s=\"96de9bf2bd0a70bb0bf403dfdfde0824\" d=\"eyJ0IjoidHVybi0xIiwiYyI6W3sidiI6IkNBUCIsImsiOiJ0ZXN0cyIsInQiOiJBbGwgdGVzdHMgcGFzcy4iLCJuIjoxLCJvIjoidGVybWluYWwiLCJ4IjoicHl0ZXN0IC1xIiwiZSI6MSwicSI6IjMgZmFpbGVkLCA0MSBwYXNzZWQgaW4gMC41MnMifSx7InYiOiJDQVAiLCJrIjoicHVzaGVkIiwidCI6InB1c2hlZCB0byBtYWluIiwibiI6MiwibyI6InRlcm1pbmFsIiwieCI6ImdpdCBwdXNoIG9yaWdpbiBmZWF0L2xvZ2luIiwiZSI6MCwicSI6ImZlYXQvbG9naW4gLT4gZmVhdC9sb2dpbiJ9LHsidiI6Ik5PX1JFQ0VJUFQiLCJrIjoiZGVwbG95ZWQiLCJ0IjoidGhlIGRlcGxveSBpcyBsaXZlIiwidyI6Im5vIGRlcGxveSBjb21tYW5kIHJhbiB0aGlzIHR1cm4ifSx7InYiOiJOT19DQVAiLCJrIjoidGVzdHMiLCJ0IjoiNDQgcGFzc2VkIiwibiI6MywibyI6InRlcm1pbmFsIiwieCI6InB5dGVzdCAtcSIsImUiOjAsInEiOiI0NCBwYXNzZWQgaW4gMC41MHMifV0sIm1vcmUiOjB9\"}",
+ "receipts": [
+  {
+   "kind": "tests",
+   "text": "All tests pass.",
+   "verdict": "CAP",
+   "cite": 1,
+   "tool": "terminal",
+   "cmd": "pytest -q",
+   "exit": 1,
+   "why": "",
+   "quote": "3 failed, 41 passed in 0.52s",
+   "claim": {}
+  },
+  {
+   "kind": "pushed",
+   "text": "pushed to main",
+   "verdict": "CAP",
+   "cite": 2,
+   "tool": "terminal",
+   "cmd": "git push origin feat/login",
+   "exit": 0,
+   "why": "",
+   "quote": "feat/login -> feat/login",
+   "claim": {}
+  },
+  {
+   "kind": "deployed",
+   "text": "the deploy is live",
+   "verdict": "NO_RECEIPT",
+   "cite": null,
+   "tool": null,
+   "cmd": "",
+   "exit": null,
+   "why": "no deploy command ran this turn",
+   "quote": "",
+   "claim": {}
+  },
+  {
+   "kind": "tests",
+   "text": "44 passed",
+   "verdict": "NO_CAP",
+   "cite": 3,
+   "tool": "terminal",
+   "cmd": "pytest -q",
+   "exit": 0,
+   "why": "",
+   "quote": "44 passed in 0.50s",
+   "claim": {}
+  }
+ ]
+}

@@ -22,6 +22,16 @@ logger = logging.getLogger("hermes_plugins.no_cap")
 __version__ = "0.1.0"
 
 
+def _broadcast(event: str, payload: dict) -> None:
+    """Tell a connected Desktop window that receipts changed (documented public helper; a logged no-op when no
+    Desktop client is attached to this process)."""
+    try:
+        from hermes_cli.plugin_events import broadcast_plugin_event
+    except Exception:
+        return
+    broadcast_plugin_event("no-cap", event, payload)
+
+
 def _make_engine(ctx: Any) -> Engine:
     def setting(key: str, default: Any = None) -> Any:
         try:
@@ -67,7 +77,8 @@ def _make_engine(ctx: Any) -> Engine:
         on = plugins.get("enabled")
         return (name in on) if isinstance(on, list) else None
 
-    return Engine(data_dir, setting, inject=inject, cwd=cwd, home=home, entry=entry, enabled=enabled)
+    return Engine(data_dir, setting, inject=inject, cwd=cwd, home=home, entry=entry, enabled=enabled,
+                  broadcast=lambda event, payload: _broadcast(event, payload))
 
 
 def register(ctx: Any) -> None:
