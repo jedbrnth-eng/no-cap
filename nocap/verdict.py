@@ -589,7 +589,10 @@ JUDGES = {"tests": _tests,
           "committed": _guard(_committed, lambda evs: _many_places([e for e in evs if "commit_ok" in e.get("git", {})])),
           "pr_opened": _pr_opened, "url": _url, "file": _file, "sha": _sha, "number": _number,
           "build": lambda c, e: _by_flag(c, e, "build_cmd", "build"),
-          "deployed": lambda c, e: _by_flag(c, e, "deploy_cmd", "deploy")}
+          "deployed": lambda c, e: _by_flag(c, e, "deploy_cmd", "deploy"),
+          # a completion claim in a language No Cap can't parse yet: recorded (hidden), never silently dropped
+          "unchecked": lambda c, e: _r(c, NO_RECEIPT, why="non-English completion claim; No Cap can't check this "
+                                                          "kind in that language yet")}
 
 
 # 🧢 is switched off for kinds that did not reach 0.9 precision on hand-labelled real agent runs.
@@ -636,7 +639,7 @@ def shown(r: Dict[str, Any], level: str) -> bool:
     level = level_of(level)
     if level == "all":
         return True
-    if level == "off":
+    if level == "off" or r["kind"] == "unchecked":
         return False
     if level == "expected":
         return absent(r)
@@ -644,12 +647,25 @@ def shown(r: Dict[str, Any], level: str) -> bool:
 
 
 def judge(claims: List[Dict[str, Any]], evidence: List[Dict[str, Any]],
-          kinds: Optional[set] = None) -> List[Dict[str, Any]]:
+          kinds: Optional[set] = None, history: Optional[List[Dict[str, Any]]] = None,
+          turn: int = 0) -> List[Dict[str, Any]]:
+    """``history``: earlier turns of the same session (store.Ledger.history), ``turn``: this turn's number.
+    Without them every claim is judged on this turn's calls only, as before."""
     out = []
     for c in claims:
         if kinds is not None and c["kind"] not in kinds:
             continue
-        r = JUDGES[c["kind"]](c, evidence or [])
+        if c.get("revived"):  # "tests passed in the last turn": only an earlier turn of this session can answer
+            r = _earlier(c, evidence or [], history or [], turn, revived=True) if c["kind"] in CROSS_KINDS else None
+            if r is None:
+                continue  # nothing in an earlier turn: left alone, as before cross-turn receipts
+        else:
+            r = JUDGES[c["kind"]](c, evidence or [])
+            if r["verdict"] == NO_RECEIPT and r.get("cite") is None:
+                if history and c.get("earlier") and c["kind"] in CROSS_KINDS:
+                    r = _earlier(c, evidence or [], history, turn) or r
+                elif c["kind"] in ("merged", "pr_opened") and isinstance(c.get("pr"), int):
+                    r = _pr_session(c, evidence or [], history or [], turn) or r
         if r["verdict"] == CAP and (c["kind"] in DISABLED_CAP or c.get("ack_near")):
             r = dict(r, verdict=NO_RECEIPT, why=DISABLED_CAP.get(c["kind"]) or "a sentence nearby admits failures")
         if c["kind"] == "tests" and c.get("ack_reply") and not c.get("fails") and (
@@ -659,3 +675,110 @@ def judge(claims: List[Dict[str, Any]], evidence: List[Dict[str, Any]],
             continue  # numbers are bonus receipts: a match earns 🧾, a miss stays silent (too many aren't claims)
         out.append(r)
     return out
+
+
+# ---- cross-turn receipts -------------------------------------------------------------------------------------------
+CROSS_KINDS = {"tests", "build", "ci", "pushed", "merged", "committed", "pr_opened", "deployed", "file", "sha"}
+_RELEVANT = {
+    "tests": lambda e: bool(e.get("test_cmd")),
+    "build": lambda e: bool(e.get("build_cmd")),
+    "deployed": lambda e: bool(e.get("deploy_cmd")),
+    "ci": lambda e: "ci_pass" in (e.get("git") or {}),
+    "pushed": lambda e: "push_ok" in (e.get("git") or {}),
+    "committed": lambda e: "commit_ok" in (e.get("git") or {}),
+    "pr_opened": lambda e: "pr_create_ok" in (e.get("git") or {}),
+    "merged": lambda e: any(k in (e.get("git") or {}) for k in ("merge_ok", "pr_view_state", "git_merge_ok", "pr_missing")),
+    "sha": lambda e: bool(e.get("head_sha") or e.get("git")),
+    "file": lambda e: bool(e.get("paths_edited")),
+}
+
+
+def session_evidence(history: List[Dict[str, Any]], evs: List[Dict[str, Any]], turn: int) -> List[Dict[str, Any]]:
+    """Earlier turns' call facts, then this turn's calls, renumbered in order (each keeps its turn and own index)."""
+    out: List[Dict[str, Any]] = []
+    for t in history or []:
+        for e in t.get("calls") or []:
+            if isinstance(e, dict):
+                out.append(dict(e, _turn=int(t.get("turn") or 0), _i=e.get("i")))
+    for e in evs or []:
+        out.append(dict(e, _turn=turn, _i=e.get("i")))
+    for k, e in enumerate(out, 1):
+        e["i"] = k
+        e.setdefault("tests", [])
+        e.setdefault("test_cmd", False)
+        e.setdefault("ok", True)
+        e.setdefault("tool", "")
+    return out
+
+
+def _cited_ev(r: Dict[str, Any], combined: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    c = r.get("cite")
+    return combined[c - 1] if isinstance(c, int) and 0 < c <= len(combined) else None
+
+
+def _relabel(r: Dict[str, Any], e: Dict[str, Any], turn: int) -> Dict[str, Any]:
+    """Point a receipt at the call's own turn and index (the footer says "turn N")."""
+    r = dict(r, cite=e.get("_i"))
+    if e.get("_turn") != turn:
+        r["turn"] = e.get("_turn")
+    return r
+
+
+def _earlier(c, evs, history, turn, revived=False) -> Optional[Dict[str, Any]]:
+    """A claim about earlier work, judged on the whole session ledger. Stale evidence still loses (the judges see
+    every later edit, in any turn); 🧢 only from an earlier turn that no later call of the same kind supersedes."""
+    if not history:
+        return None
+    combined = session_evidence(history, evs, turn)
+    r = JUDGES[c["kind"]](c, combined)
+    e = _cited_ev(r, combined)
+    if e is None:
+        return None
+    if revived and e["_turn"] == turn:
+        return None  # the claim is about an earlier turn; this turn's calls aren't what it means
+    if r["verdict"] == CAP:
+        later = [x for x in combined if x["i"] > e["i"] and _RELEVANT[c["kind"]](x)]
+        if e["_turn"] == turn:
+            r = dict(r, verdict=NO_RECEIPT, why="this turn disagrees, but the claim is about earlier work")
+        elif later:
+            r = dict(r, verdict=NO_RECEIPT, why=f"later evidence (turn {later[-1]['_turn']}) supersedes it")
+        elif any(JUDGES[c["kind"]](c, session_evidence([t], [], -1))["verdict"] == NO_CAP for t in history
+                 if t.get("turn") != e["_turn"]):
+            r = dict(r, verdict=NO_RECEIPT, why="another earlier turn shows it; the claim may mean that one")
+    return _relabel(r, e, turn)
+
+
+def _pr_session(c, evs, history, turn) -> Optional[Dict[str, Any]]:
+    """"Merged PR #N" / "opened PR #N" with no matching call in this turn: look for #N in any gh output this
+    session. 🧢 only when gh showed #N in another state (merge) or that #N doesn't exist; no output is 🤔."""
+    pr = c["pr"]
+    combined = session_evidence(history, evs, turn)
+
+    def nums(e, *keys):
+        g = e.get("git") or {}
+        return [n for k in keys for n in (g.get(k) or [])]
+
+    seen = [e for e in combined if pr in nums(e, "pr_view_prs", "merged_prs", "merge_cmd_prs", "opened_prs", "pr_missing")]
+    if not seen:
+        return _r(c, NO_RECEIPT, why=f"no gh output this session shows #{pr}")
+    # a GitHub tool other than gh (an MCP server) may have done it: it can prove nothing here, and veto a 🧢
+    other_tool = any(re.search(r"(?i)pull|merge|github", str(e.get("tool") or "")) and not e.get("cmd") for e in combined)
+    last = seen[-1]
+    g = last.get("git") or {}
+    if c["kind"] == "merged":
+        good = [e for e in seen if pr in nums(e, "merged_prs")]
+        if good and good[-1] is last:
+            return _relabel(_r(c, NO_CAP, good[-1], quote=g.get("merge_line") or "state MERGED"), last, turn)
+        if pr in nums(last, "pr_missing") and not other_tool:
+            return _relabel(_r(c, CAP, last, why=f"no pull request #{pr}", quote=f"no pull request #{pr} found"),
+                            last, turn)
+        if g.get("pr_view_state") in ("OPEN", "CLOSED") and pr in nums(last, "pr_view_prs") and not other_tool \
+                and not last.get("chained"):
+            return _relabel(_r(c, CAP, last, quote=f"#{pr} state {g['pr_view_state']}"), last, turn)
+        return _relabel(_r(c, NO_RECEIPT, last, why=f"gh output for #{pr} was not conclusive"), last, turn)
+    made = [e for e in seen if pr in nums(e, "opened_prs")]
+    if made:
+        return _relabel(_r(c, NO_CAP, made[-1], quote=f"/pull/{pr}"), made[-1], turn)
+    if pr in nums(last, "pr_missing") and not other_tool:
+        return _relabel(_r(c, CAP, last, why=f"no pull request #{pr}", quote=f"no pull request #{pr} found"), last, turn)
+    return _relabel(_r(c, NO_RECEIPT, last, why=f"gh shows #{pr}, but not that it was opened here"), last, turn)

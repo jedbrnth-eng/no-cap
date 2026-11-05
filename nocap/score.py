@@ -12,12 +12,19 @@ def scored(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return [r for r in records if r.get("receipts") and r.get("type", "reply") == "reply"]
 
 
+def all_proven(rec: Dict[str, Any]) -> bool:
+    """Every receipt the reply was stamped with is 🧾 (hidden 🤔 receipts were never shown, so they don't count)."""
+    shown = [x for x in rec.get("receipts") or [] if isinstance(x, dict) and not x.get("hidden")]
+    return bool(shown) and all(x.get("verdict") == "NO_CAP" for x in shown)
+
+
 def streak(records: List[Dict[str, Any]]) -> int:
+    """🔥 no cap in a row: all-🧾 replies since the last 🧢. A reply with a 🤔 neither extends nor resets it."""
     n = 0
     for rec in reversed(scored(records)):
         if _capped(rec):
             break
-        n += 1
+        n += all_proven(rec)
     return n
 
 
@@ -50,6 +57,7 @@ def leaderboard_text(records: List[Dict[str, Any]], session_id: str = "") -> str
         mine = [r for r in records if r.get("session_id") == session_id]
         if scored(mine):
             st = streak(mine)
-            lines.append(f"This session: 🔥 {st} replies no cap" if st else "This session: streak reset by a 🧢")
+            lines.append(f"This session: 🔥 {st} replies no cap" if st else
+                         "This session: streak 0 (only all-🧾 replies count; a 🧢 resets it)")
     lines.append("/capscore card → shareable scorecard image")
     return "\n".join(lines)

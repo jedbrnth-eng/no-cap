@@ -18,6 +18,7 @@ from typing import Any, Optional
 
 from .nocap.engine import Engine
 from .nocap import compare_card, export, ladder, verdict_card
+from .nocap.surfaces.discord import DiscordSurface
 
 logger = logging.getLogger("hermes_plugins.no_cap")
 
@@ -85,6 +86,15 @@ def _make_engine(ctx: Any) -> Engine:
 
 def register(ctx: Any) -> None:
     engine = _make_engine(ctx)
+    # Discord: its own compact footer always; the embed + buttons only with discord_buttons: on, through the discord.py
+    # Bot that the documented register_platform_handler hands over (nocap/surfaces/discord.py, docs/DISCORD.md).
+    discord_surface = DiscordSurface(engine, engine.setting, engine.data_dir)
+    engine.surfaces["discord"] = discord_surface.compose
+    if callable(getattr(ctx, "register_platform_handler", None)):
+        try:
+            ctx.register_platform_handler("discord", discord_surface.wire)
+        except Exception as exc:  # an older Hermes: the text footer still works
+            logger.warning("no-cap: Discord buttons unavailable: %s", exc)
 
     def on_tool(**kwargs: Any) -> None:
         try:
@@ -154,7 +164,7 @@ def register(ctx: Any) -> None:
                          description="Cap Score: which model caps most, streaks, shareable scorecard; board = Cap Board "
                                      "(this profile); compare A B = honesty A/B card")
     ctx.register_command("nocap", handler=command(nocap, wants_platform=True),
-                         args_hint="[all|verdict|doctor|purge|demo ladder|help]",
+                         args_hint="[all|verdict|battery|doctor|purge|demo ladder|help]",
                          description="No Cap receipts for the last reply, the session verdict card, and store admin")
 
     def setup(subparser: Any) -> None:
@@ -182,6 +192,8 @@ def register(ctx: Any) -> None:
         de = subs.add_parser("demo", help="Demo theater; --ladder runs the Lie Ladder in a throwaway home")
         de.add_argument("--ladder", action="store_true", required=True)
         de.add_argument("--out", default="", help="output folder (default: a new one under /tmp)")
+        subs.add_parser("battery", help="Run the bundled synthetic lie/truth battery: precision/recall report (synthetic, "
+                                        "not the blind real-run number)")
         subparser.set_defaults(func=cli)
 
     def cli(args: Any) -> Optional[int]:
@@ -229,6 +241,8 @@ def register(ctx: Any) -> None:
             print(f"wrote {path} (Prometheus text format; file only, no listener)")
         elif sub == "demo":
             return ladder.run(getattr(args, "out", "") or None)
+        elif sub == "battery":
+            print(engine.battery())
         else:
             print(engine.nocap("", session_id=getattr(args, "session", "") or ""))
 

@@ -102,7 +102,8 @@ def test_blockquotes_are_ignored():
 def test_empty_and_non_english():
     assert extract_claims("") == []
     assert extract_claims("   ") == []
-    assert extract_claims("Tous les tests passent. Alle Tests bestanden. 测试全部通过。") == []
+    assert extract_claims("Tous les tests passent. Alle Tests bestanden.") == []  # no checker for these yet
+    assert [(c["kind"], c["lang"]) for c in extract_claims("测试全部通过。")] == [("tests", "zh")]  # nocap/lang.py
 
 
 def test_model_written_stamps_are_stripped_not_trusted():

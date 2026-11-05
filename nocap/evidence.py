@@ -692,6 +692,13 @@ def parse_git(cmd: str, text: str, exit_code: Optional[int]) -> Dict[str, Any]:
             g["pr_view_prs"] = nums
             if states[0].upper() == "MERGED":
                 g["merged_prs"] = nums
+        # `gh pr view 42` on a PR that doesn't exist: the number is named in the command (or the GraphQL error)
+        gone = re.search(r"(?i)could not resolve to a pull ?request with the number of (\d+)|"
+                         r"^no pull requests? (?:found|match)", text[:2000], re.M)
+        if gone and len(set(nums)) <= 1 and "$" not in cmd and not states:
+            n = int(gone.group(1)) if gone.group(1) else (nums[0] if nums else None)
+            if n is not None and (not nums or nums[0] == n):
+                g["pr_missing"] = [n]
     elif re.search(r"\bgit\b(?:(?!\bgit\b)[^|;&])*\bmerge\b", cmd) and not re.search(r"--abort", cmd):
         g["git_merge_failed"] = bool(re.search(r"CONFLICT|Automatic merge failed|^fatal:", text, re.M))
         g["git_merge_ok"] = ok and not g["git_merge_failed"]
@@ -892,4 +899,23 @@ def summary(ev: Dict[str, Any]) -> Dict[str, Any]:
     keep["git"] = ev.get("git", {})
     keep["paths_written"] = ev.get("paths_written", [])[:10]
     keep["http"] = ev.get("http", [])[:10]
+    return keep
+
+
+# The session ledger (cross-turn receipts) keeps, per call, the facts a later turn's claim can be judged on:
+# flags, exit codes, test summaries, git facts, SHAs and written paths. Never raw output, numbers or URLs.
+_FACT_FLAGS = ("i", "tool", "cmd", "exit", "ok", "error", "test_cmd", "deploy_cmd", "build_cmd", "background", "edit",
+               "any_edit", "skip_added", "check_cmd", "where", "suite", "baseline", "chained", "masked", "subset",
+               "stopped", "tail_only", "partial", "fail_text", "quiet_silent", "out_empty", "windowed", "no_tests",
+               "head_sha", "diff_files")
+_FACT_LISTS = {"paths_written": 10, "paths_edited": 20, "paths_reported": 10, "shas": 20}
+
+
+def ledger_fact(ev: Dict[str, Any]) -> Dict[str, Any]:
+    """One call as stored in the session ledger (every string still goes through redact() in the store)."""
+    keep = {k: ev.get(k) for k in _FACT_FLAGS if k in ev}
+    keep["tests"] = list(ev.get("tests") or [])[-5:]
+    keep["git"] = dict(ev.get("git") or {})
+    for k, n in _FACT_LISTS.items():
+        keep[k] = [str(x)[:200] for x in (ev.get(k) or [])][:n]
     return keep

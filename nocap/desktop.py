@@ -45,6 +45,8 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from . import score
+
 NAME = "nocap"
 VERSION = "2"
 BODY_MAX = 2048          # apps/desktop/src/lib/transcript-directives.ts DIRECTIVE_BODY_MAX
@@ -372,9 +374,9 @@ def session_view(records: List[Dict[str, Any]], session_id: str, limit: int = 50
                         "c": [chip(x) for x in sorted(shown, key=lambda r: ORDER.get(str(r.get("verdict")), 3))]})
     streak = 0
     for rec in reversed(mine):
-        if any(x.get("verdict") == "CAP" for x in rec.get("receipts") or []):
+        if any(x.get("verdict") == "CAP" for x in rec.get("receipts") or [] if isinstance(x, dict)):
             break
-        streak += 1
+        streak += score.all_proven(rec)  # only all-🧾 replies count; a 🤔 reply neither extends nor resets
     models = sorted({str(r.get("model") or "unknown") for r in mine})
     return {"session_id": session_id, "replies": list(reversed(replies))[:limit], "counts": counts,
             "unsure": unsure, "streak": streak, "models": models}

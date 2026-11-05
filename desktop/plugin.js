@@ -268,7 +268,7 @@ export function SessionReceiptsView({ view, open, onToggle }) {
       jsx('div', { style: { fontWeight: 600 }, children: 'Receipts · this chat' }),
       jsx('div', { style: S.muted, children: summary(v.counts) }),
       replies.length
-        ? jsx('div', { style: S.muted, children: v.streak ? `🔥 ${v.streak} no cap in a row` : 'streak reset by a 🧢' })
+        ? jsx('div', { style: S.muted, children: v.streak ? `🔥 ${v.streak} no cap in a row` : 'streak 0 (only all-🧾 replies count)' })
         : null,
       v.unsure ? jsx('div', { style: S.muted, children: `🤫 ${v.unsure} unsure claim(s) not stamped · /nocap all` }) : null
     ]
