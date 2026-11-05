@@ -171,14 +171,6 @@ class Engine:
             return response_text
         return out
 
-    def _who(self, evs: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Cap Board identity: the Hermes profile and the skills loaded in this turn (fail open to unknown)."""
-        try:
-            profile = str(self.profile() or "")[:64]
-        except Exception:
-            profile = ""
-        return {"profile": profile, "skills": sorted({e["skill"] for e in evs if e.get("skill")})}
-
     def _rescore(self, session_id: str, receipts: List[Dict[str, Any]]) -> List[str]:
         with self._lock:
             pending = self._pending_cap.pop(session_id, None)
@@ -287,6 +279,14 @@ class Engine:
                 return "🧾 Cap Score: no checked replies yet, so there's no card to make."
             return "🖼️ Scorecard saved: " + " · ".join(str(p) for p in paths)
         return score.leaderboard_text(records, session_id)
+
+    def _who(self, evs: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Cap Board identity: the Hermes profile and the skills loaded in this turn (fail open to unknown)."""
+        try:
+            profile = str(self.profile() or "")[:64]
+        except Exception:
+            profile = ""
+        return {"profile": profile, "skills": sorted({e["skill"] for e in evs if e.get("skill")})}
 
     def board_sources(self) -> List[Any]:
         extra = board.env_sources()
