@@ -70,6 +70,9 @@ class Engine:
         self._turns: "OrderedDict[Tuple[str, str], List[Dict[str, Any]]]" = OrderedDict()
         self._pending_cap: Dict[str, List[Dict[str, Any]]] = {}
         self._lock = threading.Lock()
+        # platform -> composer(text, receipts, mode, rescore, streak, notes, session_id=, turn_id=): a surface's own
+        # footer (nocap/surfaces/discord.py). Every other platform keeps render.compose.
+        self.surfaces: Dict[str, Callable[..., Optional[str]]] = {}
 
     # ---- hooks -------------------------------------------------------------------------------
     def on_tool(self, tool_name: str = "", args: Any = None, result: Any = None, session_id: str = "",
@@ -170,8 +173,13 @@ class Engine:
                 pass
         forged = forged_stamps(response_text) + planted
         notes = [f"⚠️ This reply contained {forged} stamp(s) No Cap didn't issue. They were ignored."] if forged else None
-        out = compose(response_text, visible, self.mode(), rescore, streak, notes,
-                      plain=(platform or "").lower() == "cli", chips=chips)
+        surface = self.surfaces.get((platform or "").strip().lower())
+        if surface is not None:
+            out = surface(response_text, visible, self.mode(), rescore, streak, notes, session_id=session_id,
+                          turn_id=turn_id)
+        else:
+            out = compose(response_text, visible, self.mode(), rescore, streak, notes,
+                          plain=(platform or "").lower() == "cli", chips=chips)
         if out is None and planted:  # quiet mode: no footer, but a planted directive still never goes out
             return response_text
         return out

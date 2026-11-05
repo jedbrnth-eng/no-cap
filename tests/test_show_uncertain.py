@@ -129,7 +129,7 @@ def test_footer_drops_markdown_bold_on_the_classic_cli(tmp_path):
     tool(ctx, "pytest -q", "44 passed in 0.5s", turn="t2")
     d = ctx.hooks["transform_llm_output"](response_text="All tests pass.", session_id="s1", model="m",
                                           platform="discord", turn_id="t2")
-    assert "**Receipts**" in d
+    assert "**🧾 No Cap**" in d  # Discord renders markdown: it keeps the bold (its own footer, nocap/surfaces)
 
 
 def test_strict_is_tests_claims_with_zero_test_runs_only(tmp_path):

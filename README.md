@@ -195,6 +195,7 @@ restart needed):
 | `board_min_claims` | `10` | Claims a row needs before the board shows and ranks its rates |
 | `self_verify_http` | `false` | Let `/cap` send one HTTP HEAD to a URL the agent says is live (public addresses only, no redirects, 3 s timeout) |
 | `desktop_chips` | `auto` | Hermes Desktop receipt chips. `auto`: while the desktop half is on (it checks in every 10 minutes). `on`: always on Desktop. `off`: text footer on Desktop too. Never on other surfaces |
+| `discord_buttons` | `off` | Discord only. `off`: the compact Discord footer (stamps, claims and evidence in code spans, ≤ 1000 characters, never split across messages). `on`: a one-line summary in the reply, plus a verdict-coloured embed with **🧢 Call cap** and **🧾 Show receipts** buttons attached to it (only the person the reply answered can click). See [docs/DISCORD.md](docs/DISCORD.md) |
 
 `plugins.entries.no-cap.allow_gateway_injection: true` (one level up, a Hermes permission) lets `/cap` send its steer
 itself in gateway-backed sessions. Without it `/cap` prints the steer for you to paste.
@@ -280,6 +281,13 @@ Limits:
   `plugin.no-cap.receipts.updated` event (session id only) so the list refreshes. Any authenticated dashboard caller
   (other installed dashboard or Desktop plugins included) can call these routes; they return only yes/no and this
   profile's receipts, never a key.
+- **Discord:** every Discord reply gets the compact Discord footer (text only). With `discord_buttons: on`, a listener
+  on Hermes's discord.py client (handed over by `ctx.register_platform_handler("discord", …)`) edits **the bot's own
+  reply** to add an embed and two buttons, and answers button clicks privately (ephemeral). It never reads other
+  people's messages' content (it ignores any message not authored by the bot), never posts a new message, and edits
+  nothing else. It stores `discord_receipts.json` next to the receipts (`0600`, atomic write, at most 500 entries,
+  through the same redaction): receipt id → session id, turn id, session key, the user id the reply answered, and the
+  chat and thread ids. No claim text. `/nocap purge` deletes it. 🧢 Call cap runs `/cap` (same rules as above).
 - **The demo:** `demo/stub_model.py` is a scripted model on 127.0.0.1. It is test scaffolding, not part of the plugin.
 
 ## Known limits and what is not tested
@@ -321,7 +329,10 @@ Limits:
   (and if the model repeats it there, it is removed). A chip whose chat id the host doesn't report yet shows "checking
   receipts…" until it does.
 - Desktop is tested end to end only with the scripted model, on macOS, against the installed build of 8acb7f6.
-- Not tested: Discord and Telegram sessions end to end; real models other than one local Qwen3-4B (three
+- Discord: tested with Hermes's real Discord adapter (send path, splitter, plugin wiring, hook dispatch) and real
+  discord.py objects over a fake connection (`tests/test_discord_hermes.py`), not yet on a live Discord server.
+  Telegram gets the generic footer: a Telegram bot never sees its own replies, so there is nothing to attach buttons to.
+- Not tested: Discord and Telegram sessions end to end on a live server; real models other than one local Qwen3-4B (three
   runs); Linux and Windows; the catalog install path; a real conflict with another enabled reply-rewriting plugin
   (unit-tested only).
 

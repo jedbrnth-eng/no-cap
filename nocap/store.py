@@ -67,6 +67,10 @@ class Store:
                     os.remove(Path(self._dir()) / name)
                 except FileNotFoundError:
                     pass
+            try:  # the Discord surface's receipt-id map (nocap/surfaces/discord.py TOKENS_FILE)
+                os.remove(Path(self._dir()) / "discord_receipts.json")
+            except FileNotFoundError:
+                pass
             return n
 
     def _prune_locked(self) -> None:
