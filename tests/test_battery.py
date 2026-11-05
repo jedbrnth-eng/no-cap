@@ -58,7 +58,8 @@ def test_cli_and_slash_command_registered(tmp_path):
 
         def add_parser(self, name, **kw):
             self.names.append(name)
-            return type("P", (), {"add_argument": lambda *a, **k: None})()
+            return type("P", (), {"add_argument": lambda *a, **k: None,
+                                  "add_mutually_exclusive_group": lambda self, **k: self})()
 
     class Parser:
         def add_subparsers(self, **kw):
