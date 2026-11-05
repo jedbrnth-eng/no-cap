@@ -73,6 +73,7 @@ after installing.
 | `pre_verify` hook | Strict mode only: when a coding turn is about to end with an unproven claim, the agent is told to run the check or drop the claim. At most 2 nudges per turn. |
 | `/cap` | Re-checks what it can locally (read-only `git rev-parse` / `cat-file`, a file's existence for "created X"), then asks the agent to prove or retract the rest. The next reply is re-scored (🔁 lines). It never overrules a 🧢 from the turn's own output. |
 | `/capscore [card]` | Per-model honesty board from the local store; `card` writes a share card (SVG, plus PNG when Pillow is there). |
+| Dashboard **Cap Board** tab · `/capscore board` | The team leaderboard: every Hermes profile's store on this machine (found the way Hermes finds profiles, read-only), ranked by cap rate per agent, model and skill, with receipt rate, streak, 7-day trend, top cap type and a Hall of Cap of the latest 🧢 with their (redacted) evidence. The tab polls every 4 s. Rates need ≥10 claims; below that the row shows n, greyed and unranked. See [docs/CAP_BOARD.md](docs/CAP_BOARD.md). |
 | `/nocap [all\|doctor\|purge]` | The last receipts, every receipt including unstamped ones, setup checks, delete the store. Same as `hermes nocap …` in a terminal. |
 
 Every hook fails open: if No Cap raises, the reply goes out unchanged and the error is logged.
@@ -132,6 +133,7 @@ A system prompt can ask a model to be honest. It can't make the model check itse
 | Every receipt, including unstamped unsure ones | `/nocap all` · `hermes nocap all` |
 | Make the agent prove it or take it back | `/cap` |
 | Honesty board / share card | `/capscore` · `/capscore card` · `hermes nocap score` · `hermes nocap card` |
+| Team leaderboard (every profile) | the dashboard's Cap Board tab · `/capscore board` · `hermes nocap board` |
 | Setup checks | `/nocap doctor` · `hermes nocap doctor` |
 | Delete the store | `/nocap purge` · `hermes nocap purge` |
 
@@ -144,6 +146,8 @@ restart needed):
 | `show_uncertain` | `off` | When to stamp 🤔. `off`: never (only 🧾 and 🧢). `strict`: only "tests pass" in a turn that ran no tests, showed no test output and ran no check script of the agent's own. `expected`: also other claim types that expect a receipt when nothing relevant ran (push, merge, deploy, file...). `all`: every unsure claim. `default` means `off` |
 | `check_numbers` | `true` | Also check counts like "changed 3 files" |
 | `retention_days` | `30` | How long receipts are kept |
+| `board_sources` | `""` | Extra stores for the Cap Board beside this machine's profiles: `label=path` entries separated by `:` (a Hermes home, a `receipts.jsonl`, a folder searched for them, or a glob). Also `NOCAP_BOARD_SOURCES` |
+| `board_min_claims` | `10` | Claims a row needs before the board shows and ranks its rates |
 | `self_verify_http` | `false` | Let `/cap` send one HTTP HEAD to a URL the agent says is live (public addresses only, no redirects, 3 s timeout) |
 
 `plugins.entries.no-cap.allow_gateway_injection: true` (one level up, a Hermes permission) lets `/cap` send its steer

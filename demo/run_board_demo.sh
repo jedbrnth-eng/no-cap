@@ -70,6 +70,7 @@ stop_home() {  # the gateway/language servers `hermes chat` started for one home
   sleep 1
 }
 
+stop_home "$ROOTH"; for P in alpha beta gamma; do stop_home "$ROOTH/profiles/$P"; done  # a rerun: no stale gateways
 say "4/6 real \`hermes chat\` turns (each turn: tools really run, the plugin stamps the reply)"
 TURNS_alpha=${NOCAP_BOARD_TURNS_ALPHA:-10}; TURNS_beta=${NOCAP_BOARD_TURNS_BETA:-10}; TURNS_gamma=${NOCAP_BOARD_TURNS_GAMMA:-3}
 for P in alpha beta gamma; do
@@ -85,6 +86,7 @@ for P in alpha beta gamma; do
   done
   stop_home "$H"
 done
+stop_home "$ROOTH"  # profile turns are served by the root's machine-level gateway; stop it too
 
 if [ -n "${NOCAP_BOARD_BACKFILL:-}" ]; then
   say "5/6 backfill: last week's turns through the same plugin hooks, clock shifted (disclosed)"
