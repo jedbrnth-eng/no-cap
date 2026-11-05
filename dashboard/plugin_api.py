@@ -25,6 +25,10 @@ from fastapi import APIRouter
 router = APIRouter()
 _ROOT = Path(__file__).resolve().parent.parent
 _PKG = "no_cap_dashboard_nocap"
+# A plugin has one dashboard manifest and one API router. Route modules beside this file that other No Cap features
+# ship (the Desktop half's /hello, /verify and /session) are mounted here when present, so each feature keeps its own
+# file and this one never needs editing to add them. Fixed names only: nothing is discovered by glob.
+_ROUTE_MODULES = ("desktop_api",)
 
 
 def _board():
@@ -75,3 +79,18 @@ def board(agent: str = "", model: str = "", skill: str = "", min_claims: int = 0
     out["version"] = version
     out["scope"] = scope
     return out
+
+
+def _include_route_modules() -> None:
+    here = Path(__file__).resolve().parent
+    for name in _ROUTE_MODULES:
+        path = here / f"{name}.py"
+        if not path.is_file():
+            continue
+        spec = importlib.util.spec_from_file_location(f"no_cap_dashboard_{name}", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        router.include_router(mod.router)
+
+
+_include_route_modules()

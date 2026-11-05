@@ -548,3 +548,18 @@ def test_failed_skill_load_is_not_a_skill(tmp_path, monkeypatch):
     a.ctx.hooks["transform_llm_output"](response_text="All tests pass.", session_id=sid, turn_id=tid, model="m",
                                         platform="cli")
     assert json.loads(a.store.read_text().splitlines()[-1])["skills"] == ["tdd"]
+
+
+def test_dashboard_router_mounts_only_known_route_modules(monkeypatch):
+    """dashboard/plugin_api.py is the plugin's one router: it serves /board and mounts the fixed list of feature route
+    modules beside it (desktop_api.py) when they exist, so features merge without editing this file."""
+    pytest.importorskip("fastapi")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("no_cap_dashboard_api_routes", ROOT / "dashboard" / "plugin_api.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod._ROUTE_MODULES == ("desktop_api",)
+    paths = {r.path for r in mod.router.routes}
+    assert "/board" in paths
+    if not (ROOT / "dashboard" / "desktop_api.py").is_file():
+        assert paths == {"/board"}
