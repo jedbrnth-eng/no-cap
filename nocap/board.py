@@ -288,40 +288,56 @@ def _slim(rec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 _loads = json.JSONDecoder().decode
+# The ledger's cited calls are most of a record's bytes and the board reads none of them. In the store's own key
+# order they sit between '"calls": [' and '], "ledger": '; inside a JSON string every quote is escaped, so the cut
+# can't land in one. A line the cut doesn't fit is parsed whole.
+_CALLS, _LEDGER = b'"calls": [', b'], "ledger": '
+_BLOCK = 512  # lines parsed per json call; a bad line only sends its own block down the slow path
+
+
+def _cut(line: bytes) -> bytes:
+    i = line.find(_CALLS)
+    if i > 0:
+        j = line.find(_LEDGER, i)
+        if j > 0 and line.find(b'"receipts": ', i, j) < 0:  # another writer's key order: never cut the verdicts
+            return line[:i] + line[j + 3:]
+    return line
 
 
 def _load_line(line: bytes) -> Any:
-    """json.loads, minus the ledger's cited calls when the line has the store's own key order (most of the bytes,
-    none of which the board reads). Inside a JSON string every quote is escaped, so the cut can't land in one; a
-    line it doesn't fit is parsed whole."""
-    text = line.decode("utf-8")
-    i = text.find('"calls": [')
-    if i > 0:
-        j = text.find('], "ledger": ', i)
-        if j > 0:
-            try:
-                return _loads(text[:i] + text[j + 3:])
-            except ValueError:
-                pass
-    return _loads(text)
+    try:
+        return _loads(_cut(line).decode("utf-8"))
+    except ValueError:
+        return _loads(line.decode("utf-8"))
+
+
+def _take(rec: Any, entry: _Cached) -> None:
+    if not isinstance(rec, dict):
+        entry.bad += 1
+        return
+    entry.total += 1
+    slim = _slim(rec)
+    if slim is not None:
+        entry.recs.append(slim)
 
 
 def _parse(chunk: bytes, entry: _Cached) -> None:
-    for line in chunk.split(b"\n"):
-        if not line or line.isspace():
-            continue
-        try:
-            rec = _load_line(line)
-        except ValueError:  # includes UnicodeDecodeError
-            entry.bad += 1
-            continue
-        if not isinstance(rec, dict):
-            entry.bad += 1
-            continue
-        entry.total += 1
-        slim = _slim(rec)
-        if slim is not None:
-            entry.recs.append(slim)
+    lines = [ln for ln in chunk.split(b"\n") if ln and not ln.isspace()]
+    for i in range(0, len(lines), _BLOCK):
+        block = lines[i:i + _BLOCK]
+        try:  # fast path: one json call for the whole block
+            recs = _loads((b"[" + b",".join([_cut(ln) for ln in block]) + b"]").decode("utf-8"))
+            if len(recs) != len(block):
+                raise ValueError("line count")
+        except ValueError:  # includes UnicodeDecodeError: one line at a time, bad lines counted
+            recs = []
+            for line in block:
+                try:
+                    recs.append(_load_line(line))
+                except ValueError:
+                    recs.append(None)
+        for rec in recs:
+            _take(rec, entry)
 
 
 def read_store(path: Path) -> _Cached:

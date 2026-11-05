@@ -260,6 +260,24 @@ def test_corrupt_lines_are_skipped_and_counted(tmp_path, monkeypatch):
     assert "not json" not in json.dumps(b)
 
 
+def test_fast_path_never_drops_verdicts_whatever_the_key_order(tmp_path):
+    """The reader skips the ledger's calls without parsing them; a record in another key order, or with the marker
+    text inside a string, must still be read in full."""
+    cap = {"kind": "tests", "verdict": "CAP", "text": 'said "calls": [ and ], "ledger": in prose', "quote": "1 failed"}
+    calls = [{"i": 1, "tool": "terminal", "cmd": 'echo "], \\"ledger\\": "'}]
+    recs = [
+        {"type": "reply", "ts": 1.0, "model": "m", "calls": calls, "ledger": {"n": 1}, "receipts": [cap]},
+        {"type": "reply", "ts": 2.0, "model": "m", "calls": calls, "receipts": [cap], "ledger": {"n": 1}},
+        {"receipts": [cap], "type": "reply", "ts": 3.0, "model": "m", "calls": calls, "ledger": {"n": 1}},
+    ]
+    p = tmp_path / "receipts.jsonl"
+    p.write_text("".join(json.dumps(r) + "\n" for r in recs))
+    B = board_mod()
+    B.clear_cache()
+    b = B.build_board(B.discover_sources(root=tmp_path / "none", extra=B.parse_sources(f"x={p}")))
+    assert b["totals"]["replies"] == 3 and b["totals"]["cap"] == 3 and b["sources"][0]["bad_lines"] == 0
+
+
 def test_non_reply_records_are_not_scored(tmp_path, monkeypatch):
     root = make_root(tmp_path, ("alpha",))
     a = Agent(root, "alpha", monkeypatch)
@@ -430,9 +448,10 @@ def test_10k_records_under_200ms(tmp_path, monkeypatch):
     B.clear_cache()
     srcs = B.discover_sources(root=root)
     # CPU time, like the ReDoS budget test: a loaded Mac stretches wall time without the board doing more work.
-    # Best of three cold reads (cache cleared each time), so one descheduled run on a busy machine can't fail it.
+    # Best of five cold reads (cache cleared each time): on a loaded Apple Silicon Mac a run that lands on an
+    # efficiency core costs 2-3x the CPU time, and that's the machine, not the board.
     colds = []
-    for _ in range(3):
+    for _ in range(5):
         B.clear_cache()
         w0, t0 = time.perf_counter(), time.process_time()
         b = B.build_board(srcs)

@@ -78,7 +78,7 @@
 .nocap-rank-none { opacity: 0.6; }
 
 .nocap-rate { display: flex; align-items: center; gap: 0.55rem; }
-.nocap-rate-track { flex: 1; height: 0.45rem; min-width: 5rem; border-radius: 999px; background: color-mix(in srgb, var(--color-foreground) 8%, transparent); overflow: hidden; }
+.nocap-rate-track { flex: 1; height: 0.45rem; min-width: 5rem; max-width: 12rem; border-radius: 999px; background: color-mix(in srgb, var(--color-border) 70%, transparent); overflow: hidden; }
 .nocap-rate-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, color-mix(in srgb, var(--nocap-cap) 55%, transparent), var(--nocap-cap)); transition: width 0.6s ease; }
 .nocap-rate-num { font-weight: 650; font-variant-numeric: tabular-nums; min-width: 2.6rem; text-align: right; color: var(--nocap-cap); }
 .nocap-rate-n { font-size: 0.72rem; color: var(--color-muted-foreground); font-variant-numeric: tabular-nums; }
@@ -109,7 +109,7 @@
 .nocap-hall-claim { font-weight: 600; font-size: 0.9rem; text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--nocap-cap) 70%, transparent); text-decoration-thickness: 2px; }
 .nocap-hall-evidence { margin-top: 0.35rem; font-size: 0.8rem; color: var(--color-foreground); overflow-wrap: anywhere; }
 .nocap-hall-arrow { color: var(--nocap-cap); font-weight: 700; }
-.nocap-code { font-family: var(--font-mono, ui-monospace, monospace); font-size: 0.75rem; padding: 0.02rem 0.3rem; border-radius: var(--radius-sm, 0.25rem); background: color-mix(in srgb, var(--color-foreground) 9%, transparent); }
+.nocap-board .nocap-code { font-family: var(--font-mono, ui-monospace, monospace); font-size: 0.75rem; padding: 0.02rem 0.35rem; border-radius: var(--radius-sm, 0.25rem); color: var(--color-muted-foreground); background: color-mix(in srgb, var(--color-foreground) 9%, transparent); border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent); }
 .nocap-hall-meta { display: flex; flex-wrap: wrap; gap: 0.25rem 0.6rem; margin-top: 0.45rem; font-size: 0.72rem; color: var(--color-muted-foreground); }
 .nocap-hall-agent { font-weight: 600; color: var(--color-foreground); }
 

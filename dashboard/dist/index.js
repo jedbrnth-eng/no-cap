@@ -14,6 +14,7 @@
   var cn = (SDK.utils && SDK.utils.cn) || function () { return Array.prototype.filter.call(arguments, Boolean).join(" "); };
   var API = "/api/plugins/no-cap/board";
   var POLL_MS = 4000;
+  var HIDDEN_POLL_MS = 30000;  // a hidden tab keeps polling, slowly
   var ALL = "";
 
   // Same dual-signature wiring the Kanban tab uses for the SDK Select (plugins/kanban/dashboard/dist/index.js:315).
@@ -166,11 +167,18 @@
     var version = useRef(""), prev = useRef(null), polledAt = useRef(0);
 
     useEffect(function () {
-      var alive = true, timer = null;
+      var alive = true, timer = null, first = true, inflight = false;
       version.current = "";
       function poll() {
         if (!alive) return;
-        if (document.hidden) { timer = setTimeout(poll, POLL_MS); return; }
+        // A hidden tab polls every 30 s instead of every 4 (little work while nobody looks), and the first load always
+        // runs: a tab opened in the background must not sit on "Loading" until it is focused.
+        if (document.hidden && !first && Date.now() - polledAt.current < HIDDEN_POLL_MS) {
+          timer = setTimeout(poll, POLL_MS);
+          return;
+        }
+        first = false;
+        inflight = true;
         SDK.fetchJSON(API + qs(filters, version.current)).then(function (b) {
           if (!alive) return;
           polledAt.current = Date.now();
@@ -195,11 +203,18 @@
         }).catch(function (e) {
           if (alive) setErr(String((e && e.message) || e));
         }).then(function () {
+          inflight = false;
           if (alive) timer = setTimeout(poll, POLL_MS);
         });
       }
+      function onVisible() { if (!document.hidden && alive && !inflight) { if (timer) clearTimeout(timer); poll(); } }
+      document.addEventListener("visibilitychange", onVisible);
       poll();
-      return function () { alive = false; if (timer) clearTimeout(timer); };
+      return function () {
+        alive = false;
+        if (timer) clearTimeout(timer);
+        document.removeEventListener("visibilitychange", onVisible);
+      };
     }, [filters.agent, filters.model, filters.skill]);
 
     function setF(k) { return function (v) { setFilters(Object.assign({}, filters, (function () { var o = {}; o[k] = v; return o; })())); }; }
@@ -225,7 +240,7 @@
           err ? "offline" : "live", h("span", { className: "nocap-dim", key: tick }, " · " + ago(data.generated_at)))),
 
       h("div", { className: "nocap-stats" },
-        h(Stat, { label: "Replies checked", value: t.replies || 0, sub: (t.agents || 0) + " agent(s) · " + (o.models || []).length + " model(s)" }),
+        h(Stat, { label: "Replies checked", value: t.replies || 0, sub: (t.agents || 0) + " agent(s) · " + (data.models || []).length + " model(s)" }),
         h(Stat, { label: "Claims", value: t.claims || 0, sub: "every claim judged, stamped or not" }),
         h(Stat, { label: "🧢 Caps", value: t.cap || 0, tone: "cap", sub: "cap rate " + pct(t.cap_rate) }),
         h(Stat, { label: "🧾 Receipts", value: t.proven || 0, tone: "receipt", sub: "receipt rate " + pct(t.receipt_rate) }),
