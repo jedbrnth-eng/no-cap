@@ -1,0 +1,10 @@
+# gitleaks config: the default rules, plus one allowlist for the fake secrets that test redaction.
+# tests/test_redaction.py builds fake keys on purpose to prove redact() masks them. Nothing else is allowed.
+title = "no-cap gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fake secret fixtures in the redaction tests"
+paths = ['''^tests/test_redaction\.py$''']

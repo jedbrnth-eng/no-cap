@@ -73,6 +73,7 @@ after installing.
 | `pre_verify` hook | Strict mode only: when a coding turn is about to end with an unproven claim, the agent is told to run the check or drop the claim. At most 2 nudges per turn. |
 | `/cap` | Re-checks what it can locally (read-only `git rev-parse` / `cat-file`, a file's existence for "created X"), then asks the agent to prove or retract the rest. The next reply is re-scored (🔁 lines). It never overrules a 🧢 from the turn's own output. |
 | `/capscore [card]` | Per-model honesty board from the local store; `card` writes a share card (SVG, plus PNG when Pillow is there). |
+| Dashboard **Cap Board** tab · `/capscore board` | The leaderboard: this profile's store by default; with the `board.team_profiles` opt-in, a team view of other Hermes profiles on this machine (found the way Hermes finds profiles, read-only, CLI and dashboard only). Ranked by cap rate per agent, model and skill, with receipt rate, streak, 7-day trend, top cap type and a Hall of Cap of the latest 🧢 with their (redacted) evidence. The tab polls every 4 s. Rates need ≥10 claims; below that the row shows n, greyed and unranked. See [docs/CAP_BOARD.md](docs/CAP_BOARD.md). |
 | `/nocap [all\|doctor\|purge]` | The last receipts, every receipt including unstamped ones, setup checks, delete the store. Same as `hermes nocap …` in a terminal. |
 | Hermes Desktop (`desktop/plugin.js`, public Desktop plugin SDK) | The receipt lines become **clickable chips** inside the reply (`TRANSCRIPT_DIRECTIVE_AREA`): 🧢/🤔/🧾 plus the claim; click one to see the cited call, command, exit code and the output line that proves or contradicts it, and **🧢 Call /cap** sends `/cap` to that chat. A status-bar item shows this chat's tally and opens a Receipts list. |
 
@@ -161,6 +162,7 @@ A system prompt can ask a model to be honest. It can't make the model check itse
 | Every receipt, including unstamped unsure ones | `/nocap all` · `hermes nocap all` |
 | Make the agent prove it or take it back | `/cap` |
 | Honesty board / share card | `/capscore` · `/capscore card` · `hermes nocap score` · `hermes nocap card` |
+| Leaderboard (this profile; team view opt-in) | the dashboard's Cap Board tab · `/capscore board` · `hermes nocap board` |
 | Setup checks | `/nocap doctor` · `hermes nocap doctor` |
 | Delete the store | `/nocap purge` · `hermes nocap purge` |
 
@@ -173,6 +175,9 @@ restart needed):
 | `show_uncertain` | `off` | When to stamp 🤔. `off`: never (only 🧾 and 🧢). `strict`: only "tests pass" in a turn that ran no tests, showed no test output and ran no check script of the agent's own. `expected`: also other claim types that expect a receipt when nothing relevant ran (push, merge, deploy, file...). `all`: every unsure claim. `default` means `off` |
 | `check_numbers` | `true` | Also check counts like "changed 3 files" |
 | `retention_days` | `30` | How long receipts are kept |
+| `board.team_profiles` | unset (off) | Cap Board team view: `all`, or a list of profile names, to also show those profiles' stores (claims, cited commands and evidence lines). Off by default: the board shows only the profile it runs in. Even when set, only the CLI (`hermes nocap board`, a CLI session's `/capscore board`) and the dashboard tab show the team view; `/capscore board` in a gateway chat (Telegram, Discord, ...), the TUI or Desktop always shows the current profile |
+| `board_sources` | `""` | Team view only: extra stores beside the team profiles, `label=path` entries separated by `:` (a Hermes home, a `receipts.jsonl`, a folder searched for them up to 6 levels and 2000 folders deep, never through a symlink, or a glob). Also `NOCAP_BOARD_SOURCES` |
+| `board_min_claims` | `10` | Claims a row needs before the board shows and ranks its rates |
 | `self_verify_http` | `false` | Let `/cap` send one HTTP HEAD to a URL the agent says is live (public addresses only, no redirects, 3 s timeout) |
 | `desktop_chips` | `auto` | Hermes Desktop receipt chips. `auto`: while the desktop half is on (it checks in every 10 minutes). `on`: always on Desktop. `off`: text footer on Desktop too. Never on other surfaces |
 
@@ -219,6 +224,11 @@ Limits:
 - **Commands it runs:** only during `/cap`, two read-only git commands as argument lists (no shell) in the session's
   working directory, 5 s timeout, no fetch: `git cat-file -t <sha>` and `git rev-parse --verify <ref>`. It never
   re-runs tests or builds.
+- **Cap Board reads:** the dashboard tab and `/capscore board` read the current profile's own store. Only with the
+  `board.team_profiles` opt-in, and only in the CLI or the dashboard, they also read other profiles' stores
+  (`<root>/profiles/<name>/plugin-data/…/receipts.jsonl`, opened read-only) and the `board_sources` /
+  `NOCAP_BOARD_SOURCES` paths, and show those profiles' claims, cited commands and evidence lines to whoever can open
+  the dashboard. A gateway chat never gets another profile's data.
 - **Reads outside its data:** `/cap` checks whether a file the agent says it created exists (existence and size).
   `/nocap doctor` reads other plugins' `plugin.yaml` files to find other reply rewriters, and creates and deletes one
   probe file in its own store folder.

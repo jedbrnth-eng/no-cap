@@ -1,10 +1,14 @@
 {
   "name": "no-cap",
-  "label": "No Cap",
-  "description": "Backend for the No Cap Desktop half: receipt chips and the Receipts panel. Local files only.",
-  "icon": "Receipt",
-  "version": "0.1.0",
-  "tab": { "path": "/no-cap", "hidden": true },
+  "label": "Cap Board",
+  "description": "No Cap leaderboard: which agents, models and skills make the most false claims (🧢), live. This profile only unless the board.team_profiles opt-in is set. Read-only, local files only.",
+  "icon": "BarChart3",
+  "version": "0.2.0",
+  "tab": {
+    "path": "/cap-board",
+    "position": "after:kanban"
+  },
   "entry": "dist/index.js",
+  "css": "dist/style.css",
   "api": "plugin_api.py"
 }

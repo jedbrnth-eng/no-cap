@@ -19,12 +19,14 @@ from .render import EMOJI, TAG, claim_text, compose, dedupe, footer, receipt_lin
 from .store import Store
 from .verdict import CAP, DEFAULT_SHOW_UNCERTAIN, NO_CAP, NO_RECEIPT, judge, level_of, shown
 from .verify import recheck, suggestion
+from . import board  # Cap Board: identity at hook time, /capscore board
 
 MAX_OPEN_TURNS = 64
 MAX_CALLS = 500
 MODES = ("annotate", "strict", "quiet")
 STRICT_KINDS = {"tests", "build", "ci", "pushed", "merged", "deployed", "url", "file", "committed", "pr_opened"}
 MAX_STRICT_NUDGES = 2
+SKILL_TOOLS = ("skill_view", "skill")  # a turn "used" a skill when it loaded one with these tools
 
 
 def _match_key(r: Dict[str, Any]) -> Tuple:
@@ -62,6 +64,7 @@ class Engine:
         self.data_dir = data_dir
         self.inject = inject
         self.cwd = cwd or (lambda: "")
+        self.profile = board.profile_name  # who this turn runs as, recorded with each reply for the Cap Board
         self.store = Store(data_dir, lambda: setting("retention_days", 30))
         self._turns: "OrderedDict[Tuple[str, str], List[Dict[str, Any]]]" = OrderedDict()
         self._pending_cap: Dict[str, List[Dict[str, Any]]] = {}
@@ -79,6 +82,9 @@ class Engine:
                 self._turns.popitem(last=False)
             index = (calls[-1]["i"] + 1) if calls else 1
         ev = extract(tool_name, args, result, status=status, index=index, error_message=error_message)
+        if str(tool_name or "") in SKILL_TOOLS and ev.get("ok") and isinstance(args, dict) \
+                and isinstance(args.get("name"), str):  # a failed load (unknown skill) isn't a skill the turn used
+            ev["skill"] = args["name"].strip()[:80]
         with self._lock:
             calls.append(ev)
             if len(calls) > MAX_CALLS:  # keep the newest calls: the latest run is the one that matters
@@ -141,7 +147,7 @@ class Engine:
         visible = [r for r in receipts if not r["hidden"]]
         rescore = self._rescore(session_id, receipts)
         if receipts or evs or rescore:
-            self.store.append({"type": "reply", "ts": time.time(), "session_id": session_id, "turn_id": turn_id,
+            self.store.append({**self._who(evs), "type": "reply", "ts": time.time(), "session_id": session_id, "turn_id": turn_id,
                                "model": model or "unknown", "platform": platform or "", "mode": self.mode(),
                                "calls": _cited(evs, receipts), "ledger": _ledger(evs), "receipts": receipts,
                                "rescore": rescore})
@@ -170,6 +176,14 @@ class Engine:
         if choice == "auto":
             return desktop.desktop_live(Path(self.data_dir()))
         return choice == "on"
+
+    def _who(self, evs: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Cap Board identity: the Hermes profile and the skills loaded in this turn (fail open to unknown)."""
+        try:
+            profile = str(self.profile() or "")[:64]
+        except Exception:
+            profile = ""
+        return {"profile": profile, "skills": sorted({e["skill"] for e in evs if e.get("skill")})}
 
     def _rescore(self, session_id: str, receipts: List[Dict[str, Any]]) -> List[str]:
         with self._lock:
@@ -261,9 +275,16 @@ class Engine:
             out.append(f"{i}. {TAG[r['verdict']]} your reply said “{claim}” ({why}) → {suggestion(r, test_cmds)}")
         return "\n".join(out)
 
-    def capscore(self, raw_args: str = "", session_id: str = "") -> str:
-        records = self.store.records()
+    def capscore(self, raw_args: str = "", session_id: str = "", platform: str = "") -> str:
         arg = (raw_args or "").strip().lower()
+        if arg in ("board", "team"):
+            # Own profile only unless board.team_profiles opts in AND this is the CLI (never a gateway chat).
+            srcs, scope = board.scoped_sources(team=self.setting("board.team_profiles", None), platform=platform,
+                                               extra=self.board_sources())
+            b = board.build_board(srcs, min_claims=self.board_min_claims())
+            b["scope"] = scope
+            return board.board_text(b)
+        records = self.store.records()
         if arg in ("card", "image", "png", "share"):
             rows = score.table(records)
             mine = [r for r in score.scored(records) if r.get("session_id") == session_id]
@@ -272,6 +293,17 @@ class Engine:
                 return "🧾 Cap Score: no checked replies yet, so there's no card to make."
             return "🖼️ Scorecard saved: " + " · ".join(str(p) for p in paths)
         return score.leaderboard_text(records, session_id)
+
+    def board_sources(self) -> List[Any]:
+        extra = board.env_sources()
+        extra += board.parse_sources(self.setting("board_sources", "") or "")
+        return extra
+
+    def board_min_claims(self) -> int:
+        try:
+            return max(1, int(self.setting("board_min_claims", board.MIN_CLAIMS) or board.MIN_CLAIMS))
+        except (TypeError, ValueError):
+            return board.MIN_CLAIMS
 
     def doctor_report(self) -> Tuple[str, int]:
         return doctor.check(Path(self.home()), self.mode(), self.entry() or {}, self.store.path, self.store.records(),
