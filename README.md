@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-2149%20passing-2ea043" alt="2149 tests passing">
+  <img src="https://img.shields.io/badge/tests-2152%20passing-2ea043" alt="2152 tests passing">
   <img src="https://img.shields.io/badge/Hermes-0.22.5%2B-7c3aed" alt="Hermes 0.22.5+">
   <img src="https://img.shields.io/badge/tested%20on-macOS-555" alt="Tested on macOS">
   <img src="https://img.shields.io/badge/network-none-2ea043" alt="No network">
@@ -205,7 +205,7 @@ Limits:
 ## Known limits and what is not tested
 
 - English claims only. Claims inside code blocks and quotes are ignored on purpose.
-- Long inputs are read in a window, so no hook can stall Hermes (every parser stays under 50 ms on 100 KB of
+- Long inputs are read in a window, so no hook can stall Hermes (every parser stays under 50 ms of CPU time on 100 KB of
   adversarial input; `tests/test_redos.py`, `scripts/redos_timings.py`). Per tool output: the first 8 KB and the last
   32 KB, plus up to 400 summary or failure lines from the middle (the full output is never stored). A longer run that
   exited non-zero never earns 🧾. Per command: the first 16 KB. Per reply: the first 64 KB, and claims are read from
