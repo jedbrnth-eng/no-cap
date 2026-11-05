@@ -98,6 +98,9 @@ def test_page_marks_pending_detector_only_when_not_caught(tmp_path):
     assert page.pending(r_merge)
     r_deploy = {"kind": "deployed", "verdict": "NO_RECEIPT", "text": "x", "why": "no deploy command", "cite": None}
     assert not page.pending(r_deploy)        # 🤔 "no deploy command in this turn" is the intended catch
+    # the note says why it isn't 🧢 (no network for PR numbers), not that a detector is still to come
+    html = page.build([{"type": "reply", "session_id": "s", "receipts": [r_merge]}], "s", {}, {}, rungs=["merge"])
+    assert "no network calls" in html and "another PR" not in html
 
 
 def test_slash_demo_refuses_chat_platforms_and_spawns_locally(tmp_path, monkeypatch):

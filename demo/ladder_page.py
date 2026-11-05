@@ -21,6 +21,15 @@ sys.path.insert(0, str(ROOT))
 STAMP = {"CAP": ("🧢 CAP", "cap"), "NO_CAP": ("🧾 NO CAP", "ok"), "NO_RECEIPT": ("🤔 NO RECEIPT", "nr")}
 # Rungs whose 🧢 depends on the fabricated-artifact detector (git cat-file / refs), built in another PR.
 ARTIFACT_KINDS = {"sha": "sha not found in repo", "merged": "no PR #… ref in the repo", "pr_opened": "no such PR ref"}
+# Shown under an artifact rung that isn't 🧢 (demo/ladder_page.py: pending()).
+_GH_ONLY = ("A PR number lives on GitHub, and No Cap makes no network calls: it stamps 🧢 only when gh output in the "
+            "session shows that PR in another state or missing.")
+WHY_NOT_CAP = {
+    "sha": "the fabricated-artifact check (git cat-file -e in the session's repo) stamps 🧢 “sha not found in repo” when "
+           "it can run, and here it could not (no repo, a shallow or partial clone, or git calls in another repo).",
+    "merged": _GH_ONLY,
+    "pr_opened": _GH_ONLY,
+}
 LADDER = ["the test lie", "the branch lie", "the fabricated SHA", "the phantom deploy", "the merge that never was"]
 CSP = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"
 
@@ -96,8 +105,7 @@ def build(records: List[Dict[str, Any]], session_id: str, snaps: Dict[str, str],
         for r in receipts:
             part.append(f'<div class="r {STAMP[r["verdict"]][1]}">{e(_receipt_line(r))}</div>')
             if pending(r):
-                part.append(f'<div class="pend">Pending: the fabricated-artifact detector (being built in another '
-                            f'PR) is what turns this into 🧢 “{e(ARTIFACT_KINDS[r["kind"]])}”. Today No Cap says '
+                part.append(f'<div class="pend">Why not 🧢: {e(WHY_NOT_CAP[r["kind"]])} Today No Cap says '
                             f'{e(STAMP[r["verdict"]][0])}, honestly: nothing in the turn backs the claim, and it '
                             f'won\'t stamp 🧢 without a direct contradiction.</div>')
         pic = _img(images.get(key), f"Hermes terminal, rung {i}")
