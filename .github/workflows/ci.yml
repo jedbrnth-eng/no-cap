@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GITLEAKS_VERSION: "8.30.1"
+  GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"  # gitleaks_8.30.1_linux_x64.tar.gz
+
+jobs:
+  tests:
+    name: pytest (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install pinned test tools (hash-checked)
+        run: python -m pip install --require-hashes --no-deps -r .github/requirements-ci.txt
+      - name: pytest
+        run: python -m pytest -c tests/pytest.ini tests -q
+
+  redos:
+    name: ReDoS time budget
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install pinned test tools (hash-checked)
+        run: python -m pip install --require-hashes --no-deps -r .github/requirements-ci.txt
+      - name: Every parser under 50 ms of CPU on ~100 KB adversarial input (gate)
+        run: python -m pytest -c tests/pytest.ini tests/test_redos.py -v
+      - name: Wall-clock timing table (report only; shared runners are noisy)
+        run: python scripts/redos_timings.py --all || echo "::warning::wall-clock table over budget on this runner (the CPU-time gate above decides)"
+
+  security:
+    name: gitleaks + bandit + personal-data grep
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0  # gitleaks scans the full history
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install gitleaks (checksum-verified release binary)
+        run: |
+          f="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$f" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/$f"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/$f" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$f" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" version
+      - name: gitleaks over the full history (only tests/test_redaction.py fixtures are allowed)
+        run: |
+          "$RUNNER_TEMP/gitleaks" git --config .gitleaks.toml --redact --no-banner -v .
+      - name: gitleaks over the working tree
+        run: |
+          "$RUNNER_TEMP/gitleaks" dir --config .gitleaks.toml --redact --no-banner -v .
+      - name: Install pinned bandit (hash-checked)
+        run: python -m pip install --require-hashes --no-deps -r .github/requirements-ci.txt
+      - name: bandit on the plugin code (medium or higher fails; lows are listed)
+        run: |
+          bandit -r nocap __init__.py -f txt || true
+          bandit -r nocap __init__.py -ll -q
+      - name: Personal-data grep (home paths, emails other than example/noreply)
+        run: |
+          set +e
+          # an absolute home path (not .../home/... inside a throwaway /tmp HERMES_HOME)
+          hits=$(git grep -nIE '(^|[^[:alnum:]_./-])(/Users/[A-Za-z]|/home/[a-z][a-z0-9_-]*/)')
+          mails=$(git grep -nIoE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' \
+                  | grep -viE '@(example\.(com|org|net)|users\.noreply\.github\.com)$')
+          if [ -n "$hits$mails" ]; then
+            printf '%s\n%s\n' "$hits" "$mails"
+            echo "::error::personal data in the tree (see above)"
+            exit 1
+          fi
+          echo "no home paths or personal emails"
