@@ -17,10 +17,24 @@ from typing import Any, Dict, List, Optional
 CJK_RE = re.compile(r"[\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af]")
 THAI_RE = re.compile(r"[\u0e00-\u0e7f]")
 NON_LATIN_RE = re.compile(r"[\u0400-\u04ff\u0e00-\u0e7f\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af]")
-ES_HINT_RE = re.compile(r"(?i)prueba|\btests? (?:pasa|pasaron)|hice push|\bsub[ií]\b|he subido|fusion|merge[eé]|despleg|desplieg|"
-                        r"producci[oó]n|integr[eé]|listo|hecho|terminad|termin[eé]|arregl|resuelt|solucion|correg")
-OTHER_HINT_RE = re.compile(r"(?i)erledigt|fertig|behoben|gepusht|gemergt|termin[ée]|corrig[ée]|pouss[ée]|fusionn[ée]|"
+# The two hint patterns run on lowercased text without IGNORECASE, and every branch starts with a plain literal
+# ("\bsub" is written s(?<!\ws)ub): `re` then skips, in C, every position whose character can't start a branch.
+# With (?i) and a leading \b, each pattern tried every branch at each of 100 K positions (14-19 ms per scan, run
+# on every clause; tests/test_redos.py). Use _es_hint / _other_hint, which lowercase first.
+ES_HINT_RE = re.compile(r"prueba|t(?<!\wt)ests? (?:pasa|pasaron)|hice push|s(?<!\ws)ub[ií]\b|he subido|fusion|merge[eé]|despleg|"
+                        r"desplieg|producci[oó]n|integr[eé]|listo|hecho|terminad|termin[eé]|arregl|resuelt|solucion|correg")
+OTHER_HINT_RE = re.compile(r"erledigt|fertig|behoben|gepusht|gemergt|termin[ée]|corrig[ée]|pouss[ée]|fusionn[ée]|"
                            r"d[ée]ploy[ée]|conclu[ií]d|corrigid|feito|mesclad|implantad")
+
+
+def _es_hint(text: str) -> bool:
+    return ES_HINT_RE.search(text.lower()) is not None
+
+
+def _other_hint(text: str) -> bool:
+    return OTHER_HINT_RE.search(text.lower()) is not None
+
+
 # Pieces: a run of text up to and including one sentence or clause mark (。！？；，、 , ; ! ? and Thai space runs).
 PIECE_RE = re.compile(r"[^。！？；，、,;!?\n]{1,400}[。！？；，、,;!?]?")
 BRANCH_RE = r"`?(?:origin/|upstream/)?([A-Za-z0-9][A-Za-z0-9_./-]{0,80})`?"
@@ -136,19 +150,20 @@ KANA_HANGUL_CYR_RE = re.compile(r"[\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff]")
 
 
 HAN_RE = re.compile(r"[\u4e00-\u9fff]")
+KANA_RE = re.compile(r"[\u3040-\u30ff]")
 
 
 def _languages(text: str) -> List[str]:
     """The checked languages a piece may be in (zh, th, es); "other" if it is in a script or language with no
     checker yet (Japanese kana, Korean, Cyrillic, German, French, Portuguese). Empty for plain English."""
     out = []
-    if HAN_RE.search(text) and not re.search(r"[\u3040-\u30ff]", text):
+    if HAN_RE.search(text) and not KANA_RE.search(text):
         out.append("zh")  # Japanese also writes kanji: with kana in the piece, it isn't read as Chinese
     if THAI_RE.search(text):
         out.append("th")
-    if ES_HINT_RE.search(text):
+    if _es_hint(text):
         out.append("es")
-    if KANA_HANGUL_CYR_RE.search(text) or OTHER_HINT_RE.search(text):
+    if KANA_HANGUL_CYR_RE.search(text) or _other_hint(text):
         out.append("other")
     return out
 
@@ -156,7 +171,7 @@ def _languages(text: str) -> List[str]:
 def foreign_claims(clause: str) -> List[Dict[str, Any]]:
     """Claims in a clause written in Chinese, Thai or Spanish (or an `unchecked` completion phrase in another
     language). English clauses return [] after one cheap scan."""
-    if not clause or not (NON_LATIN_RE.search(clause) or ES_HINT_RE.search(clause) or OTHER_HINT_RE.search(clause)):
+    if not clause or not (NON_LATIN_RE.search(clause) or _es_hint(clause) or _other_hint(clause)):
         return []
     out: List[Dict[str, Any]] = []
     for pm in PIECE_RE.finditer(clause[:4000]):

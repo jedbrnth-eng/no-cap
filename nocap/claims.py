@@ -18,7 +18,7 @@ MAX_CLAIMS = 200
 MAX_CLAUSE_TEXT = 10_000  # characters of candidate clauses checked per reply (real replies use a few hundred)
 MAX_CLAUSES = 500
 STAMP_RE = re.compile(r"🧾\s*NO CAP|🧢\s*CAP|🤔\s*NO RECEIPT|🫡\s*retracted|\*\*Receipts\*\*|🔁\s*/cap re-score:?|"
-                      r"\bNO CAP\b|\bNO RECEIPT\b|[🧾🧢🤔🔁🫡]")
+                      r"N(?<!\wN)O CAP\b|N(?<!\wN)O RECEIPT\b|[🧾🧢🤔🔁🫡]")  # N(?<!\wN) is \bN, written so `re` can skip ahead
 IMPERATIVE_RE = re.compile(r"^(?:run|try|use|check|make|ensure|verify|open|install|set|add|please|consider|remember|"
                            r"don't|do not|click|type|paste|see|read|rerun|re-run|approve|pick|choose|decide|reply|tell|"
                            r"ask|say|send|keep|wait)\b", re.I)
@@ -183,27 +183,53 @@ def forged_stamps(text: str) -> int:
 
 # Every claim kind needs one of these (a digit for numbers and SHAs, a verb or noun for the rest). A clause without
 # any of them can't hold a claim, so it is skipped before the ~60 claim regexes run (long replies stay fast).
-_GATE = (r"\d|test|spec|suite|pytest|jest|vitest|mocha|pass|fail|\bci\b|check|action|workflow|pipeline|green|succe|"
-         r"build|compil|merg|land|push|commit|\bprs?\b|pull|deploy|ship|publish|releas|roll|live|\bup\b|online|http|head|"
-         r"creat|wr[io]t|sav|updat|add|edit|modif|generat|export|render|mov|renam|delet|remov|patch|chang|fix|refactor|"
-         r"失败|错误|跳过|未通过|测试|通过|推送|合并|合入|部署|上线|发布|完成|搞定|修复|ทดสอบ|เทส|ผ่าน|พุช|เมิร์|"
-         r"ดีพลอย|เสร็จ|เรียบร้อย|prueba|sub[ií]|fusion|despleg|producci|integr|listo|hecho|terminad|arregl|resuelt|"
-         r"完了|成功|ました|완료|통과|푸시|병합|배포|готово|сделано|исправ|erledigt|fertig|behoben|termin|corrig|conclu|implant")
-GATE_RE = re.compile(_GATE, re.I)
-_GATE_LOWER_RE = re.compile(_GATE)  # on lowercased text: no ignore-case, so re can skip ahead by first character
+# The words are one alternation in which every branch starts with a plain literal ("\bci\b" is written c(?<!\wc)i\b), run
+# on lowercased text without IGNORECASE: `re` then builds a first-character set and skips, in C, every position that
+# can't start a gate word. Digits are a second pattern (`\d` is one character set, so it gets the same skip). In one
+# alternation, a `\d` or a leading `\b` branch made `re` try all ~100 branches at each of 64 K positions: a 100 KB
+# Thai run took 70-110 ms of CPU (tests/test_redos.py).
+_GATE_WORDS = (r"test|spec|suite|pytest|jest|vitest|mocha|pass|fail|c(?<!\wc)i\b|check|action|workflow|"
+               r"pipeline|green|succe|"
+               r"build|compil|merg|land|push|commit|p(?<!\wp)rs?\b|pull|deploy|ship|publish|releas|roll|live|u(?<!\wu)p\b|"
+               r"online|http|head|"
+               r"creat|wr[io]t|sav|updat|add|edit|modif|generat|export|render|mov|renam|delet|remov|patch|chang|fix|refactor|"
+               r"失败|错误|跳过|未通过|测试|通过|推送|合并|合入|部署|上线|发布|完成|搞定|修复|ทดสอบ|เทส|ผ่าน|พุช|เมิร์|"
+               r"ดีพลอย|เสร็จ|เรียบร้อย|prueba|sub[ií]|fusion|despleg|producci|integr|listo|hecho|terminad|arregl|resuelt|"
+               r"完了|成功|ました|완료|통과|푸시|병합|배포|готово|сделано|исправ|erledigt|fertig|behoben|termin|corrig|conclu|implant")
+_GATE = r"\d|" + _GATE_WORDS
+GATE_RE = re.compile(_GATE, re.I)  # the same test in one pattern; the hot paths use _gated / _gate_lines below
+_GATE_WORDS_RE = re.compile(_GATE_WORDS)  # on lowercased text only
+_DIGIT_RE = re.compile(r"\d")
+_ONE_TO_ONE = {0x130: "i"}  # "İ" is the only code point whose lower() is two characters: map it so offsets hold
+
+
+def _lower(text: str) -> str:
+    """text.lower() with the same length as text, so match offsets are offsets into text."""
+    return text.translate(_ONE_TO_ONE).lower() if "\u0130" in text else text.lower()
+
+
+def _gated(text: str) -> bool:
+    return _DIGIT_RE.search(text) is not None or _GATE_WORDS_RE.search(_lower(text)) is not None
 
 
 def _gate_lines(masked: str) -> Iterator[Tuple[int, str]]:
-    """The lines that contain a gate word, in order (one regex pass, then a find per line: linear)."""
-    low, end = masked.lower(), -1
-    hits = _GATE_LOWER_RE.finditer(low) if len(low) == len(masked) else GATE_RE.finditer(masked)
-    for m in hits:
-        if m.start() <= end:
-            continue
-        start = masked.rfind("\n", 0, m.start()) + 1
-        end = masked.find("\n", m.start())
-        end = len(masked) if end < 0 else end
+    """The lines that contain a gate word, in order. Each pattern's next hit is kept until the scan passes it, and
+    each search starts after the last yielded line, so no character is scanned twice by the same pattern (linear)."""
+    low, pos, n = _lower(masked), 0, len(masked)
+    nxt = {_DIGIT_RE: -1, _GATE_WORDS_RE: -1}  # next hit start per pattern (-1: not searched yet, n + 1: none left)
+    while pos <= n:
+        for rx in nxt:
+            if nxt[rx] < pos:
+                m = rx.search(low, pos)
+                nxt[rx] = m.start() if m else n + 1
+        hit = min(nxt.values())
+        if hit > n:
+            return
+        start = masked.rfind("\n", 0, hit) + 1
+        end = masked.find("\n", hit)
+        end = n if end < 0 else end
         yield start, masked[start:end]
+        pos = end + 1
 
 
 def _clauses(masked: str) -> Iterator[Tuple[int, str, str]]:
@@ -535,6 +561,8 @@ def admissions(text: str) -> List[Tuple[int, int]]:
     failing tests now pass") is not an admission unless it also says something still fails."""
     low = text.lower()
     out: List[Tuple[int, int]] = []
+    if "fail" not in low and "error" not in low and "broken" not in low:
+        return out  # every admission pattern needs one of these words: skip six full-text scans (tests/test_redos.py)
     for rx in _ADMIT_RES:
         for m in rx.finditer(text if rx.pattern.startswith("(?m)") else low):
             a = max(low.rfind(".", 0, m.start()), low.rfind("\n", 0, m.start())) + 1
@@ -563,7 +591,7 @@ def extract_claims(text: str) -> List[Dict[str, Any]]:
     seen = set()
     budget, n_clauses, acked_cache = MAX_CLAUSE_TEXT, 0, {}
     for start, clause, (sent_id, sentence) in _clauses(masked):
-        if not GATE_RE.search(clause):
+        if not _gated(clause):
             continue
         budget -= len(clause)
         n_clauses += 1
