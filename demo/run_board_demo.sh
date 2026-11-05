@@ -97,6 +97,8 @@ fi
 
 say "6/6 the board"
 HERMES_HOME="$ROOTH" hermes nocap board || true
+stop_home "$ROOTH"
+[ -f "$WORK/stub.pid" ] && kill "$(cat "$WORK/stub.pid")" 2>/dev/null || true
 echo
 echo "dashboard: HERMES_HOME=$ROOTH hermes dashboard --port $DPORT --no-open --skip-build"
 echo "work dir:  $WORK"
