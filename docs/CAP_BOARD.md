@@ -88,5 +88,17 @@ real `pytest`, real `git push` to a local bare origin, real `skill_view`. Disclo
 (`demo/board_backfill.py`), which go through the installed plugin's own hooks with real command output and the clock
 shifted 8-12 days back so the trend has a previous week. No store line is written by hand.
 
-Performance: 10,000 records (13 MB) from three profiles build the whole board in about 100-160 ms of CPU cold, and
-about 10 ms warm (incremental cache), `tests/test_board.py::test_10k_records_under_200ms`.
+Screenshots (`docs/media/board-run/`, real dashboard, real browser, throwaway root):
+
+| File | What it shows |
+|---|---|
+| `01-board.png` | the board: alpha, beta, gamma from real `hermes chat` turns (+ disclosed backfill), and two real-model arena stores (qwen3-4b, partial) greyed under the min-sample rule |
+| `02-live-before.png`, `03-live-flash.png`, `04-live-after.png`, `live-poll-log.txt` | live refresh: two more real gamma turns land while the tab is open; the row flashes and its counts move with no reload |
+| `05-filter-skill-github.png` | filtered to the `github` skill: one agent, n=7, so no rate and no rank |
+| `06-skills-view.png` | the Skills view |
+| `07-arena-real-model-partial.png` | filtered to the real model (qwen3-4b arena runs, 7 replies, 5 claims so far): nothing ranked yet |
+| `capscore-board.txt` | `hermes nocap board` on the same root |
+
+Performance: 10,000 records (13 MB) from three profiles build the whole board in about 70 ms of CPU cold on a quiet
+machine (up to ~170 ms with the load average above 60), and about 10 ms warm thanks to the incremental cache:
+`tests/test_board.py::test_10k_records_under_200ms` (best of five cold reads, CPU time).
