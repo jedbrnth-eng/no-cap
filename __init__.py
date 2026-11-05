@@ -16,6 +16,7 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 
+from .nocap import compare_card, export, ladder, verdict_card
 from .nocap.engine import Engine
 from .nocap.surfaces.discord import DiscordSurface
 
@@ -139,6 +140,40 @@ def register(ctx: Any) -> None:
     ctx.register_command("nocap", handler=command(engine.nocap), args_hint="[all|battery|doctor|purge|help]",
                          description="No Cap receipts for the last reply, and store admin")
 
+    # Showpieces (verdict card, A/B card, Lie Ladder): /capscore and /nocap are registered again with wrappers that
+    # add the new subcommands and fall through to the engine. Hermes keeps the last registration of a name.
+    data = lambda: Path(engine.data_dir())
+
+    def capscore(raw_args: str = "", session_id: str = "", platform: str = "") -> str:
+        if (raw_args or "").strip().lower().split()[:1] == ["compare"]:
+            return compare_card.command(engine.store.records(), data(), raw_args)
+        return engine.capscore(raw_args, session_id=session_id, platform=platform)
+
+    def nocap(raw_args: str = "", session_id: str = "", platform: str = "") -> str:
+        words = (raw_args or "").strip().lower().split()
+        if words[:1] == ["verdict"]:
+            return verdict_card.command(engine.store.records(), data(), session_id)
+        if words[:1] == ["demo"]:
+            if words[1:2] != ["ladder"]:
+                return "Usage: /nocap demo ladder  (or `hermes nocap demo --ladder` in a terminal)"
+            return ladder.start(platform)
+        out = engine.nocap(raw_args, session_id=session_id)
+        if words[:1] == ["purge"]:  # the verdict and compare cards quote claims too: they go with the store
+            verdict_card.remove(data())
+            compare_card.remove(data())
+        elif words[:1] in (["help"], ["?"]):
+            out += (" · /nocap verdict → courtroom verdict card for this session · /capscore compare A B → honesty "
+                    "A/B card · /nocap demo ladder → the Lie Ladder demo (local)")
+        return out
+
+    ctx.register_command("capscore", handler=command(capscore, wants_platform=True),
+                         args_hint="[card|board|compare A B]",
+                         description="Cap Score: which model caps most, streaks, shareable scorecard; board = Cap Board "
+                                     "(this profile); compare A B = honesty A/B card")
+    ctx.register_command("nocap", handler=command(nocap, wants_platform=True),
+                         args_hint="[all|verdict|battery|doctor|purge|demo ladder|help]",
+                         description="No Cap receipts for the last reply, the session verdict card, and store admin")
+
     def setup(subparser: Any) -> None:
         subs = subparser.add_subparsers(dest="nocap_cmd")
         last = subs.add_parser("last", help="Receipts for the most recent checked reply")
@@ -147,6 +182,20 @@ def register(ctx: Any) -> None:
         subs.add_parser("score", help="Cap Score leaderboard")
         subs.add_parser("card", help="Write the shareable scorecard image")
         subs.add_parser("board", help="Cap Board: top cappers per agent, model and skill (this profile; board.team_profiles for a team view)")
+        v = subs.add_parser("verdict", help="Courtroom verdict card (SVG + PNG) for a session's receipts")
+        v.add_argument("--session", default="", help="session id (default: the latest session with receipts)")
+        sc = subs.add_parser("scorecard", help="Shareable scorecard; --compare A B for the honesty A/B card")
+        sc.add_argument("--compare", nargs=2, metavar=("MODEL_A", "MODEL_B"))
+        ex = subs.add_parser("export", help="Export receipts (redacted) as JSON or CSV")
+        fmt = ex.add_mutually_exclusive_group(required=True)
+        fmt.add_argument("--json", action="store_true")
+        fmt.add_argument("--csv", action="store_true")
+        ex.add_argument("--out", default="", help="write to this file (0600) instead of stdout")
+        me = subs.add_parser("metrics", help="Write Prometheus text-format metrics to a file (no port, no listener)")
+        me.add_argument("--file", required=True)
+        de = subs.add_parser("demo", help="Demo theater; --ladder runs the Lie Ladder in a throwaway home")
+        de.add_argument("--ladder", action="store_true", required=True)
+        de.add_argument("--out", default="", help="output folder (default: a new one under /tmp)")
         subs.add_parser("purge", help="Delete the local receipt store")
         subs.add_parser("path", help="Print where receipts are stored")
         subs.add_parser("doctor", help="Setup checks: reply-transform conflicts, /cap injection, store")
@@ -170,12 +219,43 @@ def register(ctx: Any) -> None:
             text, problems = engine.doctor_report()
             print(text)
             return 1 if problems else 0  # Hermes turns a handler's int into the process exit code
+        elif sub == "verdict":
+            print(verdict_card.command(engine.store.records(), data(), getattr(args, "session", "") or ""))
+        elif sub == "scorecard":
+            pair = getattr(args, "compare", None)
+            if pair:
+                print(compare_card.command(engine.store.records(), data(), " ".join(_quote(x) for x in pair)))
+            else:
+                print(engine.capscore("card"))
+        elif sub == "export":
+            text = export.to_json(engine.store.records()) if args.json else export.to_csv(engine.store.records())
+            if args.out:
+                try:
+                    print(f"wrote {export.write_private(Path(args.out), text)}")
+                except OSError as exc:
+                    print(f"no-cap: can't write {args.out}: {exc}")
+                    return 1
+            else:
+                print(text, end="")
+        elif sub == "metrics":
+            try:
+                path = export.write_private(Path(args.file), export.metrics(engine.store.records()))
+            except OSError as exc:
+                print(f"no-cap: can't write {args.file}: {exc}")
+                return 1
+            print(f"wrote {path} (Prometheus text format; file only, no listener)")
+        elif sub == "demo":
+            return ladder.run(getattr(args, "out", "") or None)
         elif sub == "all":
             print(engine.nocap("all"))
         elif sub == "battery":
             print(engine.battery())
         else:
             print(engine.nocap("", session_id=getattr(args, "session", "") or ""))
+
+    def _quote(x: str) -> str:
+        import shlex
+        return shlex.quote(x)
 
     ctx.register_cli_command(name="nocap", help="No Cap receipts, Cap Score and store admin",
                              setup_fn=setup, handler_fn=cli)
