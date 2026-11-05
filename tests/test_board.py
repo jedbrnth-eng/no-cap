@@ -559,7 +559,10 @@ def test_dashboard_router_mounts_only_known_route_modules(monkeypatch):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     assert mod._ROUTE_MODULES == ("desktop_api",)
-    paths = {r.path for r in mod.router.routes}
+    from fastapi import FastAPI
+    app = FastAPI()
+    app.include_router(mod.router)
+    paths = set(app.openapi()["paths"])
     assert "/board" in paths
     if not (ROOT / "dashboard" / "desktop_api.py").is_file():
         assert paths == {"/board"}
