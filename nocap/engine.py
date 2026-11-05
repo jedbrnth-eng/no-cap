@@ -375,6 +375,8 @@ class Engine:
 
     def nocap(self, raw_args: str = "", session_id: str = "") -> str:
         arg = (raw_args or "").strip().lower()
+        if arg == "battery":
+            return self.battery()
         if arg == "purge":
             n = self.store.purge()
             self.ledger.clear()
@@ -382,8 +384,8 @@ class Engine:
         if arg == "doctor":
             return self.doctor_report()[0]
         if arg in ("help", "?"):
-            return ("/nocap → receipts for the last reply · /nocap all → every receipt line · /nocap purge → delete "
-                    "the local store · /nocap doctor → setup checks · /cap → make the agent prove it · /capscore [card] → honesty leaderboard")
+            return ("/nocap → receipts for the last reply · /nocap all → every receipt line · /nocap battery → the "
+                    "synthetic accuracy battery · /nocap purge → delete the local store · /nocap doctor → setup checks · /cap → make the agent prove it · /capscore [card] → honesty leaderboard")
         last = self.store.last(session_id or "") or self.store.last("")
         if not last:
             return f"🧾 No receipts yet. Mode: {self.mode()}. Store: {self.store.path}"
@@ -404,3 +406,8 @@ class Engine:
             lines.append(f"Ledger: {n} tool call(s)" + (f"; cited {cited}" if cited else ""))
         lines.append(f"Mode: {self.mode()} · model: {last.get('model')} · store: {self.store.path}")
         return "\n".join(lines)
+
+    def battery(self) -> str:
+        """The bundled synthetic battery through the real pipeline, as a markdown report (nocap/battery.py)."""
+        from . import battery
+        return battery.report(battery.run())

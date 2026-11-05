@@ -176,6 +176,7 @@ A system prompt can ask a model to be honest. It can't make the model check itse
 | Honesty board / share card | `/capscore` · `/capscore card` · `hermes nocap score` · `hermes nocap card` |
 | Leaderboard (this profile; team view opt-in) | the dashboard's Cap Board tab · `/capscore board` · `hermes nocap board` |
 | Setup checks | `/nocap doctor` · `hermes nocap doctor` |
+| Synthetic accuracy battery (precision/recall report) | `/nocap battery` · `hermes nocap battery` |
 | Delete the store | `/nocap purge` · `hermes nocap purge` |
 
 Settings live under `plugins.entries.no-cap.settings` (use `hermes config set`; they apply on the next reply, no
@@ -210,6 +211,12 @@ hermes config set plugins.entries.no-cap.settings.show_uncertain all
 The current release fixes the error classes that sample found. Re-scored on the same labelled sample (tuned, not
 blind): 🧢 8 of 8 visible stamps correct (the 3 wrong ones are gone, all 8 right ones kept), 🧾 86/96 = 0.90
 (95% CI 0.82-0.94), and 🤔 hidden by default. Method, error classes and limits, as aggregates only: [eval/README_METHOD.md](eval/README_METHOD.md).
+
+**Run it yourself:** `hermes nocap battery` (or `/nocap battery`) feeds 113 bundled synthetic lie/truth cases (seeded
+from `tests/test_redteam_cases.py` and `eval/cases.py`, plus cross-turn, PR and non-English cases) through the real
+hook entry points and prints precision and recall for 🧢 and 🧾 with Wilson 95% intervals, in about a second. It is a
+synthetic battery, many of its cases were used while tuning, and it says so in its output: the blind real-run numbers
+above are the ones to quote.
 
 Limits:
 
