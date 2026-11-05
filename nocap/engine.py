@@ -146,28 +146,23 @@ class Engine:
         receipts = [dict(r, hidden=not shown(r, level)) for r in receipts]
         visible = [r for r in receipts if not r["hidden"]]
         rescore = self._rescore(session_id, receipts)
-        chips, chip_ids = None, None
-        if on_desktop and visible and session_id and self.mode() != "quiet" and self.desktop_chips():
-            desktop.drop_legacy_key(Path(self.data_dir()))
-            chips, chip_ids = desktop.directive(dedupe(visible), session_id, turn_id)
         if receipts or evs or rescore:
-            rec = {**self._who(evs), "type": "reply", "ts": time.time(), "session_id": session_id, "turn_id": turn_id,
-                   "model": model or "unknown", "platform": platform or "", "mode": self.mode(),
-                   "calls": _cited(evs, receipts), "ledger": _ledger(evs), "receipts": receipts, "rescore": rescore}
-            if chip_ids:  # lets /verify vouch for this chip after a restart (ids and a digest, never a key)
-                rec["chip"] = chip_ids
-            self.store.append(rec)
-            if on_desktop:  # the Receipts popover in Desktop refreshes on this (no-op when no window listens)
-                try:
-                    self.broadcast("receipts.updated", {"session_id": session_id})
-                except Exception:
-                    pass
+            self.store.append({**self._who(evs), "type": "reply", "ts": time.time(), "session_id": session_id, "turn_id": turn_id,
+                               "model": model or "unknown", "platform": platform or "", "mode": self.mode(),
+                               "calls": _cited(evs, receipts), "ledger": _ledger(evs), "receipts": receipts,
+                               "rescore": rescore})
         streak = None
         if visible:
             mine = [r for r in self.store.records() if r.get("session_id") == session_id]
             streak = score.streak(mine)
             if streak < 2:
                 streak = None
+        chips = self._desktop_chip(on_desktop, visible, session_id, turn_id)
+        if on_desktop and (receipts or evs or rescore):  # the Receipts popover refreshes (no-op without a window)
+            try:
+                self.broadcast("receipts.updated", {"session_id": session_id})
+            except Exception:
+                pass
         forged = forged_stamps(response_text) + planted
         notes = [f"⚠️ This reply contained {forged} stamp(s) No Cap didn't issue. They were ignored."] if forged else None
         out = compose(response_text, visible, self.mode(), rescore, streak, notes,
@@ -175,13 +170,6 @@ class Engine:
         if out is None and planted:  # quiet mode: no footer, but a planted directive still never goes out
             return response_text
         return out
-
-    def desktop_chips(self) -> bool:
-        """Desktop receipt chips: on, off, or auto (only while the desktop half has said hello recently)."""
-        choice = desktop.setting_of(self.setting("desktop_chips", "auto"))
-        if choice == "auto":
-            return desktop.desktop_live(Path(self.data_dir()))
-        return choice == "on"
 
     def _who(self, evs: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Cap Board identity: the Hermes profile and the skills loaded in this turn (fail open to unknown)."""
@@ -196,7 +184,7 @@ class Engine:
             pending = self._pending_cap.pop(session_id, None)
         if not pending:  # /cap may have run in another process (gateway vs CLI): read it from the store
             for rec in reversed(self.store.records()):
-                if rec.get("session_id") != session_id or rec.get("type") == "recheck":
+                if rec.get("session_id") != session_id or rec.get("type") in ("recheck", "chip"):
                     continue
                 if rec.get("type") == "cap":
                     pending = rec.get("receipts") or []
@@ -314,6 +302,25 @@ class Engine:
     def doctor_report(self) -> Tuple[str, int]:
         return doctor.check(Path(self.home()), self.mode(), self.entry() or {}, self.store.path, self.store.records(),
                             self.enabled, show_uncertain=self.show_uncertain(), desktop_line=self._desktop_line())
+
+    def _desktop_chip(self, on_desktop: bool, visible: List[Dict[str, Any]], session_id: str,
+                      turn_id: str) -> Optional[str]:
+        """The signed Desktop directive for this reply, or None. Its chip id, signature and payload digest are
+        recorded as their own store line, so /verify can vouch for the chip after a restart (never a key)."""
+        if not (on_desktop and visible and session_id and self.mode() != "quiet" and self.desktop_chips()):
+            return None
+        desktop.drop_legacy_key(Path(self.data_dir()))
+        text, ids = desktop.directive(dedupe(visible), session_id, turn_id)
+        self.store.append({"type": "chip", "ts": time.time(), "session_id": session_id, "turn_id": turn_id,
+                           "chip": ids})
+        return text
+
+    def desktop_chips(self) -> bool:
+        """Desktop receipt chips: on, off, or auto (only while the desktop half has said hello recently)."""
+        choice = desktop.setting_of(self.setting("desktop_chips", "auto"))
+        if choice == "auto":
+            return desktop.desktop_live(Path(self.data_dir()))
+        return choice == "on"
 
     def _desktop_line(self) -> str:
         choice = desktop.setting_of(self.setting("desktop_chips", "auto"))
