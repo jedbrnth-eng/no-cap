@@ -17,6 +17,7 @@ The Hall of Cap lists the latest 🧢 with the claim and the evidence that contr
 """
 from __future__ import annotations
 
+import gc
 import glob
 import hashlib
 import heapq
@@ -360,7 +361,15 @@ def read_store(path: Path) -> _Cached:
         fh.seek(entry.offset)
         data = fh.read(max(0, st.st_size - entry.offset))
         cut = data.rfind(b"\n") + 1
-        _parse(data[:cut], entry)
+        # Parsing allocates thousands of small dicts and none are cycles; the cyclic GC walking the heap (and the
+        # host's heap with it) on every allocation burst would cost more than the parse. Paused only for the parse.
+        was_on = gc.isenabled()
+        gc.disable()
+        try:
+            _parse(data[:cut], entry)
+        finally:
+            if was_on:
+                gc.enable()
         entry.offset += cut
         entry.size, entry.mtime = st.st_size, st.st_mtime_ns
         _CACHE[key] = entry

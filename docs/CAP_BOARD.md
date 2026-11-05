@@ -101,4 +101,6 @@ Screenshots (`docs/media/board-run/`, real dashboard, real browser, throwaway ro
 
 Performance: 10,000 records (13 MB) from three profiles build the whole board in about 70 ms of CPU cold on a quiet
 machine (up to ~170 ms with the load average above 60), and about 10 ms warm thanks to the incremental cache:
-`tests/test_board.py::test_10k_records_under_200ms` (best of five cold reads, CPU time).
+`tests/test_board.py::test_10k_records_under_200ms` (best of five cold reads in CPU time, with the ReDoS test's machine
+calibration: the 200 ms budget scales by how much slower the machine is right now, capped at 4x, and the scale is
+printed).

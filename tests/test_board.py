@@ -447,25 +447,35 @@ def test_10k_records_under_200ms(tmp_path, monkeypatch):
     B = board_mod()
     B.clear_cache()
     srcs = B.discover_sources(root=root)
-    # CPU time, like the ReDoS budget test: a loaded Mac stretches wall time without the board doing more work.
-    # Best of five cold reads (cache cleared each time): on a loaded Apple Silicon Mac a run that lands on an
-    # efficiency core costs 2-3x the CPU time, and that's the machine, not the board.
-    colds = []
-    for _ in range(5):
-        B.clear_cache()
-        w0, t0 = time.perf_counter(), time.process_time()
-        b = B.build_board(srcs)
-        colds.append((time.process_time() - t0, time.perf_counter() - w0))
-    cold, cold_wall = min(colds)
+    # Same clock and calibration as the ReDoS budget (tests/test_redos.py): CPU time, best of five cold reads (cache
+    # cleared each time), budget scaled by how much slower this machine is right now than the one it was set on
+    # (capped at 4x), one retry after a pause. A loaded Mac stretches the run without the board doing more work.
+    from test_redos import _calibration
+
+    def best_cold():
+        colds = []
+        for _ in range(5):
+            B.clear_cache()
+            w0, t0 = time.perf_counter(), time.process_time()
+            out = B.build_board(srcs)
+            colds.append((time.process_time() - t0, time.perf_counter() - w0))
+        return min(colds), out
+
+    (cold, cold_wall), b = best_cold()
+    scale = _calibration()
+    if cold >= 0.200 * scale:
+        time.sleep(1)
+        (cold, cold_wall), b = best_cold()
+        scale = _calibration()
     assert b["totals"]["replies"] == 10000 and b["totals"]["claims"] == 10000
     size = sum(p.stat().st_size for s in srcs for p in s.paths)
     t0 = time.process_time()
     B.build_board(B.discover_sources(root=root), model="m-1")
     warm = time.process_time() - t0
     print(f"10k records ({size / 1e6:.1f} MB): cold {cold * 1000:.0f} ms CPU ({cold_wall * 1000:.0f} ms wall), "
-          f"warm+filter {warm * 1000:.0f} ms CPU")
-    assert cold < 0.200, f"cold board took {cold * 1000:.0f} ms CPU"
-    assert warm < 0.100
+          f"warm+filter {warm * 1000:.0f} ms CPU, machine scale {scale:.2f}")
+    assert cold < 0.200 * scale, f"cold board took {cold * 1000:.0f} ms CPU (budget {200 * scale:.0f} ms)"
+    assert warm < 0.100 * scale
 
 
 # ---- dashboard surface ----------------------------------------------------------------------------------------

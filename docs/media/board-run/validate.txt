@@ -1,3 +1,4 @@
+$ hermes plugins validate .   (exit 0)
 
 ✓ manifest — plugin.yaml parses
 ✓ manifest fields — name, version, description present
