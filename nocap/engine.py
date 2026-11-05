@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from . import card, doctor, score
+from .coach import Coach
 from .claims import extract_claims, forged_stamps
 from .evidence import extract, summary
 from .render import EMOJI, TAG, claim_text, compose, footer, receipt_line
@@ -64,12 +65,17 @@ class Engine:
         self._turns: "OrderedDict[Tuple[str, str], List[Dict[str, Any]]]" = OrderedDict()
         self._pending_cap: Dict[str, List[Dict[str, Any]]] = {}
         self._lock = threading.Lock()
+        self._skills: "OrderedDict[str, List[str]]" = OrderedDict()  # session → skills it loaded (coach scope)
+        self._coached: Dict[str, List[str]] = {}  # session → coach rule ids injected into its current turn
+        self.coach = Coach(data_dir, setting, self.store.records, self.home, inject)
 
     # ---- hooks -------------------------------------------------------------------------------
     def on_tool(self, tool_name: str = "", args: Any = None, result: Any = None, session_id: str = "",
                 turn_id: str = "", status: Optional[str] = None, error_message: Optional[str] = None,
                 **_: Any) -> None:
         key = (session_id or "", turn_id or "")
+        if tool_name == "skill_view" and isinstance(args, dict) and args.get("name"):
+            self._note_skill(session_id or "", str(args["name"])[:80])
         with self._lock:
             calls = self._turns.setdefault(key, [])
             self._turns.move_to_end(key)
@@ -81,6 +87,28 @@ class Engine:
             calls.append(ev)
             if len(calls) > MAX_CALLS:  # keep the newest calls: the latest run is the one that matters
                 del calls[0]
+
+    def _note_skill(self, session_id: str, name: str) -> None:
+        with self._lock:
+            names = self._skills.setdefault(session_id, [])
+            self._skills.move_to_end(session_id)
+            if name in names:
+                names.remove(name)
+            names.append(name)
+            del names[:-8]
+            while len(self._skills) > MAX_OPEN_TURNS:
+                self._skills.popitem(last=False)
+
+    def skills(self, session_id: str) -> List[str]:
+        with self._lock:
+            return list(self._skills.get(session_id or "", []))
+
+    def on_turn_start(self, session_id: str = "", model: str = "", **_: Any) -> Optional[Dict[str, str]]:
+        """pre_llm_call: inject the approved coach rules that match this agent, model and loaded skills."""
+        text, ids = self.coach.context(model or "", self.skills(session_id or ""))
+        with self._lock:
+            self._coached[session_id or ""] = ids
+        return {"context": text} if text else None
 
     def _take(self, session_id: str, turn_id: str) -> List[Dict[str, Any]]:
         with self._lock:
@@ -134,11 +162,13 @@ class Engine:
         receipts = [dict(r, hidden=not shown(r, level)) for r in receipts]
         visible = [r for r in receipts if not r["hidden"]]
         rescore = self._rescore(session_id, receipts)
+        with self._lock:
+            coached = self._coached.pop(session_id, [])
         if receipts or evs or rescore:
             self.store.append({"type": "reply", "ts": time.time(), "session_id": session_id, "turn_id": turn_id,
                                "model": model or "unknown", "platform": platform or "", "mode": self.mode(),
                                "calls": _cited(evs, receipts), "ledger": _ledger(evs), "receipts": receipts,
-                               "rescore": rescore})
+                               "rescore": rescore, "skills": self.skills(session_id), "coach": coached})
         streak = None
         if visible:
             mine = [r for r in self.store.records() if r.get("session_id") == session_id]
@@ -146,7 +176,14 @@ class Engine:
             if streak < 2:
                 streak = None
         forged = forged_stamps(response_text)
-        notes = [f"⚠️ This reply contained {forged} stamp(s) No Cap didn't issue. They were ignored."] if forged else None
+        notes = [f"⚠️ This reply contained {forged} stamp(s) No Cap didn't issue. They were ignored."] if forged else []
+        try:
+            tip = self.coach.maybe_announce(receipts) if receipts else None
+        except Exception:  # the coach is optional: never let it touch the reply
+            tip = None
+        if tip:
+            notes.append(tip)
+        notes = notes or None
         return compose(response_text, visible, self.mode(), rescore, streak, notes,
                        plain=(platform or "").lower() == "cli")
 
@@ -182,6 +219,9 @@ class Engine:
 
     # ---- commands ----------------------------------------------------------------------------
     def cap(self, raw_args: str = "", session_id: str = "", session_key: str = "") -> str:
+        words = (raw_args or "").split()
+        if words and words[0].lower() == "coach":
+            return self.coach.command(words[1:], session_key=session_key)
         last = self.store.last(session_id or "")
         open_ = [r for r in (last or {}).get("receipts", []) if r["verdict"] in (CAP, NO_RECEIPT)]
         if not last or not open_:
@@ -265,7 +305,8 @@ class Engine:
             return self.doctor_report()[0]
         if arg in ("help", "?"):
             return ("/nocap → receipts for the last reply · /nocap all → every receipt line · /nocap purge → delete "
-                    "the local store · /nocap doctor → setup checks · /cap → make the agent prove it · /capscore [card] → honesty leaderboard")
+                    "the local store · /nocap doctor → setup checks · /cap → make the agent prove it · /capscore [card] → honesty leaderboard"
+                    " · /cap coach → what this agent caps on, drafted fixes, before/after")
         last = self.store.last(session_id or "") or self.store.last("")
         if not last:
             return f"🧾 No receipts yet. Mode: {self.mode()}. Store: {self.store.path}"
