@@ -11,7 +11,7 @@ profile is configured with:
 
 The prompt carries "[board turn N]"; the persona's script for turn N runs its tool calls, then replies.
 
-    python3 board_stub_model.py 8777
+    python3 board_stub_model.py 18777
 """
 import json
 import re
@@ -161,6 +161,6 @@ class H(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8777
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 18777
     print(f"board stub models on http://127.0.0.1:{port}/v1 (scripted, localhost only)", flush=True)
     ThreadingHTTPServer(("127.0.0.1", port), H).serve_forever()

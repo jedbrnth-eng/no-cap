@@ -10,14 +10,14 @@
 # shifted 8-12 days back, so the 7-day trend has a previous week to compare with. Say so wherever it is shown.
 #
 #   sh demo/run_board_demo.sh            builds $NOCAP_BOARD_WORK (default: a new /tmp/nocap-board.XXXXXX), seeds it,
-#                                        starts the dashboard on 127.0.0.1:${NOCAP_BOARD_DPORT:-9177} and leaves it up
+#                                        starts the dashboard on 127.0.0.1:${NOCAP_BOARD_DPORT:-19177} and leaves it up
 #
 # The real ~/.hermes is never read or written: HERMES_HOME points under /tmp, profiles are created with --no-alias
 # (no wrapper scripts on PATH) and git's global config is a throwaway file.
 set -eu
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-PORT="${NOCAP_BOARD_PORT:-8777}"
-DPORT="${NOCAP_BOARD_DPORT:-9177}"
+PORT="${NOCAP_BOARD_PORT:-18777}"
+DPORT="${NOCAP_BOARD_DPORT:-19177}"
 WORK="${NOCAP_BOARD_WORK:-$(mktemp -d /tmp/nocap-board.XXXXXX)}"
 mkdir -p "$WORK"
 WORK="$(cd "$WORK" && pwd -P)"
@@ -28,10 +28,13 @@ printf '[user]\n\tname = board-demo\n\temail = board-demo@localhost\n' >"$GIT_CO
 say() { printf '\n== %s\n' "$*"; }
 
 say "1/6 scripted models on 127.0.0.1:$PORT (disclosed: the only fake part)"
-if ! curl -sf "http://127.0.0.1:$PORT/v1/models" >/dev/null 2>&1; then
+if ! curl -sf "http://127.0.0.1:$PORT/v1/models" 2>/dev/null | grep -q careful-1; then
   python3 "$REPO/demo/board_stub_model.py" "$PORT" >"$WORK/stub.log" 2>&1 &
   echo $! >"$WORK/stub.pid"
-  i=0; until curl -sf "http://127.0.0.1:$PORT/v1/models" >/dev/null; do i=$((i+1)); [ $i -gt 50 ] && exit 3; sleep 0.1; done
+  i=0; until curl -sf "http://127.0.0.1:$PORT/v1/models" 2>/dev/null | grep -q careful-1; do
+    i=$((i+1)); [ $i -gt 50 ] && { echo "port $PORT is busy or the stub didn't start; set NOCAP_BOARD_PORT" >&2; cat "$WORK/stub.log" >&2; exit 3; }
+    sleep 0.1
+  done
 fi
 
 say "2/6 throwaway Hermes root $ROOTH with profiles alpha, beta, gamma"
