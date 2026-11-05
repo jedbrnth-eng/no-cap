@@ -12,10 +12,10 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from . import card, doctor, score
+from . import card, desktop, doctor, score
 from .claims import extract_claims, forged_stamps
 from .evidence import extract, summary
-from .render import EMOJI, TAG, claim_text, compose, footer, receipt_line
+from .render import EMOJI, TAG, claim_text, compose, dedupe, footer, receipt_line
 from .store import Store
 from .verdict import CAP, DEFAULT_SHOW_UNCERTAIN, NO_CAP, NO_RECEIPT, judge, level_of, shown
 from .verify import recheck, suggestion
@@ -54,10 +54,12 @@ class Engine:
     def __init__(self, data_dir: Callable[[], Path], setting: Callable[[str, Any], Any],
                  inject: Optional[Callable[..., bool]] = None, cwd: Optional[Callable[[], str]] = None,
                  home: Optional[Callable[[], Path]] = None, entry: Optional[Callable[[], Dict[str, Any]]] = None,
-                 enabled: Optional[Callable[[str], Any]] = None):
+                 enabled: Optional[Callable[[str], Any]] = None,
+                 broadcast: Optional[Callable[[str, Dict[str, Any]], None]] = None):
         self.home = home or (lambda: Path(data_dir()).parents[1])
         self.entry = entry or (lambda: {})
         self.enabled = enabled or (lambda name: None)
+        self.broadcast = broadcast or (lambda event, payload: None)
         self.setting = setting
         self.data_dir = data_dir
         self.inject = inject
@@ -129,6 +131,10 @@ class Engine:
         evs = self._take(session_id, turn_id)
         if not isinstance(response_text, str) or not response_text.strip():
             return None
+        on_desktop = desktop.is_desktop(platform)
+        # Every surface: a `::nocap` the model wrote (a replay of an earlier genuine chip included) is removed, because
+        # any transcript can later be opened in Desktop. Text without one is untouched, so the CLI never reprints.
+        response_text, planted = desktop.strip_model_directives(response_text)
         claims = extract_claims(response_text)
         if not bool(self.setting("check_numbers", True)):
             claims = [c for c in claims if c["kind"] != "number"]
@@ -151,17 +157,26 @@ class Engine:
             streak = score.streak(mine)
             if streak < 2:
                 streak = None
-        forged = forged_stamps(response_text)
+        chips = self._desktop_chip(on_desktop, visible, session_id, turn_id)
+        if on_desktop and (receipts or evs or rescore):  # the Receipts popover refreshes (no-op without a window)
+            try:
+                self.broadcast("receipts.updated", {"session_id": session_id})
+            except Exception:
+                pass
+        forged = forged_stamps(response_text) + planted
         notes = [f"⚠️ This reply contained {forged} stamp(s) No Cap didn't issue. They were ignored."] if forged else None
-        return compose(response_text, visible, self.mode(), rescore, streak, notes,
-                       plain=(platform or "").lower() == "cli")
+        out = compose(response_text, visible, self.mode(), rescore, streak, notes,
+                      plain=(platform or "").lower() == "cli", chips=chips)
+        if out is None and planted:  # quiet mode: no footer, but a planted directive still never goes out
+            return response_text
+        return out
 
     def _rescore(self, session_id: str, receipts: List[Dict[str, Any]]) -> List[str]:
         with self._lock:
             pending = self._pending_cap.pop(session_id, None)
         if not pending:  # /cap may have run in another process (gateway vs CLI): read it from the store
             for rec in reversed(self.store.records()):
-                if rec.get("session_id") != session_id or rec.get("type") == "recheck":
+                if rec.get("session_id") != session_id or rec.get("type") in ("recheck", "chip"):
                     continue
                 if rec.get("type") == "cap":
                     pending = rec.get("receipts") or []
@@ -286,7 +301,37 @@ class Engine:
 
     def doctor_report(self) -> Tuple[str, int]:
         return doctor.check(Path(self.home()), self.mode(), self.entry() or {}, self.store.path, self.store.records(),
-                            self.enabled, show_uncertain=self.show_uncertain())
+                            self.enabled, show_uncertain=self.show_uncertain(), desktop_line=self._desktop_line())
+
+    def _desktop_chip(self, on_desktop: bool, visible: List[Dict[str, Any]], session_id: str,
+                      turn_id: str) -> Optional[str]:
+        """The signed Desktop directive for this reply, or None. Its chip id, signature and payload digest are
+        recorded as their own store line, so /verify can vouch for the chip after a restart (never a key)."""
+        if not (on_desktop and visible and session_id and self.mode() != "quiet" and self.desktop_chips()):
+            return None
+        desktop.drop_legacy_key(Path(self.data_dir()))
+        text, ids = desktop.directive(dedupe(visible), session_id, turn_id)
+        self.store.append({"type": "chip", "ts": time.time(), "session_id": session_id, "turn_id": turn_id,
+                           "chip": ids})
+        return text
+
+    def desktop_chips(self) -> bool:
+        """Desktop receipt chips: on, off, or auto (only while the desktop half has said hello recently)."""
+        choice = desktop.setting_of(self.setting("desktop_chips", "auto"))
+        if choice == "auto":
+            return desktop.desktop_live(Path(self.data_dir()))
+        return choice == "on"
+
+    def _desktop_line(self) -> str:
+        choice = desktop.setting_of(self.setting("desktop_chips", "auto"))
+        if choice == "off":
+            return "ℹ️ Desktop chips: off (Desktop gets the text footer, like every other surface)."
+        if choice == "on":
+            return "ℹ️ Desktop chips: on (forced). Without the desktop half enabled, Desktop shows a raw ::nocap line."
+        if desktop.desktop_live(Path(self.data_dir())):
+            return "✅ Desktop chips: auto, chips on: the desktop half said hello in the last 30 minutes."
+        return ("ℹ️ Desktop chips: auto, the desktop half hasn't said hello, so Desktop gets the text footer. Enable "
+                "No Cap in Desktop → Capabilities → Plugins for clickable receipt chips.")
 
     def nocap(self, raw_args: str = "", session_id: str = "") -> str:
         arg = (raw_args or "").strip().lower()
