@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .nocap.engine import Engine
+from .nocap.surfaces.discord import DiscordSurface
 
 logger = logging.getLogger("hermes_plugins.no_cap")
 
@@ -84,6 +85,15 @@ def _make_engine(ctx: Any) -> Engine:
 
 def register(ctx: Any) -> None:
     engine = _make_engine(ctx)
+    # Discord: its own compact footer always; the embed + buttons only with discord_buttons: on, through the discord.py
+    # Bot that the documented register_platform_handler hands over (nocap/surfaces/discord.py, docs/DISCORD.md).
+    discord_surface = DiscordSurface(engine, engine.setting, engine.data_dir)
+    engine.surfaces["discord"] = discord_surface.compose
+    if callable(getattr(ctx, "register_platform_handler", None)):
+        try:
+            ctx.register_platform_handler("discord", discord_surface.wire)
+        except Exception as exc:  # an older Hermes: the text footer still works
+            logger.warning("no-cap: Discord buttons unavailable: %s", exc)
 
     def on_tool(**kwargs: Any) -> None:
         try:

@@ -44,6 +44,10 @@ config_schema:
     type: bool
     default: false
     description: "Let /cap send one HTTP HEAD request (public addresses only, no redirects, 3 s timeout) to re-check a 'URL is live' claim (off = no network)"
+  discord_buttons:
+    type: str
+    default: "off"
+    description: "Discord only. off (default): the compact Discord footer, never split across messages. on: a one-line summary in the reply plus a verdict-coloured embed with 🧢 Call cap and 🧾 Show receipts buttons (only the person the reply answered can click; Call cap needs allow_gateway_injection to send the steer, otherwise it answers with the prompt to paste)."
   desktop_chips:
     type: str
     default: auto

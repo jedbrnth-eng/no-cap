@@ -61,7 +61,7 @@ class Store:
     def purge(self) -> int:
         with self._lock:
             n = len(self.records())
-            for name in (FILE, "scorecard.png", "scorecard.svg"):
+            for name in (FILE, "scorecard.png", "scorecard.svg", "discord_receipts.json"):
                 try:
                     os.remove(Path(self._dir()) / name)
                 except FileNotFoundError:
