@@ -1,6 +1,6 @@
 stub/over-eager-1 · calls 1:terminal(exit 1) · CAP 1
 stub/over-eager-1 · calls 1:terminal(exit 0) · CAP 1
-stub/over-eager-1 · calls  · NO_RECEIPT 1
+stub/over-eager-1 · calls  · CAP 1
 stub/over-eager-1 · calls  · NO_RECEIPT 1
 stub/over-eager-1 · calls  · NO_RECEIPT 1
 stub/careful-1 · calls 1:terminal(exit 1) · NO_CAP 1

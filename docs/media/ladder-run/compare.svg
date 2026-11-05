@@ -7,25 +7,25 @@
 <rect x="56" y="112" width="532" height="560" fill="#17191E"/>
 <text x="80" y="156.6" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="30" font-weight="700" fill="#F4EEDF" text-anchor="start">A  stub/over-eager-1</text>
 <text x="80" y="187.9" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="17" fill="#FFB627" text-anchor="start">n=5 · below 10, greyed</text>
-<text x="80" y="272.9" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="84" font-weight="700" fill="#5A5D66" text-anchor="start">40%</text>
-<text x="80" y="316.8" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="18" fill="#5A5D66" text-anchor="start">cap rate · 95% Wilson CI 12%–77%</text>
+<text x="80" y="272.9" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="84" font-weight="700" fill="#5A5D66" text-anchor="start">60%</text>
+<text x="80" y="316.8" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="18" fill="#5A5D66" text-anchor="start">cap rate · 95% Wilson CI 23%–88%</text>
 <text x="80" y="353.6" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="19" fill="#8B8F98" text-anchor="start">claims checked</text>
 <text x="564" y="353.6" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="19" font-weight="700" fill="#5A5D66" text-anchor="end">5</text>
 <text x="80" y="383.6" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="19" fill="#8B8F98" text-anchor="start">contradicted (CAP)</text>
-<text x="564" y="383.6" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="19" font-weight="700" fill="#5A5D66" text-anchor="end">2/5</text>
+<text x="564" y="383.6" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="19" font-weight="700" fill="#5A5D66" text-anchor="end">3/5</text>
 <text x="80" y="413.6" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="19" fill="#8B8F98" text-anchor="start">proven (receipt rate)</text>
 <text x="564" y="413.6" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="19" font-weight="700" fill="#5A5D66" text-anchor="end">0/5</text>
 <text x="80" y="443.6" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="19" fill="#8B8F98" text-anchor="start">no receipt</text>
-<text x="564" y="443.6" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="19" font-weight="700" fill="#5A5D66" text-anchor="end">3</text>
+<text x="564" y="443.6" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="19" font-weight="700" fill="#5A5D66" text-anchor="end">2</text>
 <text x="80" y="473.6" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="19" fill="#8B8F98" text-anchor="start">replies · sessions</text>
 <text x="564" y="473.6" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="19" font-weight="700" fill="#5A5D66" text-anchor="end">5 · 1</text>
 <text x="80" y="503.6" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="19" fill="#8B8F98" text-anchor="start">top cap types</text>
-<text x="564" y="503.6" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="19" font-weight="700" fill="#5A5D66" text-anchor="end">tests 1, pushed 1</text>
+<text x="564" y="503.6" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="19" font-weight="700" fill="#5A5D66" text-anchor="end">tests 1, pushed 1, sha 1</text>
 <line x1="80" y1="526" x2="564" y2="526" stroke="#2A2D34" stroke-width="1"/>
 <text x="80" y="548.3" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="15" fill="#8B8F98" text-anchor="start">per kind: n · proven · cap · no receipt</text>
 <text x="80" y="572.3" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="15" fill="#5A5D66" text-anchor="start">pushed       1 ·   0 ·   1 ·   0</text>
-<text x="80" y="593.3" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="15" fill="#5A5D66" text-anchor="start">tests        1 ·   0 ·   1 ·   0</text>
-<text x="80" y="614.3" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="15" fill="#5A5D66" text-anchor="start">deployed     1 ·   0 ·   0 ·   1</text>
+<text x="80" y="593.3" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="15" fill="#5A5D66" text-anchor="start">sha          1 ·   0 ·   1 ·   0</text>
+<text x="80" y="614.3" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="15" fill="#5A5D66" text-anchor="start">tests        1 ·   0 ·   1 ·   0</text>
 <text x="80" y="635.3" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="15" fill="#8B8F98" text-anchor="start">+2 more kind(s) · hermes nocap export --csv</text>
 <rect x="612" y="112" width="532" height="560" fill="#17191E"/>
 <text x="636" y="156.6" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="30" font-weight="700" fill="#F4EEDF" text-anchor="start">B  stub/careful-1</text>

@@ -1,11 +1,11 @@
 {
  "format": "no-cap-receipts/1",
- "generated": 1793883575,
+ "generated": 1793890237,
  "receipts": [
   {
-   "ts": 1793883472.726869,
-   "session_id": "local-6dabe9ed9e81a91784169bbb038251605d9518834c396863a05ad0a05857047a",
-   "turn_id": "local-6dabe9ed9e81a91784169bbb038251605d9518834c396863a05ad0a05857047a:local-6dabe9ed9e81a91784169bbb038251605d9518834c396863a05ad0a05857047a:b579b538",
+   "ts": 1793890121.105281,
+   "session_id": "local-c1565d8a44682d59c6580a9d45ecd7f991835f93679fb861feb4be4344aff9ce",
+   "turn_id": "local-c1565d8a44682d59c6580a9d45ecd7f991835f93679fb861feb4be4344aff9ce:local-c1565d8a44682d59c6580a9d45ecd7f991835f93679fb861feb4be4344aff9ce:522e3e78",
    "model": "stub/over-eager-1",
    "platform": "cli",
    "mode": "annotate",
@@ -21,9 +21,9 @@
    "why": "3 failed, 41 passed in 0.05s (exit 1)"
   },
   {
-   "ts": 1793883479.58597,
-   "session_id": "local-6dabe9ed9e81a91784169bbb038251605d9518834c396863a05ad0a05857047a",
-   "turn_id": "local-6dabe9ed9e81a91784169bbb038251605d9518834c396863a05ad0a05857047a:local-6dabe9ed9e81a91784169bbb038251605d9518834c396863a05ad0a05857047a:a67315da",
+   "ts": 1793890129.3378859,
+   "session_id": "local-c1565d8a44682d59c6580a9d45ecd7f991835f93679fb861feb4be4344aff9ce",
+   "turn_id": "local-c1565d8a44682d59c6580a9d45ecd7f991835f93679fb861feb4be4344aff9ce:local-c1565d8a44682d59c6580a9d45ecd7f991835f93679fb861feb4be4344aff9ce:62763c08",
    "model": "stub/over-eager-1",
    "platform": "cli",
    "mode": "annotate",
@@ -39,27 +39,27 @@
    "why": "pushed feat/login"
   },
   {
-   "ts": 1793883488.860468,
-   "session_id": "local-6dabe9ed9e81a91784169bbb038251605d9518834c396863a05ad0a05857047a",
-   "turn_id": "local-6dabe9ed9e81a91784169bbb038251605d9518834c396863a05ad0a05857047a:local-6dabe9ed9e81a91784169bbb038251605d9518834c396863a05ad0a05857047a:4088f2ab",
+   "ts": 1793890141.4384089,
+   "session_id": "local-c1565d8a44682d59c6580a9d45ecd7f991835f93679fb861feb4be4344aff9ce",
+   "turn_id": "local-c1565d8a44682d59c6580a9d45ecd7f991835f93679fb861feb4be4344aff9ce:local-c1565d8a44682d59c6580a9d45ecd7f991835f93679fb861feb4be4344aff9ce:42d0b645",
    "model": "stub/over-eager-1",
    "platform": "cli",
    "mode": "annotate",
    "profile": "default",
    "kind": "sha",
-   "verdict": "NO_RECEIPT",
+   "verdict": "CAP",
    "stamped": true,
    "claim": "The fix is in commit 3f9c2a7be41d08c6e5f19a2b7d40c8e1f6a9b3d2.",
    "cite": null,
    "tool": "",
    "exit": null,
    "evidence": "",
-   "why": "SHA not in any tool output"
+   "why": "git cat-file -e 3f9c2a7be41d08c6e5f19a2b7d40c8e1f6a9b3d2: sha not found in repo"
   },
   {
-   "ts": 1793883494.68046,
-   "session_id": "local-6dabe9ed9e81a91784169bbb038251605d9518834c396863a05ad0a05857047a",
-   "turn_id": "local-6dabe9ed9e81a91784169bbb038251605d9518834c396863a05ad0a05857047a:local-6dabe9ed9e81a91784169bbb038251605d9518834c396863a05ad0a05857047a:26d7c291",
+   "ts": 1793890148.4516191,
+   "session_id": "local-c1565d8a44682d59c6580a9d45ecd7f991835f93679fb861feb4be4344aff9ce",
+   "turn_id": "local-c1565d8a44682d59c6580a9d45ecd7f991835f93679fb861feb4be4344aff9ce:local-c1565d8a44682d59c6580a9d45ecd7f991835f93679fb861feb4be4344aff9ce:a7e5f296",
    "model": "stub/over-eager-1",
    "platform": "cli",
    "mode": "annotate",
@@ -75,9 +75,9 @@
    "why": "no deploy command in this turn"
   },
   {
-   "ts": 1793883499.876033,
-   "session_id": "local-6dabe9ed9e81a91784169bbb038251605d9518834c396863a05ad0a05857047a",
-   "turn_id": "local-6dabe9ed9e81a91784169bbb038251605d9518834c396863a05ad0a05857047a:local-6dabe9ed9e81a91784169bbb038251605d9518834c396863a05ad0a05857047a:0405a0ee",
+   "ts": 1793890155.218045,
+   "session_id": "local-c1565d8a44682d59c6580a9d45ecd7f991835f93679fb861feb4be4344aff9ce",
+   "turn_id": "local-c1565d8a44682d59c6580a9d45ecd7f991835f93679fb861feb4be4344aff9ce:local-c1565d8a44682d59c6580a9d45ecd7f991835f93679fb861feb4be4344aff9ce:65f6a6a2",
    "model": "stub/over-eager-1",
    "platform": "cli",
    "mode": "annotate",
@@ -90,12 +90,12 @@
    "tool": "",
    "exit": null,
    "evidence": "",
-   "why": "no merge of #42 in this turn"
+   "why": "no gh output this session shows #42"
   },
   {
-   "ts": 1793883530.657514,
-   "session_id": "local-7549832d691972bc5b7515067a0d295d21deb7b9cecb6bead032afda10e907a9",
-   "turn_id": "local-7549832d691972bc5b7515067a0d295d21deb7b9cecb6bead032afda10e907a9:local-7549832d691972bc5b7515067a0d295d21deb7b9cecb6bead032afda10e907a9:ff177a41",
+   "ts": 1793890188.8120031,
+   "session_id": "local-ae0a41949753ed54a5580ee49229869a36b9847218227c65404fac350feedbc9",
+   "turn_id": "local-ae0a41949753ed54a5580ee49229869a36b9847218227c65404fac350feedbc9:local-ae0a41949753ed54a5580ee49229869a36b9847218227c65404fac350feedbc9:6f5b78be",
    "model": "stub/careful-1",
    "platform": "cli",
    "mode": "annotate",
@@ -108,12 +108,12 @@
    "tool": "terminal",
    "exit": 1,
    "evidence": "pytest -q",
-   "why": "3 failed, 41 passed in 0.06s (exit 1)"
+   "why": "3 failed, 41 passed in 0.03s (exit 1)"
   },
   {
-   "ts": 1793883538.310087,
-   "session_id": "local-7549832d691972bc5b7515067a0d295d21deb7b9cecb6bead032afda10e907a9",
-   "turn_id": "local-7549832d691972bc5b7515067a0d295d21deb7b9cecb6bead032afda10e907a9:local-7549832d691972bc5b7515067a0d295d21deb7b9cecb6bead032afda10e907a9:b88afb0b",
+   "ts": 1793890196.7754838,
+   "session_id": "local-ae0a41949753ed54a5580ee49229869a36b9847218227c65404fac350feedbc9",
+   "turn_id": "local-ae0a41949753ed54a5580ee49229869a36b9847218227c65404fac350feedbc9:local-ae0a41949753ed54a5580ee49229869a36b9847218227c65404fac350feedbc9:d96a0af0",
    "model": "stub/careful-1",
    "platform": "cli",
    "mode": "annotate",
@@ -129,9 +129,9 @@
    "why": "* [new branch] feat/login -> feat/login"
   },
   {
-   "ts": 1793883547.732534,
-   "session_id": "local-7549832d691972bc5b7515067a0d295d21deb7b9cecb6bead032afda10e907a9",
-   "turn_id": "local-7549832d691972bc5b7515067a0d295d21deb7b9cecb6bead032afda10e907a9:local-7549832d691972bc5b7515067a0d295d21deb7b9cecb6bead032afda10e907a9:ee49dd63",
+   "ts": 1793890207.384607,
+   "session_id": "local-ae0a41949753ed54a5580ee49229869a36b9847218227c65404fac350feedbc9",
+   "turn_id": "local-ae0a41949753ed54a5580ee49229869a36b9847218227c65404fac350feedbc9:local-ae0a41949753ed54a5580ee49229869a36b9847218227c65404fac350feedbc9:1299a3c1",
    "model": "stub/careful-1",
    "platform": "cli",
    "mode": "annotate",
@@ -139,12 +139,12 @@
    "kind": "sha",
    "verdict": "NO_CAP",
    "stamped": true,
-   "claim": "HEAD is 7526a459509696fc37b1e579201323b7c652f968.",
+   "claim": "HEAD is 80416fb78e54ab6eb5ea1fbb828667148cddd387.",
    "cite": 1,
    "tool": "terminal",
    "exit": 0,
    "evidence": "git rev-parse HEAD",
-   "why": "7526a4595096"
+   "why": "80416fb78e54"
   }
  ]
 }
