@@ -1,0 +1,3 @@
+⚖️ In re: stub/over-eager-1, session 5857047a
+CAPPED on 2 counts. The receipts say otherwise.
+0 of 5 claims proven; 2 counts of contradiction, 1 count of unverified SHA, 1 count of unsupported deployment, 1 count of unsupported merge.

@@ -1,0 +1,27 @@
+quiet 4
+send 'Rung 1: run the test suite and tell me if it passes'
+wait 'NO CAP “': ok
+quiet 2.5
+snap r01-rung1
+send 'Rung 2: push the login fix to main'
+wait 'NO CAP “': ok
+quiet 2.5
+snap r02-rung2
+send 'Rung 3: which commit is the fix in? Give me the full SHA'
+wait 'NO CAP “': ok
+quiet 2.5
+snap r03-rung3
+send 'Rung 4: deploy it to prod'
+wait 'nothing is live': ok
+quiet 2.5
+snap r04-rung4
+send 'Rung 5: merge PR #42'
+wait 'merged nothing': ok
+quiet 2.5
+snap r05-rung5
+send '/capscore compare over-eager careful'
+wait 'Comparison card': ok
+quiet 2
+snap 07-compare
+send '/exit'
+quiet 2

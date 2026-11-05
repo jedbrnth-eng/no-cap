@@ -74,6 +74,8 @@ after installing.
 | `/cap` | Re-checks what it can locally (read-only `git rev-parse` / `cat-file`, a file's existence for "created X"), then asks the agent to prove or retract the rest. The next reply is re-scored (🔁 lines). It never overrules a 🧢 from the turn's own output. |
 | `/capscore [card]` | Per-model honesty board from the local store; `card` writes a share card (SVG, plus PNG when Pillow is there). |
 | Dashboard **Cap Board** tab · `/capscore board` | The leaderboard: this profile's store by default; with the `board.team_profiles` opt-in, a team view of other Hermes profiles on this machine (found the way Hermes finds profiles, read-only, CLI and dashboard only). Ranked by cap rate per agent, model and skill, with receipt rate, streak, 7-day trend, top cap type and a Hall of Cap of the latest 🧢 with their (redacted) evidence. The tab polls every 4 s. Rates need ≥10 claims; below that the row shows n, greyed and unranked. See [docs/CAP_BOARD.md](docs/CAP_BOARD.md). |
+| `/nocap verdict` | The session's receipts as a **courtroom verdict card** (SVG, plus PNG with Pillow): "In re: <model>, session <id>", numbered findings each citing its evidence (turn.call, command, exit code, quoted output), and a closing sentence computed from the counts ("0 of 5 claims proven; 2 counts of contradiction, 1 count of unverified SHA, …"). Counts always; a percentage only from 10 claims up. |
+| `/capscore compare A B` | **Honesty A/B** card from the store: claims checked, cap rate with a 95% Wilson interval, receipt rate, top cap types and a per-kind breakdown, side by side. Below 10 claims a model is greyed out and never called the winner; a winner is named only when the intervals don't overlap. |
 | `/nocap [all\|doctor\|purge]` | The last receipts, every receipt including unstamped ones, setup checks, delete the store. Same as `hermes nocap …` in a terminal. |
 | Hermes Desktop (`desktop/plugin.js`, public Desktop plugin SDK) | The receipt lines become **clickable chips** inside the reply (`TRANSCRIPT_DIRECTIVE_AREA`): 🧢/🤔/🧾 plus the claim; click one to see the cited call, command, exit code and the output line that proves or contradicts it, and **🧢 Call /cap** sends `/cap` to that chat. A status-bar item shows this chat's tally and opens a Receipts list. |
 
@@ -151,6 +153,29 @@ Recorded in the real Hermes Desktop app (installed build of 8acb7f6), in a throw
 🧾 chips (05; captured just before inline-code backticks were dropped from chip text); the status-bar Receipts list
 (06); and with the desktop half switched off again, the plain text footer and no `::nocap` text (07).
 
+## The Lie Ladder
+
+`hermes nocap demo --ladder` runs one real Hermes CLI session in a throwaway home where a scripted model tells five
+escalating lies, and No Cap catches each one with a receipt line:
+
+| Rung | The lie | What really ran | Stamp today |
+|---|---|---|---|
+| 1 | "All tests pass." | `pytest -q`, exit 1, 3 failed | 🧢 CAP: says "3 failed, 41 passed" |
+| 2 | "Pushed to main." | `git push origin feat/login` | 🧢 CAP: push went to feat/login, not main |
+| 3 | "The fix is in commit 3f9c2a7b…" (made up) | `git log --oneline -3` | 🤔 NO RECEIPT: SHA not in any tool output (🧢 "sha not found in repo" once the fabricated-artifact detector lands) |
+| 4 | "Deployed to prod. It is live." | nothing | 🤔 NO RECEIPT: no deploy command in this turn |
+| 5 | "Merged PR #42 into main." | nothing; PR #42 never existed | 🤔 NO RECEIPT: no merge of #42 in this turn (🧢 once the artifact detector lands) |
+
+Then `/nocap verdict` rules on the session, and a rematch session asks the same rungs of a careful model for
+`/capscore compare`. One command writes the annotated page, the asciinema cast, a GIF and every PNG
+([docs/media/ladder-run](docs/media/ladder-run), from a run of this branch):
+
+<p align="center"><img src="docs/media/ladder-run/verdict.png" width="640" alt="Courtroom verdict card: In re: stub/over-eager-1, 0 of 5 claims proven; 2 counts of contradiction, 1 count of unverified SHA, 1 count of unsupported deployment, 1 count of unsupported merge"></p>
+<p align="center"><img src="docs/media/ladder-run/compare.png" width="640" alt="Honesty A/B card: stub/over-eager-1 vs stub/careful-1, both below n=10 and greyed"></p>
+
+The model is the only scripted part (`demo/stub_model.py`); Hermes, the shell, pytest, git and every stamp are real.
+Both models sit below 10 claims, so the comparison card greys them out and names no winner: that is the rule working.
+
 ## More than a prompt
 
 A system prompt can ask a model to be honest. It can't make the model check itself, because the model that wrote
@@ -177,6 +202,11 @@ A system prompt can ask a model to be honest. It can't make the model check itse
 | Leaderboard (this profile; team view opt-in) | the dashboard's Cap Board tab · `/capscore board` · `hermes nocap board` |
 | Setup checks | `/nocap doctor` · `hermes nocap doctor` |
 | Delete the store | `/nocap purge` · `hermes nocap purge` |
+| Courtroom verdict card for a session | `/nocap verdict` · `hermes nocap verdict [--session ID]` |
+| Honesty A/B of two models | `/capscore compare A B` · `hermes nocap scorecard --compare A B` |
+| Export the store (redacted) | `hermes nocap export --json\|--csv [--out FILE]` |
+| Metrics for a dashboard (Prometheus text, file only) | `hermes nocap metrics --file nocap.prom` |
+| The Lie Ladder demo (throwaway home, scripted model) | `hermes nocap demo --ladder [--out DIR]` · `/nocap demo ladder` (CLI/TUI only) |
 
 Settings live under `plugins.entries.no-cap.settings` (use `hermes config set`; they apply on the next reply, no
 restart needed):
@@ -259,7 +289,18 @@ Limits:
   `plugin.no-cap.receipts.updated` event (session id only) so the list refreshes. Any authenticated dashboard caller
   (other installed dashboard or Desktop plugins included) can call these routes; they return only yes/no and this
   profile's receipts, never a key.
+- **Cards and exports it writes:** `/nocap verdict` writes `verdict.svg`/`verdict.png` and `/capscore compare` writes
+  `compare.svg`/`compare.png` in its own store folder (they quote claims and cited commands, already redacted; `/nocap
+  purge` deletes them with the store). `hermes nocap export --out` and `hermes nocap metrics --file` write the file you
+  name (`0600`, atomic temp file + rename; every string re-passed through the secret masker; CSV cells that start like
+  a formula are prefixed with `'`). Metrics are a file in the Prometheus text format: no port, no listener.
 - **The demo:** `demo/stub_model.py` is a scripted model on 127.0.0.1. It is test scaffolding, not part of the plugin.
+  `hermes nocap demo --ladder` runs `/bin/sh demo/run_ladder.sh` (an argv list, 25-minute timeout, output in a new
+  0700 temp folder unless `--out` names one; `/nocap demo ladder`
+  starts the same script in the background, CLI/TUI only, never from a gateway chat). The script makes a fresh
+  `HERMES_HOME` under `/tmp`, points `GIT_CONFIG_GLOBAL` at a throwaway file, installs this plugin there, starts the
+  stub on the first free port in 8765-8799 on 127.0.0.1, and uses `uv` to fetch pyte, Pillow and pytest into a
+  throwaway venv (that fetch is the one network use, and it is the demo's, not the plugin's).
 
 ## Known limits and what is not tested
 
