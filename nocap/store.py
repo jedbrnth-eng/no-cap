@@ -62,11 +62,15 @@ class Store:
     def purge(self) -> int:
         with self._lock:
             n = len(self.records())
-            for name in (FILE, LEDGER_FILE, "scorecard.png", "scorecard.svg", "discord_receipts.json"):
+            for name in (FILE, LEDGER_FILE, "scorecard.png", "scorecard.svg"):
                 try:
                     os.remove(Path(self._dir()) / name)
                 except FileNotFoundError:
                     pass
+            try:  # the Discord surface's receipt-id map (nocap/surfaces/discord.py TOKENS_FILE)
+                os.remove(Path(self._dir()) / "discord_receipts.json")
+            except FileNotFoundError:
+                pass
             return n
 
     def _prune_locked(self) -> None:
