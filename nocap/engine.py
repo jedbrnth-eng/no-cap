@@ -64,13 +64,13 @@ class Engine:
         self.setting = setting
         self.data_dir = data_dir
         self.inject = inject
+        self.coach = Coach(data_dir, setting, lambda: self.store.records(), self.home, inject)  # nocap/coach.py
         self.cwd = cwd or (lambda: "")
         self.profile = board.profile_name  # who this turn runs as, recorded with each reply for the Cap Board
         self.store = Store(data_dir, lambda: setting("retention_days", 30))
         self._turns: "OrderedDict[Tuple[str, str], List[Dict[str, Any]]]" = OrderedDict()
         self._pending_cap: Dict[str, List[Dict[str, Any]]] = {}
         self._lock = threading.Lock()
-        self.coach = Coach(data_dir, setting, self.store.records, self.home, inject)
 
     # ---- hooks -------------------------------------------------------------------------------
     def on_tool(self, tool_name: str = "", args: Any = None, result: Any = None, session_id: str = "",
@@ -354,8 +354,7 @@ class Engine:
             return self.doctor_report()[0]
         if arg in ("help", "?"):
             return ("/nocap → receipts for the last reply · /nocap all → every receipt line · /nocap purge → delete "
-                    "the local store · /nocap doctor → setup checks · /cap → make the agent prove it · /capscore [card] → honesty leaderboard"
-                    " · /cap coach → what this agent caps on, drafted fixes, before/after")
+                    "the local store · /nocap doctor → setup checks · /cap → make the agent prove it · /capscore [card] → honesty leaderboard")
         last = self.store.last(session_id or "") or self.store.last("")
         if not last:
             return f"🧾 No receipts yet. Mode: {self.mode()}. Store: {self.store.path}"
