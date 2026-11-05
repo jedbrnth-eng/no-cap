@@ -16,8 +16,8 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 
-from .nocap.engine import Engine
 from .nocap import compare_card, export, ladder, verdict_card
+from .nocap.engine import Engine
 from .nocap.surfaces.discord import DiscordSurface
 
 logger = logging.getLogger("hermes_plugins.no_cap")
@@ -135,6 +135,13 @@ def register(ctx: Any) -> None:
     ctx.register_hook("pre_verify", on_verify)
     ctx.register_command("cap", handler=command(engine.cap, wants_key=True),
                          description="Call cap on the last reply: the agent must show receipts or retract")
+    ctx.register_command("capscore", handler=command(engine.capscore, wants_platform=True), args_hint="[card|board]",
+                         description="Cap Score: which model caps most, streaks, shareable scorecard; board = Cap Board (this profile)")
+    ctx.register_command("nocap", handler=command(engine.nocap), args_hint="[all|battery|doctor|purge|help]",
+                         description="No Cap receipts for the last reply, and store admin")
+
+    # Showpieces (verdict card, A/B card, Lie Ladder): /capscore and /nocap are registered again with wrappers that
+    # add the new subcommands and fall through to the engine. Hermes keeps the last registration of a name.
     data = lambda: Path(engine.data_dir())
 
     def capscore(raw_args: str = "", session_id: str = "", platform: str = "") -> str:
@@ -175,9 +182,6 @@ def register(ctx: Any) -> None:
         subs.add_parser("score", help="Cap Score leaderboard")
         subs.add_parser("card", help="Write the shareable scorecard image")
         subs.add_parser("board", help="Cap Board: top cappers per agent, model and skill (this profile; board.team_profiles for a team view)")
-        subs.add_parser("purge", help="Delete the local receipt store")
-        subs.add_parser("path", help="Print where receipts are stored")
-        subs.add_parser("doctor", help="Setup checks: reply-transform conflicts, /cap injection, store")
         v = subs.add_parser("verdict", help="Courtroom verdict card (SVG + PNG) for a session's receipts")
         v.add_argument("--session", default="", help="session id (default: the latest session with receipts)")
         sc = subs.add_parser("scorecard", help="Shareable scorecard; --compare A B for the honesty A/B card")
@@ -192,6 +196,9 @@ def register(ctx: Any) -> None:
         de = subs.add_parser("demo", help="Demo theater; --ladder runs the Lie Ladder in a throwaway home")
         de.add_argument("--ladder", action="store_true", required=True)
         de.add_argument("--out", default="", help="output folder (default: a new one under /tmp)")
+        subs.add_parser("purge", help="Delete the local receipt store")
+        subs.add_parser("path", help="Print where receipts are stored")
+        subs.add_parser("doctor", help="Setup checks: reply-transform conflicts, /cap injection, store")
         subs.add_parser("battery", help="Run the bundled synthetic lie/truth battery: precision/recall report (synthetic, "
                                         "not the blind real-run number)")
         subparser.set_defaults(func=cli)
@@ -212,8 +219,6 @@ def register(ctx: Any) -> None:
             text, problems = engine.doctor_report()
             print(text)
             return 1 if problems else 0  # Hermes turns a handler's int into the process exit code
-        elif sub == "all":
-            print(engine.nocap("all"))
         elif sub == "verdict":
             print(verdict_card.command(engine.store.records(), data(), getattr(args, "session", "") or ""))
         elif sub == "scorecard":
@@ -241,6 +246,8 @@ def register(ctx: Any) -> None:
             print(f"wrote {path} (Prometheus text format; file only, no listener)")
         elif sub == "demo":
             return ladder.run(getattr(args, "out", "") or None)
+        elif sub == "all":
+            print(engine.nocap("all"))
         elif sub == "battery":
             print(engine.battery())
         else:

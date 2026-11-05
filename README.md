@@ -311,11 +311,6 @@ Limits:
   `plugin.no-cap.receipts.updated` event (session id only) so the list refreshes. Any authenticated dashboard caller
   (other installed dashboard or Desktop plugins included) can call these routes; they return only yes/no and this
   profile's receipts, never a key.
-- **Cards and exports it writes:** `/nocap verdict` writes `verdict.svg`/`verdict.png` and `/capscore compare` writes
-  `compare.svg`/`compare.png` in its own store folder (they quote claims and cited commands, already redacted; `/nocap
-  purge` deletes them with the store). `hermes nocap export --out` and `hermes nocap metrics --file` write the file you
-  name (`0600`, atomic temp file + rename; every string re-passed through the secret masker; CSV cells that start like
-  a formula are prefixed with `'`). Metrics are a file in the Prometheus text format: no port, no listener.
 - **Discord:** every Discord reply gets the compact Discord footer (text only). With `discord_buttons: on`, a listener
   on Hermes's discord.py client (handed over by `ctx.register_platform_handler("discord", …)`) edits **the bot's own
   reply** to add an embed and two buttons, and answers button clicks privately (ephemeral). It never reads other
@@ -330,6 +325,11 @@ Limits:
   `HERMES_HOME` under `/tmp`, points `GIT_CONFIG_GLOBAL` at a throwaway file, installs this plugin there, starts the
   stub on the first free port in 8765-8799 on 127.0.0.1, and uses `uv` to fetch pyte, Pillow and pytest into a
   throwaway venv (that fetch is the one network use, and it is the demo's, not the plugin's).
+- **Cards and exports it writes:** `/nocap verdict` writes `verdict.svg`/`verdict.png` and `/capscore compare` writes
+  `compare.svg`/`compare.png` in its own store folder (they quote claims and cited commands, already redacted; `/nocap
+  purge` deletes them with the store). `hermes nocap export --out` and `hermes nocap metrics --file` write the file you
+  name (`0600`, atomic temp file + rename; every string re-passed through the secret masker; CSV cells that start like
+  a formula are prefixed with `'`). Metrics are a file in the Prometheus text format: no port, no listener.
 
 ## Known limits and what is not tested
 
