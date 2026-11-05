@@ -51,20 +51,17 @@
   <a href="docs/media/demo-run/">docs/media/demo-run/</a>.</sub>
 </p>
 
-> **Status: pre-release (0.1).** Not in the Hermes plugin catalog yet. Tested on macOS with Hermes 0.22.5 only.
+> **Status: 0.1.** Submitted to the Hermes plugin catalog. Tested on macOS with Hermes 0.22.5 only.
 
 ## Install
 
-From a clone (works today; this is the path the demo uses):
-
 ```sh
-git clone https://github.com/jedbrnth-eng/no-cap && cd no-cap
-hermes plugins install "file://$PWD" --enable
+hermes plugins install jedbrnth-eng/no-cap --enable
 hermes nocap doctor          # or /nocap doctor inside a session; should end with "0 problems found."
 ```
 
-Once the repository is public: `hermes plugins install jedbrnth-eng/no-cap --enable`. After the catalog entry is
-merged: `hermes plugins install no-cap`. Hooks load at session start, so restart running sessions (and the gateway)
+Once the catalog entry is merged: `hermes plugins install no-cap`. From a clone:
+`git clone https://github.com/jedbrnth-eng/no-cap && hermes plugins install "file://$PWD/no-cap" --enable`. Hooks load at session start, so restart running sessions (and the gateway)
 after installing.
 
 ## How it works
