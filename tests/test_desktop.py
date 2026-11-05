@@ -57,7 +57,7 @@ def test_desktop_gets_chips(tmp_path, platform):
     out = reply(ctx, "All tests pass.", platform)
     assert out.startswith("All tests pass.\n\n")
     attrs, data = parse(out)
-    assert attrs["v"] == "1"
+    assert attrs["v"] == "2"
     c = data["c"][0]
     assert c["v"] == "CAP" and c["x"] == "pytest -q" and c["e"] == 1 and "3 failed" in c["q"]
     assert c["n"] == 1 and c["t"] == "All tests pass."
@@ -124,14 +124,13 @@ def test_no_claims_no_directive(tmp_path):
 
 
 # ---- forgery ------------------------------------------------------------------------------------------------------
-def test_directive_is_signed_with_the_local_key(tmp_path):
+def test_directive_is_signed_with_the_in_memory_key_over_session_turn_and_payload(tmp_path):
     ctx = make(tmp_path)
     tool(ctx, "pytest -q", "44 passed in 0.5s")
     attrs, _ = parse(reply(ctx, "All tests pass.", "desktop"))
-    key = desktop.load_key(ctx.state.data_dir)
-    want = hmac.new(key.encode(), attrs["d"].encode(), hashlib.sha256).hexdigest()[:32]
-    assert attrs["s"] == want
-    assert (ctx.state.data_dir / desktop.KEY_FILE).stat().st_mode & 0o077 == 0
+    msg = json.dumps(["nocap-chip", "2", "s1", "t1", attrs["n"], attrs["d"]], separators=(",", ":")).encode()
+    assert attrs["s"] == hmac.new(desktop.process_key(), msg, hashlib.sha256).hexdigest()[:32]
+    assert not (ctx.state.data_dir / desktop.LEGACY_KEY_FILE).exists()
 
 
 def test_model_written_directive_is_stripped_on_desktop(tmp_path):
@@ -151,11 +150,17 @@ def test_model_written_directive_alone_is_still_stripped(tmp_path):
     assert out is not None and "::nocap" not in out
 
 
-def test_non_desktop_surface_never_rewrites_the_prefix(tmp_path):
+def test_non_desktop_surface_never_rewrites_a_clean_prefix(tmp_path):
+    """The CLI reprints a reply whose prefix changes, so clean text is only ever appended to. A reply carrying a
+    model-written `::nocap` is the exception: it is removed on every surface (tests/test_desktop_security.py)."""
     ctx = make(tmp_path)
-    text = 'Hi ::nocap{v="1"} there'
+    tool(ctx, "pytest -q", "44 passed in 0.5s")
+    text = "All tests pass."
     out = reply(ctx, text, "cli")
-    assert out is None or out.startswith(text)
+    assert out.startswith(text)
+    tool(ctx, "pytest -q", "44 passed in 0.5s", turn="t2")
+    out = reply(ctx, 'Hi ::nocap{v="1"} there. All tests pass.', "cli", turn="t2")
+    assert "::nocap" not in out and out.startswith("Hi") and "there. All tests pass." in out and "didn't issue" in out
 
 
 # ---- payload budget -----------------------------------------------------------------------------------------------
@@ -168,7 +173,7 @@ def receipt(i, verdict="NO_CAP", long=False):
 
 def test_budget_drops_claims_it_cannot_fit_and_says_so():
     rs = [receipt(i, long=True) for i in range(1, 30)]
-    d = desktop.directive(rs, key="k")
+    d = desktop.directive(rs, "s1", "t1")[0]
     body = d[len("::nocap{"):-1]
     assert len(body) <= desktop.BODY_MAX
     data = json.loads(base64.b64decode(re.search(r'd="([^"]*)"', d).group(1)))
@@ -177,15 +182,15 @@ def test_budget_drops_claims_it_cannot_fit_and_says_so():
 
 def test_caps_sort_first():
     rs = [receipt(1), receipt(2, "CAP"), receipt(3, "NO_RECEIPT")]
-    data = json.loads(base64.b64decode(re.search(r'd="([^"]*)"', desktop.directive(rs, key="k")).group(1)))
+    data = json.loads(base64.b64decode(re.search(r'd="([^"]*)"', desktop.directive(rs, "s1", "t1")[0]).group(1)))
     assert [c["v"] for c in data["c"]] == ["CAP", "NO_RECEIPT", "NO_CAP"]
 
 
 def test_unicode_and_quotes_survive_the_attribute():
     r = receipt(1)
     r["text"] = 'Tests pass — “all” {done} "really" ✅'
-    d = desktop.directive([r], key="k")
-    assert d.count('"') == 6  # three attributes, nothing leaks out of its quotes
+    d = desktop.directive([r], "s1", "t1")[0]
+    assert d.count('"') == 8  # four attributes, nothing leaks out of its quotes
     data = json.loads(base64.b64decode(re.search(r'd="([^"]*)"', d).group(1)))
     assert data["c"][0]["t"].startswith('Tests pass — “all” {done} "really"')
 
@@ -193,7 +198,7 @@ def test_unicode_and_quotes_survive_the_attribute():
 def test_secrets_are_redacted_in_the_payload():
     r = receipt(1)
     r["cmd"] = "curl -H 'Authorization: Bearer sk-abcdefghijklmnopqrstuvwxyz0123456789' https://x"
-    d = desktop.directive([r], key="k")
+    d = desktop.directive([r], "s1", "t1")[0]
     raw = base64.b64decode(re.search(r'd="([^"]*)"', d).group(1)).decode()
     assert "sk-abcdefghijklmnopqrstuvwxyz0123456789" not in raw
 
@@ -243,20 +248,34 @@ def test_plugin_api_routes(tmp_path, monkeypatch):
     import importlib.util
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
-    spec = importlib.util.spec_from_file_location("nocap_plugin_api_under_test", root / "dashboard" / "plugin_api.py")
+    spec = importlib.util.spec_from_file_location("nocap_plugin_api_under_test", root / "dashboard" / "desktop_api.py")
     api = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(api)
     d = tmp_path / "pd"
     monkeypatch.setattr(api, "_data_dir", lambda: d)
     res = api.hello({"on": True})
-    assert res["ok"] and re.fullmatch(r"[0-9a-f]{64}", res["key"]) and desktop.desktop_live(d)
-    assert api.hello({"on": False})["key"] == "" and not desktop.desktop_live(d)
+    assert res["ok"] and "key" not in res and desktop.desktop_live(d)
+    assert not api.hello({"on": False})["on"] and not desktop.desktop_live(d)
     (d / "receipts.jsonl").write_text(json.dumps({"type": "reply", "session_id": "s1", "ts": 1, "receipts": [
         {"verdict": "CAP", "kind": "tests", "text": "All tests pass.", "cite": 1, "cmd": "pytest -q", "exit": 1}]})
         + "\n{broken\n", encoding="utf-8")
     view = api.session(id="s1")
     assert view["counts"]["CAP"] == 1 and view["replies"][0]["c"][0]["e"] == 1
     assert api.session(id="nope")["replies"] == []
+
+
+def test_the_dashboard_router_mounts_the_desktop_routes():
+    pytest.importorskip("fastapi")
+    import importlib.util
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location("nocap_plugin_api_router_test", root / "dashboard" / "plugin_api.py")
+    api = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(api)
+    from fastapi import FastAPI
+    app = FastAPI()
+    app.include_router(api.router)
+    assert {"/board", "/hello", "/verify", "/session"} <= set(app.openapi()["paths"])
 
 
 def test_session_view_counts_only_what_was_stamped():

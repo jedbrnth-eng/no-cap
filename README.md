@@ -116,7 +116,7 @@ scripted model.
 ![Receipt chips in Hermes Desktop](docs/media/desktop-run/04-chip-open.png)
 
 Desktop has no slot under a message, so No Cap uses the SDK's transcript directive: on a Desktop turn the footer's
-per-claim lines are replaced by one paragraph `::nocap{v="1" s="…" d="…"}` that the desktop half draws as chips. The
+per-claim lines are replaced by one paragraph `::nocap{v="2" n="…" s="…" d="…"}` that the desktop half draws as chips. The
 rules that keep it honest:
 
 - **Desktop only.** It is emitted only when the turn's platform is exactly `desktop` (what Desktop chat sessions
@@ -124,12 +124,24 @@ rules that keep it honest:
   footer (`tests/test_desktop.py` checks 13 platform strings).
 - **Only while the desktop half is on.** Desktop installs a package's desktop half switched off. Until you turn it on
   in Capabilities → Plugins → No Cap → Desktop, Desktop chats get the text footer, never a raw `::nocap` line. The half
-  says hello through No Cap's own backend route (`dashboard/plugin_api.py`, local files only) on load and every 10
+  says hello through No Cap's own backend route (`dashboard/desktop_api.py`, local files only) on load and every 10
   minutes, and goodbye when it is switched off; `desktop_chips: auto` emits chips only while that hello is under 30
   minutes old. `on` / `off` override it.
-- **Signed.** The directive carries an HMAC-SHA256 made with a local key in No Cap's data folder; the desktop half
-  draws chips only when it checks out, and shows a warning otherwise. On Desktop, a `::nocap` the model wrote itself is
-  removed from the reply and counted as a forged stamp.
+- **Model-written directives are removed everywhere.** On every surface (CLI, TUI, gateways, Desktop), any `::nocap`
+  the model wrote, including a copy of an earlier genuine chip, is removed from the reply before it is shown or
+  stored, and counted as a forged stamp. Before matching, the text is NFKC-normalised and Unicode format characters
+  (U+FEFF, zero-width spaces and joiners, word joiner) are dropped; removal repeats to a fixed point, so nested forms
+  like `::nocap::nocap{…}` can't reassemble a directive. A reply without one is never touched.
+- **Signed for one chat and one turn.** The directive carries an HMAC-SHA256 over the session id, the turn id, a random
+  chip id and the payload. The key exists only in the Hermes process's memory, is new at every start, and is never
+  written to disk or sent to the desktop half. The desktop half asks No Cap's backend (`POST /verify`) whether it issued
+  that chip for the chat the directive sits in (the host passes the chat's id) and draws it only on a yes; a chip copied
+  into another chat, a tampered one or an unknown one gets a warning, never a chip. After a restart, `/verify` vouches
+  for older chips from the chip id, signature and payload digest recorded with the reply in this profile's store.
+- **What that does and doesn't guarantee.** It stops the model's *text* from painting a 🧾 it didn't earn: a copied,
+  replayed or invented directive is removed or rejected. It does not stop a local agent that has a shell or file-write
+  tool: that agent runs as you and can always read or write your local files (the receipt store included) or attach a
+  debugger to Hermes. No local plugin can prevent that; run untrusted agents in a sandbox.
 - **Fits the host parser.** At most 2048 characters (the host's limit); what doesn't fit is counted ("+N more ·
   /nocap all").
 
@@ -237,12 +249,16 @@ Limits:
   `gh pr view`, `curl -sI` to a public URL) or the plain test command parsed from an earlier run (`pytest -q`, never a
   line with `;`, `&&`, `|`, `$(`, backticks, quotes or redirects); otherwise it says "run your test suite". Strict
   mode's `pre_verify` can continue a coding turn at most twice.
-- **Desktop half:** `dashboard/plugin_api.py` adds two routes under `/api/plugins/no-cap/` on your own Hermes backend:
-  `POST /hello` writes `desktop.json` (on/off and a timestamp) and returns the local signing key `desktop.key`
-  (random, `0600`, never sent anywhere else), and `GET /session?id=` reads the store for the Receipts list. Both files
-  sit in No Cap's data folder; `/nocap purge` leaves them. When a Desktop reply is checked, the plugin emits the
-  `plugin.no-cap.receipts.updated` event (session id only) so the list refreshes. The web dashboard gets only a hidden
-  placeholder tab.
+- **Desktop half:** `dashboard/desktop_api.py` (mounted by `dashboard/plugin_api.py`) adds three routes under
+  `/api/plugins/no-cap/` on your own Hermes backend, behind the dashboard's auth: `POST /hello` writes `desktop.json`
+  (on/off and a timestamp; atomic `0600` write, a fresh `O_EXCL|O_NOFOLLOW` temp file, folder tightened to `0700`) and
+  returns no key; `POST /verify` answers yes/no for one chip and one chat; `GET /session?id=` reads the store for the
+  Receipts list. A Desktop reply's store line also records the chip's id, signature and payload digest (hex, through
+  the same redaction as every other field). No signing key is ever written; a `desktop.key` left by 0.1 is deleted.
+  `/nocap purge` leaves `desktop.json`. When a Desktop reply is checked, the plugin emits the
+  `plugin.no-cap.receipts.updated` event (session id only) so the list refreshes. Any authenticated dashboard caller
+  (other installed dashboard or Desktop plugins included) can call these routes; they return only yes/no and this
+  profile's receipts, never a key.
 - **The demo:** `demo/stub_model.py` is a scripted model on 127.0.0.1. It is test scaffolding, not part of the plugin.
 
 ## Known limits and what is not tested
@@ -269,7 +285,9 @@ Limits:
 - A real model runs real commands. In one recorded run Qwen3-4B ran `git config --global user.email ...` and a `curl`
   to github.com; the demo scripts point `GIT_CONFIG_GLOBAL` at the throwaway directory for that reason.
 - Desktop chips need the backend route, so a Desktop attached to a remote backend without No Cap's desktop half
-  installed there gets the text footer. A Desktop chat reopened in the CLI or TUI shows the `::nocap{…}` line as text.
+  installed there gets the text footer. A Desktop chat reopened in the CLI or TUI shows the `::nocap{…}` line as text
+  (and if the model repeats it there, it is removed). A chip whose chat id the host doesn't report yet shows "checking
+  receipts…" until it does.
 - Desktop is tested end to end only with the scripted model, on macOS, against the installed build of 8acb7f6.
 - Not tested: Discord and Telegram sessions end to end; real models other than one local Qwen3-4B (three
   runs); Linux and Windows; the catalog install path; a real conflict with another enabled reply-rewriting plugin

@@ -132,9 +132,9 @@ class Engine:
         if not isinstance(response_text, str) or not response_text.strip():
             return None
         on_desktop = desktop.is_desktop(platform)
-        planted = 0
-        if on_desktop:  # Desktop replaces the streamed message in place, so dropping text here is safe
-            response_text, planted = desktop.strip_model_directives(response_text)
+        # Every surface: a `::nocap` the model wrote (a replay of an earlier genuine chip included) is removed, because
+        # any transcript can later be opened in Desktop. Text without one is untouched, so the CLI never reprints.
+        response_text, planted = desktop.strip_model_directives(response_text)
         claims = extract_claims(response_text)
         if not bool(self.setting("check_numbers", True)):
             claims = [c for c in claims if c["kind"] != "number"]
@@ -146,11 +146,17 @@ class Engine:
         receipts = [dict(r, hidden=not shown(r, level)) for r in receipts]
         visible = [r for r in receipts if not r["hidden"]]
         rescore = self._rescore(session_id, receipts)
+        chips, chip_ids = None, None
+        if on_desktop and visible and session_id and self.mode() != "quiet" and self.desktop_chips():
+            desktop.drop_legacy_key(Path(self.data_dir()))
+            chips, chip_ids = desktop.directive(dedupe(visible), session_id, turn_id)
         if receipts or evs or rescore:
-            self.store.append({**self._who(evs), "type": "reply", "ts": time.time(), "session_id": session_id, "turn_id": turn_id,
-                               "model": model or "unknown", "platform": platform or "", "mode": self.mode(),
-                               "calls": _cited(evs, receipts), "ledger": _ledger(evs), "receipts": receipts,
-                               "rescore": rescore})
+            rec = {**self._who(evs), "type": "reply", "ts": time.time(), "session_id": session_id, "turn_id": turn_id,
+                   "model": model or "unknown", "platform": platform or "", "mode": self.mode(),
+                   "calls": _cited(evs, receipts), "ledger": _ledger(evs), "receipts": receipts, "rescore": rescore}
+            if chip_ids:  # lets /verify vouch for this chip after a restart (ids and a digest, never a key)
+                rec["chip"] = chip_ids
+            self.store.append(rec)
             if on_desktop:  # the Receipts popover in Desktop refreshes on this (no-op when no window listens)
                 try:
                     self.broadcast("receipts.updated", {"session_id": session_id})
@@ -164,11 +170,11 @@ class Engine:
                 streak = None
         forged = forged_stamps(response_text) + planted
         notes = [f"⚠️ This reply contained {forged} stamp(s) No Cap didn't issue. They were ignored."] if forged else None
-        chips = None
-        if on_desktop and visible and self.mode() != "quiet" and self.desktop_chips():
-            chips = desktop.directive(dedupe(visible), desktop.load_key(Path(self.data_dir())), turn_id)
-        return compose(response_text, visible, self.mode(), rescore, streak, notes,
-                       plain=(platform or "").lower() == "cli", chips=chips)
+        out = compose(response_text, visible, self.mode(), rescore, streak, notes,
+                      plain=(platform or "").lower() == "cli", chips=chips)
+        if out is None and planted:  # quiet mode: no footer, but a planted directive still never goes out
+            return response_text
+        return out
 
     def desktop_chips(self) -> bool:
         """Desktop receipt chips: on, off, or auto (only while the desktop half has said hello recently)."""

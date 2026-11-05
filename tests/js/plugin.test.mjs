@@ -14,7 +14,8 @@ import plugin, {
   ReceiptChipsView,
   SessionReceiptsView,
   summary,
-  verifySignature
+  chipAttrs,
+  verifyChip
 } from '../../desktop/plugin.js'
 
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/directive.json', import.meta.url), 'utf8'))
@@ -41,7 +42,8 @@ const buttons = node => walk(node).filter(n => n.type === 'button')
 
 // ---- decoding ----------------------------------------------------------------------------------------------------
 test('decodes the directive Python emits', () => {
-  assert.equal(attrs.v, '1')
+  assert.equal(attrs.v, '2')
+  assert.equal(attrs.n, fixture.ids.n)
   const data = decodePayload(attrs.d)
   assert.equal(data.chips.length, 4)
   assert.deepEqual(data.chips.map(c => c.v), ['CAP', 'CAP', 'NO_RECEIPT', 'NO_CAP'])
@@ -84,17 +86,41 @@ test('unicode survives base64', () => {
   assert.equal(decodePayload(d).chips[0].t, 'Tests pass — “all” ✅ テスト')
 })
 
-// ---- signature ---------------------------------------------------------------------------------------------------
-test('the HMAC matches the Python signer', async () => {
-  assert.equal(await verifySignature(fixture.key, attrs.d, attrs.s), true)
+// ---- verification: the backend vouches, this half holds no key -------------------------------------------------
+function backend(answer) {
+  const asked = []
+  const rest = (path, opts) => {
+    asked.push([path, opts])
+    return typeof answer === 'function' ? answer(path, opts) : Promise.resolve(answer)
+  }
+  return { asked, rest }
+}
+
+test('a chip is ok only when the backend vouches for this exact chat', async () => {
+  const b = backend((path, opts) => Promise.resolve({ ok: opts.body.session_id === 'session-1', session_id: opts.body.session_id }))
+  assert.equal(await verifyChip(b.rest, 'session-1', attrs), 'ok')
+  assert.deepEqual(b.asked[0], ['/verify', { method: 'POST', body: { d: attrs.d, n: attrs.n, s: attrs.s, session_id: 'session-1' } }])
+  assert.equal(await verifyChip(b.rest, 'session-2', attrs), 'bad')
 })
 
-test('a tampered payload, signature or key fails', async () => {
-  assert.equal(await verifySignature(fixture.key, attrs.d.slice(0, -4) + 'AAAA', attrs.s), false)
-  assert.equal(await verifySignature(fixture.key, attrs.d, '0'.repeat(32)), false)
-  assert.equal(await verifySignature('f'.repeat(64), attrs.d, attrs.s), false)
-  assert.equal(await verifySignature('', attrs.d, attrs.s), false)
-  assert.equal(await verifySignature(fixture.key, attrs.d, undefined), false)
+test('a backend answer for another session never counts', async () => {
+  const b = backend({ ok: true, session_id: 'someone-else' })
+  assert.equal(await verifyChip(b.rest, 'session-1', attrs), 'bad')
+})
+
+test('malformed or v1 attributes are rejected without asking', async () => {
+  const b = backend({ ok: true, session_id: 'session-1' })
+  for (const bad of [{ ...attrs, v: '1' }, { ...attrs, n: 'xyz' }, { ...attrs, s: '0' }, { ...attrs, d: '' }, {}, null]) {
+    assert.equal(chipAttrs(bad), null)
+    assert.equal(await verifyChip(b.rest, 'session-1', bad), 'bad')
+  }
+  assert.equal(b.asked.length, 0)
+})
+
+test('no session id yet: keep checking; backend down: fail closed', async () => {
+  assert.equal(await verifyChip(backend({ ok: true }).rest, null, attrs), 'checking')
+  assert.equal(await verifyChip(() => Promise.reject(new Error('down')), 'session-1', attrs), 'nokey')
+  assert.equal(await verifyChip(() => Promise.resolve(null), 'session-1', attrs), 'nokey')
 })
 
 // ---- chips -------------------------------------------------------------------------------------------------------
@@ -149,7 +175,7 @@ test('Call cap button only when something is unproven', () => {
   assert.equal(buttons(t2).find(b => b.props['data-nocap-cap'] !== undefined), undefined)
 })
 
-test('a bad signature draws a warning and no chips', () => {
+test('a chip the backend did not vouch for draws a warning and no chips', () => {
   const tree = ReceiptChipsView({ status: 'bad', data, open: -1, onToggle: () => {}, onCap: () => {} })
   assert.equal(buttons(tree).filter(b => b.props['data-nocap-chip'] !== undefined).length, 0)
   assert.match(text(tree), /didn't issue/)
@@ -197,7 +223,7 @@ function fakeCtx(restImpl) {
     registered: [], rests: [], disposers: [], intervals: [], events: [],
     register(c) { this.registered.push(c); return () => {} },
     registerMany(cs) { cs.forEach(c => this.register(c)); return () => {} },
-    rest(path, opts) { this.rests.push([path, opts]); return restImpl ? restImpl(path, opts) : Promise.resolve({ ok: true, key: fixture.key }) },
+    rest(path, opts) { this.rests.push([path, opts]); return restImpl ? restImpl(path, opts) : Promise.resolve({ ok: true }) },
     onDispose(fn) { this.disposers.push(fn) },
     setInterval(fn, ms) { this.intervals.push(ms); return () => {} },
     setTimeout(fn) { return () => {} },

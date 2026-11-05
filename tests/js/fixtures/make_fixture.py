@@ -12,7 +12,8 @@ sys.path.insert(0, str(ROOT))
 
 from nocap import desktop  # noqa: E402
 
-KEY = "0" * 63 + "1"
+KEY = bytes(31) + b"\x01"  # a fixed key for a reproducible fixture; the plugin's real key is in-memory and random
+NONCE = "0123456789abcdef" * 2
 RECEIPTS = [
     {"kind": "tests", "text": "All tests pass.", "verdict": "CAP", "cite": 1, "tool": "terminal", "cmd": "pytest -q",
      "exit": 1, "why": "", "quote": "3 failed, 41 passed in 0.52s", "claim": {}},
@@ -25,8 +26,13 @@ RECEIPTS = [
 ]
 
 
+def _issue(session_id, turn_id, d):
+    return {"n": NONCE, "s": desktop.sign(KEY, session_id, turn_id, NONCE, d), "h": desktop.digest(d)}
+
+
 def build():
-    return {"key": KEY, "directive": desktop.directive(RECEIPTS, KEY, "turn-1"), "receipts": RECEIPTS}
+    text, ids = desktop.directive(RECEIPTS, "session-1", "turn-1", issue=_issue)
+    return {"session_id": "session-1", "turn_id": "turn-1", "directive": text, "ids": ids, "receipts": RECEIPTS}
 
 
 if __name__ == "__main__":

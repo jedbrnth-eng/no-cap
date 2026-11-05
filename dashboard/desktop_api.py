@@ -1,12 +1,14 @@
-"""No Cap backend routes for the Desktop half, mounted by Hermes at /api/plugins/no-cap/.
+"""No Cap backend routes for the Desktop half. dashboard/plugin_api.py (the plugin's one router) mounts this module,
+so Hermes serves them under /api/plugins/no-cap/.
 
-Desktop reaches these through `ctx.rest` (profile-aware, scoped to this plugin's namespace). Local files only:
-everything read or written lives in this profile's plugin-data/no-cap folder. No network, no model.
+Desktop reaches these through `ctx.rest` (profile-aware, scoped to this plugin's namespace, behind the dashboard's
+auth). Local files only: everything read or written lives in this profile's No Cap data folder. No network, no model.
 
   POST /hello    {"on": true|false}  the desktop half is loaded (or unloading). With `desktop_chips: auto`
                  No Cap only emits Desktop receipt chips while this is fresh, so a disabled desktop half never
-                 leaves a raw `::nocap{...}` paragraph in the chat. Returns the local signing key, which the
-                 half uses to check that a chip directive really came from No Cap and not from the model.
+                 leaves a raw `::nocap{...}` paragraph in the chat. Returns no key: there is none to hand out.
+  POST /verify   {"session_id", "n", "s", "d"}  was this chip issued by No Cap for THIS chat? `session_id` is the
+                 chat the directive is rendered in. {"ok": true, "turn_id"} or {"ok": false, "reason"}.
   GET  /session?id=<session id>       the Receipts panel: that session's checked replies, counts and streak.
 """
 from __future__ import annotations
@@ -64,7 +66,15 @@ def hello(body: Dict[str, Any] = Body(default_factory=dict)) -> Dict[str, Any]:
     on = bool((body or {}).get("on", True))
     desk = _desktop()
     desk.write_hello(d, on)
-    return {"ok": True, "on": on, "key": desk.load_key(d) if on else "", "max_age_s": desk.HELLO_MAX_AGE}
+    desk.drop_legacy_key(d)
+    return {"ok": True, "on": on, "max_age_s": desk.HELLO_MAX_AGE}
+
+
+@router.post("/verify")
+def verify(body: Dict[str, Any] = Body(default_factory=dict)) -> Dict[str, Any]:
+    b = body if isinstance(body, dict) else {}
+    d = _data_dir()
+    return _desktop().verify(b.get("session_id"), b.get("n"), b.get("s"), b.get("d"), records=lambda: _records(d))
 
 
 @router.get("/session")

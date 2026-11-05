@@ -2,10 +2,11 @@
 // status bar. Public SDK only: TRANSCRIPT_DIRECTIVE_AREA, STATUSBAR_AREAS, ctx.rest to this plugin's own backend
 // (dashboard/plugin_api.py), host.composer.submit. No app DOM, no network beyond the local backend.
 //
-// The Python half appends `::nocap{v="1" s="<hmac>" d="<base64 json>"}` as its own paragraph, and only for
-// platform "desktop" while this half is loaded (it says hello below). Attributes are untrusted text: a chip is
-// drawn only after its HMAC checks out against the local key, so a model that copies or invents a directive gets
-// a warning, never a fake 🧾.
+// The Python half appends `::nocap{v="2" n="<chip id>" s="<hmac>" d="<base64 json>"}` as its own paragraph, and only
+// for platform "desktop" while this half is loaded (it says hello below). Attributes are untrusted text. This half
+// holds no key: a chip is drawn only after the plugin's own backend (POST /verify) confirms it issued that chip for
+// the chat it sits in (the host's `sessionId`). The Python half also strips every `::nocap` the model writes, on
+// every surface, so a copied or invented directive gets a warning, never a fake 🧾.
 import { host, Popover, PopoverContent, PopoverTrigger, STATUSBAR_AREAS, TRANSCRIPT_DIRECTIVE_AREA, useValue } from '@hermes/plugin-sdk'
 import { useEffect, useState } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
@@ -71,25 +72,30 @@ export function decodePayload(d) {
   return { chips, more: Math.max(0, int(data.more) ?? 0), turn: str(data.t, 40) }
 }
 
-function hex(buf) {
-  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')
+/** The well-formed attributes of a v2 directive, or null. */
+export function chipAttrs(attrs) {
+  const a = attrs || {}
+  if (a.v !== '2') return null
+  if (typeof a.n !== 'string' || !/^[0-9a-f]{32}$/.test(a.n)) return null
+  if (typeof a.s !== 'string' || !/^[0-9a-f]{32}$/.test(a.s)) return null
+  if (typeof a.d !== 'string' || !a.d || a.d.length > MAX_D) return null
+  return { n: a.n, s: a.s, d: a.d }
 }
 
-/** HMAC-SHA256(key, d), first 32 hex chars, compared with `s`. Same signer as nocap/desktop.py::sign. */
-export async function verifySignature(key, d, s) {
-  if (typeof key !== 'string' || !/^[0-9a-f]{64}$/.test(key) || typeof d !== 'string' || typeof s !== 'string') {
-    return false
-  }
+/**
+ * Ask the plugin's backend whether it issued this chip for `sessionId` (the chat the directive is rendered in).
+ * 'ok' only when the backend says so for that exact session; 'bad' when it says no; 'nokey' when it can't answer.
+ */
+export async function verifyChip(rest, sessionId, attrs) {
+  const a = chipAttrs(attrs)
+  if (!a) return 'bad'
+  if (typeof sessionId !== 'string' || !sessionId) return 'checking'
   try {
-    const enc = new TextEncoder()
-    const k = await crypto.subtle.importKey('raw', enc.encode(key), { hash: 'SHA-256', name: 'HMAC' }, false, ['sign'])
-    const want = hex(await crypto.subtle.sign('HMAC', k, enc.encode(d))).slice(0, 32)
-    if (want.length !== s.length) return false
-    let diff = 0
-    for (let i = 0; i < want.length; i += 1) diff |= want.charCodeAt(i) ^ s.charCodeAt(i)
-    return diff === 0
+    const res = await rest('/verify', { body: { d: a.d, n: a.n, s: a.s, session_id: sessionId }, method: 'POST' })
+    if (!res || typeof res !== 'object') return 'nokey'
+    return res.ok === true && res.session_id === sessionId ? 'ok' : 'bad'
   } catch {
-    return false
+    return 'nokey'
   }
 }
 
@@ -215,7 +221,7 @@ function Chip({ chip, index, open, onToggle, key }) {
 export function ReceiptChipsView({ status, data, open, onToggle, onCap }) {
   if (!data) return null
   if (status === 'bad') {
-    return jsx('div', { style: S.note, children: "⚠️ No Cap didn't issue these receipts (signature mismatch), so they aren't shown." })
+    return jsx('div', { style: S.note, children: "⚠️ No Cap didn't issue these receipts for this chat, so they aren't shown." })
   }
   if (status === 'nokey') {
     return jsx('div', { style: S.note, children: "No Cap can't verify these receipts right now (its backend didn't answer). The text receipts above still hold. /nocap all lists them." })
@@ -299,8 +305,8 @@ export default {
   id: ID,
   name: 'No Cap',
   register(ctx) {
-    let keyPromise = null
     const listeners = new Set()
+    const verdicts = new Map() // `${sessionId}|${n}|${s}|${d}` → Promise<status>, so a re-render never re-asks
 
     const hello = on => {
       let call
@@ -309,17 +315,23 @@ export default {
       } catch (err) {
         call = Promise.reject(err)
       }
-      return call.then(res => (res && typeof res.key === 'string' ? res.key : '')).catch(() => '')
+      return call.then(() => true).catch(() => false)
     }
 
-    const getKey = () => {
-      if (!keyPromise) keyPromise = hello(true)
-      return keyPromise
+    const check = (sessionId, attrs) => {
+      const id = `${sessionId}|${attrs && attrs.n}|${attrs && attrs.s}|${attrs && attrs.d}`
+      if (!verdicts.has(id)) {
+        if (verdicts.size > 500) verdicts.clear()
+        const p = verifyChip((path, opts) => ctx.rest(path, opts), sessionId, attrs)
+        verdicts.set(id, p)
+        p.then(s => { if (s !== 'ok' && s !== 'bad') verdicts.delete(id) }) // retry 'nokey'/'checking' next time
+      }
+      return verdicts.get(id)
     }
 
-    getKey()
+    hello(true)
     ctx.setInterval(() => {
-      keyPromise = hello(true)
+      hello(true)
     }, HELLO_EVERY_MS)
     ctx.onDispose(() => {
       hello(false)
@@ -333,14 +345,12 @@ export default {
       useEffect(() => {
         let live = true
         if (!data) return undefined
-        getKey()
-          .then(key => (key ? verifySignature(key, attrs.d, attrs.s).then(ok => (ok ? 'ok' : 'bad')) : 'nokey'))
-          .then(s => live && setStatus(s))
+        check(sessionId, attrs).then(s => live && setStatus(s))
         return () => {
           live = false
         }
-      }, [attrs && attrs.d, attrs && attrs.s])
-      if (!attrs || attrs.v !== '1') return null
+      }, [sessionId, attrs && attrs.n, attrs && attrs.d, attrs && attrs.s])
+      if (!attrs || attrs.v !== '2') return null
       return ReceiptChipsView({
         data,
         onCap: () => {
