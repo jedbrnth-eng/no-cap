@@ -62,7 +62,10 @@ def dedupe(receipts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
-def footer(receipts: List[Dict[str, Any]], rescore: Optional[List[str]] = None, streak: Optional[int] = None) -> str:
+def footer(receipts: List[Dict[str, Any]], rescore: Optional[List[str]] = None, streak: Optional[int] = None,
+           chips: Optional[str] = None) -> str:
+    """``chips``: a Desktop `::nocap{...}` directive. It replaces the per-claim lines and stands as its own
+    paragraph, because the Desktop host only claims a directive whose paragraph holds nothing else."""
     if not receipts and not rescore:
         return ""
     receipts = dedupe(receipts)
@@ -77,10 +80,13 @@ def footer(receipts: List[Dict[str, Any]], rescore: Optional[List[str]] = None, 
     for line in rescore or []:
         lines.append(line)
     ordered = sorted(receipts, key=lambda r: ORDER[r["verdict"]])
-    for r in ordered[:MAX_LINES]:
-        lines.append(receipt_line(r))
-    if len(ordered) > MAX_LINES:
-        lines.append(f"…and {len(ordered) - MAX_LINES} more · /nocap for all")
+    if chips and ordered:
+        lines.append("\n" + chips + "\n")
+    else:
+        for r in ordered[:MAX_LINES]:
+            lines.append(receipt_line(r))
+        if len(ordered) > MAX_LINES:
+            lines.append(f"…and {len(ordered) - MAX_LINES} more · /nocap for all")
     if c[CAP] or c[NO_RECEIPT]:
         lines.append("Type /cap and the agent has to show receipts or take it back.")
     return "\n".join(lines)
@@ -95,12 +101,14 @@ def unverified_block(receipts: List[Dict[str, Any]]) -> str:
 
 
 def compose(text: str, receipts: List[Dict[str, Any]], mode: str, rescore: Optional[List[str]] = None,
-            streak: Optional[int] = None, notes: Optional[List[str]] = None, plain: bool = False) -> Optional[str]:
+            streak: Optional[int] = None, notes: Optional[List[str]] = None, plain: bool = False,
+            chips: Optional[str] = None) -> Optional[str]:
     """Append-only by design: the classic CLI reprints the whole reply when a rewrite changes its prefix.
-    ``plain``: no markdown bold, for surfaces that print the appended footer raw (the classic CLI)."""
+    ``plain``: no markdown bold, for surfaces that print the appended footer raw (the classic CLI).
+    ``chips``: the Desktop directive (only ever passed for platform "desktop")."""
     if mode == "quiet" or (not receipts and not rescore and not notes):
         return None
-    tail = footer(receipts, rescore, streak) if (receipts or rescore) else "**Receipts**"
+    tail = footer(receipts, rescore, streak, chips) if (receipts or rescore) else "**Receipts**"
     if notes:
         tail += "\n" + "\n".join(notes)
     if mode == "strict":

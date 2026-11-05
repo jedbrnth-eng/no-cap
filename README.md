@@ -75,7 +75,9 @@ after installing.
 | `pre_llm_call` hook | Cap Coach only: adds the coach rules **you approved** to the turn as labelled context, only for the agent, model and loaded skill they were approved for. With no approved rule it returns nothing. |
 | `/cap` | Re-checks what it can locally (read-only `git rev-parse` / `cat-file`, a file's existence for "created X"), then asks the agent to prove or retract the rest. The next reply is re-scored (🔁 lines). It never overrules a 🧢 from the turn's own output. |
 | `/capscore [card]` | Per-model honesty board from the local store; `card` writes a share card (SVG, plus PNG when Pillow is there). |
+| Dashboard **Cap Board** tab · `/capscore board` | The leaderboard: this profile's store by default; with the `board.team_profiles` opt-in, a team view of other Hermes profiles on this machine (found the way Hermes finds profiles, read-only, CLI and dashboard only). Ranked by cap rate per agent, model and skill, with receipt rate, streak, 7-day trend, top cap type and a Hall of Cap of the latest 🧢 with their (redacted) evidence. The tab polls every 4 s. Rates need ≥10 claims; below that the row shows n, greyed and unranked. See [docs/CAP_BOARD.md](docs/CAP_BOARD.md). |
 | `/nocap [all\|doctor\|purge]` | The last receipts, every receipt including unstamped ones, setup checks, delete the store. Same as `hermes nocap …` in a terminal. |
+| Hermes Desktop (`desktop/plugin.js`, public Desktop plugin SDK) | The receipt lines become **clickable chips** inside the reply (`TRANSCRIPT_DIRECTIVE_AREA`): 🧢/🤔/🧾 plus the claim; click one to see the cited call, command, exit code and the output line that proves or contradicts it, and **🧢 Call /cap** sends `/cap` to that chat. A status-bar item shows this chat's tally and opens a Receipts list. |
 
 Every hook fails open: if No Cap raises, the reply goes out unchanged and the error is logged.
 
@@ -111,6 +113,46 @@ scripted model.
 
 </details>
 
+### Hermes Desktop
+
+![Receipt chips in Hermes Desktop](docs/media/desktop-run/04-chip-open.png)
+
+Desktop has no slot under a message, so No Cap uses the SDK's transcript directive: on a Desktop turn the footer's
+per-claim lines are replaced by one paragraph `::nocap{v="2" n="…" s="…" d="…"}` that the desktop half draws as chips. The
+rules that keep it honest:
+
+- **Desktop only.** It is emitted only when the turn's platform is exactly `desktop` (what Desktop chat sessions
+  report; Desktop's embedded terminal reports `tui`). CLI, TUI, gateways, cron and the API server always get the text
+  footer (`tests/test_desktop.py` checks 13 platform strings).
+- **Only while the desktop half is on.** Desktop installs a package's desktop half switched off. Until you turn it on
+  in Capabilities → Plugins → No Cap → Desktop, Desktop chats get the text footer, never a raw `::nocap` line. The half
+  says hello through No Cap's own backend route (`dashboard/desktop_api.py`, local files only) on load and every 10
+  minutes, and goodbye when it is switched off; `desktop_chips: auto` emits chips only while that hello is under 30
+  minutes old. `on` / `off` override it.
+- **Model-written directives are removed everywhere.** On every surface (CLI, TUI, gateways, Desktop), any `::nocap`
+  the model wrote, including a copy of an earlier genuine chip, is removed from the reply before it is shown or
+  stored, and counted as a forged stamp. Before matching, the text is NFKC-normalised and Unicode format characters
+  (U+FEFF, zero-width spaces and joiners, word joiner) are dropped; removal repeats to a fixed point, so nested forms
+  like `::nocap::nocap{…}` can't reassemble a directive. A reply without one is never touched.
+- **Signed for one chat and one turn.** The directive carries an HMAC-SHA256 over the session id, the turn id, a random
+  chip id and the payload. The key exists only in the Hermes process's memory, is new at every start, and is never
+  written to disk or sent to the desktop half. The desktop half asks No Cap's backend (`POST /verify`) whether it issued
+  that chip for the chat the directive sits in (the host passes the chat's id) and draws it only on a yes; a chip copied
+  into another chat, a tampered one or an unknown one gets a warning, never a chip. After a restart, `/verify` vouches
+  for older chips from the chip id, signature and payload digest recorded with the reply in this profile's store.
+- **What that does and doesn't guarantee.** It stops the model's *text* from painting a 🧾 it didn't earn: a copied,
+  replayed or invented directive is removed or rejected. It does not stop a local agent that has a shell or file-write
+  tool: that agent runs as you and can always read or write your local files (the receipt store included) or attach a
+  debugger to Hermes. No local plugin can prevent that; run untrusted agents in a sandbox.
+- **Fits the host parser.** At most 2048 characters (the host's limit); what doesn't fit is counted ("+N more ·
+  /nocap all").
+
+Recorded in the real Hermes Desktop app (installed build of 8acb7f6), in a throwaway home, with the scripted model:
+`sh demo/run_desktop.sh` ([docs/media/desktop-run/](docs/media/desktop-run/)): the desktop half off by default
+(01) and switched on (02); the 🧢 chips (03) and an open chip (04); **Call /cap** sending the steer and the re-scored
+🧾 chips (05; captured just before inline-code backticks were dropped from chip text); the status-bar Receipts list
+(06); and with the desktop half switched off again, the plain text footer and no `::nocap` text (07).
+
 ## More than a prompt
 
 A system prompt can ask a model to be honest. It can't make the model check itself, because the model that wrote
@@ -134,6 +176,7 @@ A system prompt can ask a model to be honest. It can't make the model check itse
 | Every receipt, including unstamped unsure ones | `/nocap all` · `hermes nocap all` |
 | Make the agent prove it or take it back | `/cap` |
 | Honesty board / share card | `/capscore` · `/capscore card` · `hermes nocap score` · `hermes nocap card` |
+| Leaderboard (this profile; team view opt-in) | the dashboard's Cap Board tab · `/capscore board` · `hermes nocap board` |
 | Setup checks | `/nocap doctor` · `hermes nocap doctor` |
 | Delete the store | `/nocap purge` · `hermes nocap purge` |
 
@@ -146,7 +189,11 @@ restart needed):
 | `show_uncertain` | `off` | When to stamp 🤔. `off`: never (only 🧾 and 🧢). `strict`: only "tests pass" in a turn that ran no tests, showed no test output and ran no check script of the agent's own. `expected`: also other claim types that expect a receipt when nothing relevant ran (push, merge, deploy, file...). `all`: every unsure claim. `default` means `off` |
 | `check_numbers` | `true` | Also check counts like "changed 3 files" |
 | `retention_days` | `30` | How long receipts are kept |
+| `board.team_profiles` | unset (off) | Cap Board team view: `all`, or a list of profile names, to also show those profiles' stores (claims, cited commands and evidence lines). Off by default: the board shows only the profile it runs in. Even when set, only the CLI (`hermes nocap board`, a CLI session's `/capscore board`) and the dashboard tab show the team view; `/capscore board` in a gateway chat (Telegram, Discord, ...), the TUI or Desktop always shows the current profile |
+| `board_sources` | `""` | Team view only: extra stores beside the team profiles, `label=path` entries separated by `:` (a Hermes home, a `receipts.jsonl`, a folder searched for them up to 6 levels and 2000 folders deep, never through a symlink, or a glob). Also `NOCAP_BOARD_SOURCES` |
+| `board_min_claims` | `10` | Claims a row needs before the board shows and ranks its rates |
 | `self_verify_http` | `false` | Let `/cap` send one HTTP HEAD to a URL the agent says is live (public addresses only, no redirects, 3 s timeout) |
+| `desktop_chips` | `auto` | Hermes Desktop receipt chips. `auto`: while the desktop half is on (it checks in every 10 minutes). `on`: always on Desktop. `off`: text footer on Desktop too. Never on other surfaces |
 
 `plugins.entries.no-cap.allow_gateway_injection: true` (one level up, a Hermes permission) lets `/cap` send its steer
 itself in gateway-backed sessions. Without it `/cap` prints the steer for you to paste.
@@ -235,6 +282,11 @@ Limits:
 - **Commands it runs:** only during `/cap`, two read-only git commands as argument lists (no shell) in the session's
   working directory, 5 s timeout, no fetch: `git cat-file -t <sha>` and `git rev-parse --verify <ref>`. It never
   re-runs tests or builds.
+- **Cap Board reads:** the dashboard tab and `/capscore board` read the current profile's own store. Only with the
+  `board.team_profiles` opt-in, and only in the CLI or the dashboard, they also read other profiles' stores
+  (`<root>/profiles/<name>/plugin-data/…/receipts.jsonl`, opened read-only) and the `board_sources` /
+  `NOCAP_BOARD_SOURCES` paths, and show those profiles' claims, cited commands and evidence lines to whoever can open
+  the dashboard. A gateway chat never gets another profile's data.
 - **Reads outside its data:** `/cap` checks whether a file the agent says it created exists (existence and size).
   `/nocap doctor` reads other plugins' `plugin.yaml` files to find other reply rewriters, and creates and deletes one
   probe file in its own store folder.
@@ -243,10 +295,20 @@ Limits:
   `gh pr view`, `curl -sI` to a public URL) or the plain test command parsed from an earlier run (`pytest -q`, never a
   line with `;`, `&&`, `|`, `$(`, backticks, quotes or redirects); otherwise it says "run your test suite". Strict
   mode's `pre_verify` can continue a coding turn at most twice.
+- **Desktop half:** `dashboard/desktop_api.py` (mounted by `dashboard/plugin_api.py`) adds three routes under
+  `/api/plugins/no-cap/` on your own Hermes backend, behind the dashboard's auth: `POST /hello` writes `desktop.json`
+  (on/off and a timestamp; atomic `0600` write, a fresh `O_EXCL|O_NOFOLLOW` temp file, folder tightened to `0700`) and
+  returns no key; `POST /verify` answers yes/no for one chip and one chat; `GET /session?id=` reads the store for the
+  Receipts list. A Desktop reply's store line also records the chip's id, signature and payload digest (hex, through
+  the same redaction as every other field). No signing key is ever written; a `desktop.key` left by 0.1 is deleted.
+  `/nocap purge` leaves `desktop.json`. When a Desktop reply is checked, the plugin emits the
+  `plugin.no-cap.receipts.updated` event (session id only) so the list refreshes. Any authenticated dashboard caller
+  (other installed dashboard or Desktop plugins included) can call these routes; they return only yes/no and this
+  profile's receipts, never a key.
 - **Cap Coach:** drafts and approved rules live in `coach.json` in the same folder (`0600`): pattern id, scope
   (agent profile, model, skill), counts, up to 3 redacted, truncated example claims per pattern, the rule text, and
-  the frozen baseline. Reply records also store the names of skills loaded in the session (from `skill_view` calls)
-  and the ids of coach rules injected that turn. Approved coach rules reach the model through `pre_llm_call` as
+  the frozen baseline. Reply records also store the ids of coach rules injected that turn (coach scope reuses the
+  per-turn skill names the Cap Board already records; the session's loaded skills are kept in memory only). Approved coach rules reach the model through `pre_llm_call` as
   labelled context, only in scope, never as a system-prompt edit. No Cap never writes skills, memory or config; with
   `--apply` it sends one message asking the agent to make the approved skill or memory edit with its own tools.
 - **The demo:** `demo/stub_model.py` is a scripted model on 127.0.0.1. It is test scaffolding, not part of the plugin.
@@ -274,15 +336,21 @@ Limits:
   the model as text.
 - A real model runs real commands. In one recorded run Qwen3-4B ran `git config --global user.email ...` and a `curl`
   to github.com; the demo scripts point `GIT_CONFIG_GLOBAL` at the throwaway directory for that reason.
-- Not tested: Discord, Telegram and Desktop sessions end to end; real models other than one local Qwen3-4B (three
+- Desktop chips need the backend route, so a Desktop attached to a remote backend without No Cap's desktop half
+  installed there gets the text footer. A Desktop chat reopened in the CLI or TUI shows the `::nocap{…}` line as text
+  (and if the model repeats it there, it is removed). A chip whose chat id the host doesn't report yet shows "checking
+  receipts…" until it does.
+- Desktop is tested end to end only with the scripted model, on macOS, against the installed build of 8acb7f6.
+- Not tested: Discord and Telegram sessions end to end; real models other than one local Qwen3-4B (three
   runs); Linux and Windows; the catalog install path; a real conflict with another enabled reply-rewriting plugin
   (unit-tested only).
 
 ## Contributing
 
 ```sh
-uv venv .venv && uv pip install --python .venv/bin/python pytest pillow
+uv venv .venv && uv pip install --python .venv/bin/python pytest pillow fastapi
 sh scripts/test.sh                 # the whole suite, with PYTHONPATH cleared
+sh scripts/test-js.sh              # the Desktop half (node --test, no npm install)
 hermes plugins validate .          # the catalog CI check
 sh demo/run_demo.sh                # the end-to-end demo in a throwaway HERMES_HOME (needs uv; om for PNGs)
 ```

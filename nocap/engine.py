@@ -12,20 +12,22 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from . import card, doctor, score
+from . import card, desktop, doctor, score
 from .coach import Coach
 from .claims import extract_claims, forged_stamps
 from .evidence import extract, summary
-from .render import EMOJI, TAG, claim_text, compose, footer, receipt_line
+from .render import EMOJI, TAG, claim_text, compose, dedupe, footer, receipt_line
 from .store import Store
 from .verdict import CAP, DEFAULT_SHOW_UNCERTAIN, NO_CAP, NO_RECEIPT, judge, level_of, shown
 from .verify import recheck, suggestion
+from . import board  # Cap Board: identity at hook time, /capscore board
 
 MAX_OPEN_TURNS = 64
 MAX_CALLS = 500
 MODES = ("annotate", "strict", "quiet")
 STRICT_KINDS = {"tests", "build", "ci", "pushed", "merged", "deployed", "url", "file", "committed", "pr_opened"}
 MAX_STRICT_NUDGES = 2
+SKILL_TOOLS = ("skill_view", "skill")  # a turn "used" a skill when it loaded one with these tools
 
 
 def _match_key(r: Dict[str, Any]) -> Tuple:
@@ -53,20 +55,21 @@ class Engine:
     def __init__(self, data_dir: Callable[[], Path], setting: Callable[[str, Any], Any],
                  inject: Optional[Callable[..., bool]] = None, cwd: Optional[Callable[[], str]] = None,
                  home: Optional[Callable[[], Path]] = None, entry: Optional[Callable[[], Dict[str, Any]]] = None,
-                 enabled: Optional[Callable[[str], Any]] = None):
+                 enabled: Optional[Callable[[str], Any]] = None,
+                 broadcast: Optional[Callable[[str, Dict[str, Any]], None]] = None):
         self.home = home or (lambda: Path(data_dir()).parents[1])
         self.entry = entry or (lambda: {})
         self.enabled = enabled or (lambda name: None)
+        self.broadcast = broadcast or (lambda event, payload: None)
         self.setting = setting
         self.data_dir = data_dir
         self.inject = inject
         self.cwd = cwd or (lambda: "")
+        self.profile = board.profile_name  # who this turn runs as, recorded with each reply for the Cap Board
         self.store = Store(data_dir, lambda: setting("retention_days", 30))
         self._turns: "OrderedDict[Tuple[str, str], List[Dict[str, Any]]]" = OrderedDict()
         self._pending_cap: Dict[str, List[Dict[str, Any]]] = {}
         self._lock = threading.Lock()
-        self._skills: "OrderedDict[str, List[str]]" = OrderedDict()  # session → skills it loaded (coach scope)
-        self._coached: Dict[str, List[str]] = {}  # session → coach rule ids injected into its current turn
         self.coach = Coach(data_dir, setting, self.store.records, self.home, inject)
 
     # ---- hooks -------------------------------------------------------------------------------
@@ -74,8 +77,7 @@ class Engine:
                 turn_id: str = "", status: Optional[str] = None, error_message: Optional[str] = None,
                 **_: Any) -> None:
         key = (session_id or "", turn_id or "")
-        if tool_name == "skill_view" and isinstance(args, dict) and args.get("name"):
-            self._note_skill(session_id or "", str(args["name"])[:80])
+        self.coach.note_tool(tool_name, args, session_id or "")
         with self._lock:
             calls = self._turns.setdefault(key, [])
             self._turns.move_to_end(key)
@@ -83,32 +85,17 @@ class Engine:
                 self._turns.popitem(last=False)
             index = (calls[-1]["i"] + 1) if calls else 1
         ev = extract(tool_name, args, result, status=status, index=index, error_message=error_message)
+        if str(tool_name or "") in SKILL_TOOLS and ev.get("ok") and isinstance(args, dict) \
+                and isinstance(args.get("name"), str):  # a failed load (unknown skill) isn't a skill the turn used
+            ev["skill"] = args["name"].strip()[:80]
         with self._lock:
             calls.append(ev)
             if len(calls) > MAX_CALLS:  # keep the newest calls: the latest run is the one that matters
                 del calls[0]
 
-    def _note_skill(self, session_id: str, name: str) -> None:
-        with self._lock:
-            names = self._skills.setdefault(session_id, [])
-            self._skills.move_to_end(session_id)
-            if name in names:
-                names.remove(name)
-            names.append(name)
-            del names[:-8]
-            while len(self._skills) > MAX_OPEN_TURNS:
-                self._skills.popitem(last=False)
-
-    def skills(self, session_id: str) -> List[str]:
-        with self._lock:
-            return list(self._skills.get(session_id or "", []))
-
-    def on_turn_start(self, session_id: str = "", model: str = "", **_: Any) -> Optional[Dict[str, str]]:
-        """pre_llm_call: inject the approved coach rules that match this agent, model and loaded skills."""
-        text, ids = self.coach.context(model or "", self.skills(session_id or ""))
-        with self._lock:
-            self._coached[session_id or ""] = ids
-        return {"context": text} if text else None
+    def on_turn_start(self, **kwargs: Any) -> Optional[Dict[str, str]]:
+        """pre_llm_call: Cap Coach (nocap/coach.py) injects the rules the user approved."""
+        return self.coach.on_turn_start(**kwargs)
 
     def _take(self, session_id: str, turn_id: str) -> List[Dict[str, Any]]:
         with self._lock:
@@ -151,6 +138,10 @@ class Engine:
         evs = self._take(session_id, turn_id)
         if not isinstance(response_text, str) or not response_text.strip():
             return None
+        on_desktop = desktop.is_desktop(platform)
+        # Every surface: a `::nocap` the model wrote (a replay of an earlier genuine chip included) is removed, because
+        # any transcript can later be opened in Desktop. Text without one is untouched, so the CLI never reprints.
+        response_text, planted = desktop.strip_model_directives(response_text)
         claims = extract_claims(response_text)
         if not bool(self.setting("check_numbers", True)):
             claims = [c for c in claims if c["kind"] != "number"]
@@ -162,37 +153,39 @@ class Engine:
         receipts = [dict(r, hidden=not shown(r, level)) for r in receipts]
         visible = [r for r in receipts if not r["hidden"]]
         rescore = self._rescore(session_id, receipts)
-        with self._lock:
-            coached = self._coached.pop(session_id, [])
+        coached = self.coach.take_coached(session_id)
         if receipts or evs or rescore:
-            self.store.append({"type": "reply", "ts": time.time(), "session_id": session_id, "turn_id": turn_id,
+            self.store.append({**self._who(evs), "type": "reply", "ts": time.time(), "session_id": session_id, "turn_id": turn_id,
                                "model": model or "unknown", "platform": platform or "", "mode": self.mode(),
                                "calls": _cited(evs, receipts), "ledger": _ledger(evs), "receipts": receipts,
-                               "rescore": rescore, "skills": self.skills(session_id), "coach": coached})
+                               "rescore": rescore, "coach": coached})
         streak = None
         if visible:
             mine = [r for r in self.store.records() if r.get("session_id") == session_id]
             streak = score.streak(mine)
             if streak < 2:
                 streak = None
-        forged = forged_stamps(response_text)
-        notes = [f"⚠️ This reply contained {forged} stamp(s) No Cap didn't issue. They were ignored."] if forged else []
-        try:
-            tip = self.coach.maybe_announce(receipts) if receipts else None
-        except Exception:  # the coach is optional: never let it touch the reply
-            tip = None
-        if tip:
-            notes.append(tip)
-        notes = notes or None
-        return compose(response_text, visible, self.mode(), rescore, streak, notes,
-                       plain=(platform or "").lower() == "cli")
+        chips = self._desktop_chip(on_desktop, visible, session_id, turn_id)
+        if on_desktop and (receipts or evs or rescore):  # the Receipts popover refreshes (no-op without a window)
+            try:
+                self.broadcast("receipts.updated", {"session_id": session_id})
+            except Exception:
+                pass
+        forged = forged_stamps(response_text) + planted
+        notes = [f"⚠️ This reply contained {forged} stamp(s) No Cap didn't issue. They were ignored."] if forged else None
+        notes = self.coach.add_tip(notes, receipts)
+        out = compose(response_text, visible, self.mode(), rescore, streak, notes,
+                      plain=(platform or "").lower() == "cli", chips=chips)
+        if out is None and planted:  # quiet mode: no footer, but a planted directive still never goes out
+            return response_text
+        return out
 
     def _rescore(self, session_id: str, receipts: List[Dict[str, Any]]) -> List[str]:
         with self._lock:
             pending = self._pending_cap.pop(session_id, None)
         if not pending:  # /cap may have run in another process (gateway vs CLI): read it from the store
             for rec in reversed(self.store.records()):
-                if rec.get("session_id") != session_id or rec.get("type") == "recheck":
+                if rec.get("session_id") != session_id or rec.get("type") in ("recheck", "chip"):
                     continue
                 if rec.get("type") == "cap":
                     pending = rec.get("receipts") or []
@@ -280,9 +273,16 @@ class Engine:
             out.append(f"{i}. {TAG[r['verdict']]} your reply said “{claim}” ({why}) → {suggestion(r, test_cmds)}")
         return "\n".join(out)
 
-    def capscore(self, raw_args: str = "", session_id: str = "") -> str:
-        records = self.store.records()
+    def capscore(self, raw_args: str = "", session_id: str = "", platform: str = "") -> str:
         arg = (raw_args or "").strip().lower()
+        if arg in ("board", "team"):
+            # Own profile only unless board.team_profiles opts in AND this is the CLI (never a gateway chat).
+            srcs, scope = board.scoped_sources(team=self.setting("board.team_profiles", None), platform=platform,
+                                               extra=self.board_sources())
+            b = board.build_board(srcs, min_claims=self.board_min_claims())
+            b["scope"] = scope
+            return board.board_text(b)
+        records = self.store.records()
         if arg in ("card", "image", "png", "share"):
             rows = score.table(records)
             mine = [r for r in score.scored(records) if r.get("session_id") == session_id]
@@ -292,9 +292,58 @@ class Engine:
             return "🖼️ Scorecard saved: " + " · ".join(str(p) for p in paths)
         return score.leaderboard_text(records, session_id)
 
+    def _who(self, evs: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Cap Board identity: the Hermes profile and the skills loaded in this turn (fail open to unknown)."""
+        try:
+            profile = str(self.profile() or "")[:64]
+        except Exception:
+            profile = ""
+        return {"profile": profile, "skills": sorted({e["skill"] for e in evs if e.get("skill")})}
+
+    def board_sources(self) -> List[Any]:
+        extra = board.env_sources()
+        extra += board.parse_sources(self.setting("board_sources", "") or "")
+        return extra
+
+    def board_min_claims(self) -> int:
+        try:
+            return max(1, int(self.setting("board_min_claims", board.MIN_CLAIMS) or board.MIN_CLAIMS))
+        except (TypeError, ValueError):
+            return board.MIN_CLAIMS
+
     def doctor_report(self) -> Tuple[str, int]:
         return doctor.check(Path(self.home()), self.mode(), self.entry() or {}, self.store.path, self.store.records(),
-                            self.enabled, show_uncertain=self.show_uncertain())
+                            self.enabled, show_uncertain=self.show_uncertain(), desktop_line=self._desktop_line())
+
+    def _desktop_chip(self, on_desktop: bool, visible: List[Dict[str, Any]], session_id: str,
+                      turn_id: str) -> Optional[str]:
+        """The signed Desktop directive for this reply, or None. Its chip id, signature and payload digest are
+        recorded as their own store line, so /verify can vouch for the chip after a restart (never a key)."""
+        if not (on_desktop and visible and session_id and self.mode() != "quiet" and self.desktop_chips()):
+            return None
+        desktop.drop_legacy_key(Path(self.data_dir()))
+        text, ids = desktop.directive(dedupe(visible), session_id, turn_id)
+        self.store.append({"type": "chip", "ts": time.time(), "session_id": session_id, "turn_id": turn_id,
+                           "chip": ids})
+        return text
+
+    def desktop_chips(self) -> bool:
+        """Desktop receipt chips: on, off, or auto (only while the desktop half has said hello recently)."""
+        choice = desktop.setting_of(self.setting("desktop_chips", "auto"))
+        if choice == "auto":
+            return desktop.desktop_live(Path(self.data_dir()))
+        return choice == "on"
+
+    def _desktop_line(self) -> str:
+        choice = desktop.setting_of(self.setting("desktop_chips", "auto"))
+        if choice == "off":
+            return "ℹ️ Desktop chips: off (Desktop gets the text footer, like every other surface)."
+        if choice == "on":
+            return "ℹ️ Desktop chips: on (forced). Without the desktop half enabled, Desktop shows a raw ::nocap line."
+        if desktop.desktop_live(Path(self.data_dir())):
+            return "✅ Desktop chips: auto, chips on: the desktop half said hello in the last 30 minutes."
+        return ("ℹ️ Desktop chips: auto, the desktop half hasn't said hello, so Desktop gets the text footer. Enable "
+                "No Cap in Desktop → Capabilities → Plugins for clickable receipt chips.")
 
     def nocap(self, raw_args: str = "", session_id: str = "") -> str:
         arg = (raw_args or "").strip().lower()

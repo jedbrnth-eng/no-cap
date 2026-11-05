@@ -24,11 +24,13 @@ import os
 import re
 import threading
 import time
-from collections import Counter
+from collections import Counter, OrderedDict
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from .evidence import redact
+
+MAX_SESSIONS = 256  # sessions whose loaded skills / injected rule ids are kept in memory
 
 FILE = "coach.json"
 MODES = ("off", "suggest", "auto")
@@ -282,7 +284,7 @@ def mine(records: Iterable[Dict[str, Any]], since: float = 0.0) -> List[Dict[str
 
 # ---- 2) fix generator -------------------------------------------------------------------------------------------
 def proposal_id(pid: str, model: str, skill: str, agent: str) -> str:
-    return "cc-" + hashlib.sha1(f"{agent}|{pid}|{model}|{skill}".encode()).hexdigest()[:6]
+    return "cc-" + hashlib.sha1(f"{agent}|{pid}|{model}|{skill}".encode(), usedforsecurity=False).hexdigest()[:6]
 
 
 def marker(pid_or_id: str) -> str:
@@ -478,6 +480,51 @@ class Coach:
         self.home = home
         self.inject = inject
         self._announced: set = set()
+        self._lock = threading.Lock()
+        self._skills: "OrderedDict[str, List[str]]" = OrderedDict()  # session → skills it loaded (injection scope)
+        self._coached: Dict[str, List[str]] = {}  # session → rule ids injected into its current turn
+
+    # -- engine hooks (the engine calls only these four, so engine.py stays a thin hook) --
+    def note_tool(self, tool_name: str, args: Any, session_id: str) -> None:
+        """post_tool_call: remember the skills this session loaded, so a skill-scoped rule is injected next turn."""
+        if tool_name != "skill_view" or not isinstance(args, dict) or not isinstance(args.get("name"), str):
+            return
+        name = args["name"].strip()[:80]
+        with self._lock:
+            names = self._skills.setdefault(session_id or "", [])
+            self._skills.move_to_end(session_id or "")
+            if name in names:
+                names.remove(name)
+            names.append(name)
+            del names[:-8]
+            while len(self._skills) > MAX_SESSIONS:
+                self._skills.popitem(last=False)
+
+    def session_skills(self, session_id: str) -> List[str]:
+        with self._lock:
+            return list(self._skills.get(session_id or "", []))
+
+    def on_turn_start(self, session_id: str = "", model: str = "", **_: Any) -> Optional[Dict[str, str]]:
+        """pre_llm_call: inject the approved coach rules that match this agent, model and loaded skills."""
+        text, ids = self.context(model or "", self.session_skills(session_id or ""))
+        with self._lock:
+            self._coached[session_id or ""] = ids
+            while len(self._coached) > MAX_SESSIONS:
+                self._coached.pop(next(iter(self._coached)))
+        return {"context": text} if text else None
+
+    def take_coached(self, session_id: str) -> List[str]:
+        """The rule ids injected into this session's current turn (stored on the reply record as `coach`)."""
+        with self._lock:
+            return self._coached.pop(session_id or "", [])
+
+    def add_tip(self, notes: Optional[List[str]], receipts: List[Dict[str, Any]]) -> Optional[List[str]]:
+        """transform_llm_output: append the auto-suggest line, if any. Never raises: the coach can't touch a reply."""
+        try:
+            tip = self.maybe_announce(receipts) if receipts else None
+        except Exception:
+            tip = None
+        return (list(notes or []) + [tip]) if tip else notes
 
     def cfg(self) -> Dict[str, Any]:
         return settings(self.setting)

@@ -53,7 +53,8 @@ def run(home: Path, mode: str, entry: Dict[str, Any], store_path: Path, records:
 
 
 def check(home: Path, mode: str, entry: Dict[str, Any], store_path: Path, records: List[Dict[str, Any]],
-          enabled: Callable[[str], Any], show_uncertain: str = "off") -> Tuple[str, int]:
+          enabled: Callable[[str], Any], show_uncertain: str = "off",
+          desktop_line: Optional[str] = None) -> Tuple[str, int]:
     """The report and its problem count (`hermes nocap doctor` exits 1 when the count is not zero)."""
     lines = ["🩺 **No Cap doctor**"]
     problems = 0
@@ -87,6 +88,8 @@ def check(home: Path, mode: str, entry: Dict[str, Any], store_path: Path, record
     lines.append(f"ℹ️ {len(replies)} checked replies" + (f", platforms seen: {', '.join(platforms)}" if platforms else ""))
     if not replies:
         lines.append("ℹ️ No replies checked yet. Hooks load at session start: restart running sessions after install.")
+    if desktop_line:
+        lines.append(desktop_line)
     lines.append("✅ Network: none" + (" (except /cap HEAD checks: self_verify_http is on)"
                                         if (entry.get("settings") or {}).get("self_verify_http") else ""))
     lines.append(f"{problems} problem{'s' if problems != 1 else ''} found.")

@@ -5,6 +5,7 @@ Hooks and three slash commands, public plugin surfaces only:
   transform_llm_output  → check the final reply's claims against that ledger, append the receipts
   pre_llm_call          → Cap Coach: inject the coach rules the user approved (/cap coach), labelled, in scope
   /cap /capscore /nocap → call cap on the last reply, honesty leaderboard, receipts and store admin
+  dashboard/            → the Cap Board tab: this profile's store ranked live (team view opt-in), read-only
   hermes nocap ...      → the same from a terminal
 
 Fail open by design: if anything in here raises, the reply goes out unchanged and the error is logged.
@@ -22,6 +23,16 @@ from .nocap.engine import Engine
 logger = logging.getLogger("hermes_plugins.no_cap")
 
 __version__ = "0.1.0"
+
+
+def _broadcast(event: str, payload: dict) -> None:
+    """Tell a connected Desktop window that receipts changed (documented public helper; a logged no-op when no
+    Desktop client is attached to this process)."""
+    try:
+        from hermes_cli.plugin_events import broadcast_plugin_event
+    except Exception:
+        return
+    broadcast_plugin_event("no-cap", event, payload)
 
 
 def _make_engine(ctx: Any) -> Engine:
@@ -69,7 +80,8 @@ def _make_engine(ctx: Any) -> Engine:
         on = plugins.get("enabled")
         return (name in on) if isinstance(on, list) else None
 
-    return Engine(data_dir, setting, inject=inject, cwd=cwd, home=home, entry=entry, enabled=enabled)
+    return Engine(data_dir, setting, inject=inject, cwd=cwd, home=home, entry=entry, enabled=enabled,
+                  broadcast=lambda event, payload: _broadcast(event, payload))
 
 
 def register(ctx: Any) -> None:
@@ -88,11 +100,14 @@ def register(ctx: Any) -> None:
             logger.warning("no-cap: transform_llm_output failed open, reply unchanged: %s", exc, exc_info=True)
             return None
 
-    def command(fn, wants_key=False):
-        def handler(raw_args: str = "", session_id: str = "", session_key: str = "", **_: Any) -> str:
+    def command(fn, wants_key=False, wants_platform=False):
+        def handler(raw_args: str = "", session_id: str = "", session_key: str = "", platform: str = "",
+                    **_: Any) -> str:
             try:
                 if wants_key:
                     return fn(raw_args or "", session_id=session_id or "", session_key=session_key or "")
+                if wants_platform:  # Hermes passes the surface (cli, tui, desktop, telegram, ...) to the handler
+                    return fn(raw_args or "", session_id=session_id or "", platform=str(platform or ""))
                 return fn(raw_args or "", session_id=session_id or "")
             except Exception as exc:
                 logger.warning("no-cap: command failed: %s", exc, exc_info=True)
@@ -121,8 +136,8 @@ def register(ctx: Any) -> None:
     ctx.register_command("cap", handler=command(engine.cap, wants_key=True), args_hint="[coach ...]",
                          description="Call cap on the last reply (the agent must show receipts or retract); "
                                      "/cap coach: what this agent caps on and approved fixes")
-    ctx.register_command("capscore", handler=command(engine.capscore), args_hint="[card]",
-                         description="Cap Score: which model caps most, streaks, shareable scorecard")
+    ctx.register_command("capscore", handler=command(engine.capscore, wants_platform=True), args_hint="[card|board]",
+                         description="Cap Score: which model caps most, streaks, shareable scorecard; board = Cap Board (this profile)")
     ctx.register_command("nocap", handler=command(engine.nocap), args_hint="[all|doctor|purge|help]",
                          description="No Cap receipts for the last reply, and store admin")
 
@@ -133,6 +148,7 @@ def register(ctx: Any) -> None:
         subs.add_parser("all", help="Every receipt line of the most recent checked reply")
         subs.add_parser("score", help="Cap Score leaderboard")
         subs.add_parser("card", help="Write the shareable scorecard image")
+        subs.add_parser("board", help="Cap Board: top cappers per agent, model and skill (this profile; board.team_profiles for a team view)")
         subs.add_parser("purge", help="Delete the local receipt store")
         subs.add_parser("path", help="Print where receipts are stored")
         subs.add_parser("doctor", help="Setup checks: reply-transform conflicts, /cap injection, store")
@@ -149,6 +165,8 @@ def register(ctx: Any) -> None:
             print(engine.capscore(""))
         elif sub == "card":
             print(engine.capscore("card"))
+        elif sub == "board":
+            print(engine.capscore("board", platform="cli"))
         elif sub == "purge":
             print(engine.nocap("purge"))
         elif sub == "doctor":

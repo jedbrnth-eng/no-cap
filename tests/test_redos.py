@@ -10,6 +10,7 @@ import time
 import pytest
 
 from nocap.claims import extract_claims, forged_stamps
+from nocap.desktop import strip_model_directives
 from nocap.evidence import HEAD, TAIL, extract, parse_tests, redact, runner_segment, scan_window
 from redos_inputs import inputs
 
@@ -22,6 +23,7 @@ PARSERS = {
     "extract(output)": lambda s: extract("terminal", {"command": "pytest"}, {"output": s, "exit_code": 1}),
     "extract_claims": lambda s: extract_claims(s),
     "forged_stamps": lambda s: forged_stamps(s),
+    "strip_model_directives": lambda s: strip_model_directives(s),
 }
 INPUTS = inputs()
 

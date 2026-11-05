@@ -105,7 +105,7 @@ def _open_private(p: Path, flags: int):
     return os.fdopen(fd, "w", encoding="utf-8")
 
 
-IDENTITY_KEYS = {"session_id", "turn_id", "model", "platform", "type", "mode"}  # ids, never secrets: /cap joins on them
+IDENTITY_KEYS = {"session_id", "turn_id", "model", "platform", "type", "mode", "profile"}  # ids, never secrets: /cap joins on them
 
 
 def _scrub(v: Any, key: str = "") -> Any:

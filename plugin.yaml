@@ -2,7 +2,7 @@ name: no-cap
 version: "0.1.0"
 manifest_version: 2
 api_version: 1
-description: "Receipts for agent claims. Checks the claims in each final reply (tests pass, merged, pushed, deployed, file written, URL live, SHAs, numbers) against the tool calls of the same turn, with no extra model: 🧾 NO CAP, 🧢 CAP or 🤔 NO RECEIPT. /cap makes the agent prove it or retract, /capscore keeps an honesty leaderboard."
+description: "Receipts for agent claims. Checks the claims in each final reply (tests pass, merged, pushed, deployed, file written, URL live, SHAs, numbers) against the tool calls of the same turn, with no extra model: 🧾 NO CAP, 🧢 CAP or 🤔 NO RECEIPT. /cap makes the agent prove it or retract, /capscore keeps an honesty leaderboard, and the Cap Board dashboard tab ranks agents, models and skills live (this profile by default; a multi-profile team view is opt-in)."
 author: "jedbrnth-eng"
 license: MIT
 requires_hermes: ">=0.22.5"
@@ -25,6 +25,18 @@ config_schema:
     type: int
     default: 30
     description: "Days to keep receipt records in plugin-data/no-cap"
+  board:
+    type: dict
+    default: {}
+    description: "Cap Board scope. team_profiles: off by default (the board shows only this profile). Set it to 'all' or a list of profile names to opt in to a team view of other profiles' stores; the team view is only shown in the CLI and the dashboard, never in a gateway chat."
+  board_sources:
+    type: str
+    default: ""
+    description: "Cap Board team view only: extra receipt stores to rank beside the team profiles. label=path entries separated by ':' or newlines; a path may be a Hermes home, a receipts.jsonl, a folder searched for receipts.jsonl, or a glob. Also read from NOCAP_BOARD_SOURCES."
+  board_min_claims:
+    type: int
+    default: 10
+    description: "Cap Board: claims an agent, model or skill needs before its cap rate is shown and ranked (below it the board shows the counts with n, greyed)"
   check_numbers:
     type: bool
     default: true
@@ -33,6 +45,10 @@ config_schema:
     type: bool
     default: false
     description: "Let /cap send one HTTP HEAD request (public addresses only, no redirects, 3 s timeout) to re-check a 'URL is live' claim (off = no network)"
+  desktop_chips:
+    type: str
+    default: auto
+    description: "Hermes Desktop receipt chips (clickable 🧾/🧢/🤔 that open the cited command, exit code and output line). auto (default): only while No Cap's desktop half is enabled in Desktop and has checked in through the plugin's own local route, so a disabled half never leaves a raw ::nocap line. on: always on Desktop. off: Desktop gets the text footer. Never emitted on any other surface."
   coach:
     type: dict
     default: {mode: suggest, min_evidence: 5, auto_after_caps: 0, window_days: 14, min_sample: 10, max_rules: 5}
