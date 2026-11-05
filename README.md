@@ -23,6 +23,7 @@
   <a href="#how-it-works">How it works</a> ·
   <a href="#more-than-a-prompt">More than a prompt</a> ·
   <a href="#commands-and-settings">Commands</a> ·
+  <a href="#cap-coach">Cap Coach</a> ·
   <a href="#how-good-is-it">Eval</a> ·
   <a href="#disclosure">Disclosure</a> ·
   <a href="#known-limits-and-what-is-not-tested">Limits</a>
@@ -71,6 +72,7 @@ after installing.
 | `post_tool_call` hook | Records each tool result into a per-turn ledger in memory: exit code, parsed test summary (pytest, jest, vitest, go, cargo, Gradle/Maven…), push refs, PR state, HTTP status, paths written. Raw output is never stored. |
 | `transform_llm_output` hook | Finds the claims in the final reply (tests, CI, build, pushed, merged, committed, PR opened, deployed, URL live, file written, SHAs, counts), judges each against that turn's ledger, and **appends** the receipt footer. The reply text is never edited, so the classic CLI doesn't reprint it. |
 | `pre_verify` hook | Strict mode only: when a coding turn is about to end with an unproven claim, the agent is told to run the check or drop the claim. At most 2 nudges per turn. |
+| `pre_llm_call` hook | Cap Coach only: adds the coach rules **you approved** to the turn as labelled context, only for the agent, model and loaded skill they were approved for. With no approved rule it returns nothing. |
 | `/cap` | Re-checks what it can locally (read-only `git rev-parse` / `cat-file`, a file's existence for "created X"), then asks the agent to prove or retract the rest. The next reply is re-scored (🔁 lines). It never overrules a 🧢 from the turn's own output. |
 | `/capscore [card]` | Per-model honesty board from the local store; `card` writes a share card (SVG, plus PNG when Pillow is there). |
 | `/nocap [all\|doctor\|purge]` | The last receipts, every receipt including unstamped ones, setup checks, delete the store. Same as `hermes nocap …` in a terminal. |
@@ -154,6 +156,50 @@ hermes config set plugins.entries.no-cap.settings.mode strict
 hermes config set plugins.entries.no-cap.settings.show_uncertain all
 ```
 
+## Cap Coach
+
+No Cap knows what each agent caps on. Cap Coach turns that into fixes you approve, then checks whether they worked.
+
+1. **Mine.** `/cap coach scan` clusters the 🧢 and 🤔 receipts in the local store by failure shape, model and loaded
+   skill, with deterministic rules (no extra model): "claims all tests pass after running only a subset (-k, one
+   file)", "claims tests pass, but edited code after the last test run", "claims pushed without running git push",
+   "claims tests pass while the latest run failed", and 16 more. Each pattern carries its count, its rate among
+   replies that made that kind of claim, the runners involved and up to 3 redacted examples.
+2. **Propose.** A pattern with at least `min_evidence` caps (default 5) gets a drafted fix from a template library:
+   one short rule plus the reason, e.g. *"Before you say all tests pass, run the full suite with the project's test
+   command (no -k, ::, or single-file filter) after your last edit, and quote its summary line."* Each draft comes
+   in three forms: a **coach rule** (default), a **skill patch** (the exact unified diff for the skill's `SKILL.md`,
+   when the pattern is tied to one skill) and a **memory note**. `/cap coach show <id>` prints all three.
+3. **Approve.** Nothing applies until `/cap coach approve <id> [rule|skill|memory]`.
+   - *rule:* stored in No Cap's own data folder and added to each in-scope turn through `pre_llm_call`, labelled as
+     a No Cap coach rule. `/cap coach revert <id>` stops it. `/cap coach rules` lists what is injected.
+   - *skill* / *memory:* No Cap never edits skills or memory. It shows the diff or note for you to apply; with
+     `--apply` it asks the agent (one injected message) to apply it with its own `skill_manage` / `memory` tools. The
+     agent may decline; `/cap coach status` reads the file to show whether the change is in place.
+4. **Measure.** At approval, the pattern's rate over the last `window_days` is frozen as the baseline. After that,
+   `/cap coach status` shows before → after for each rule, with n, a 95% Wilson interval and a two-proportion
+   z-test, and says *not enough data yet* until both sides have `min_sample` replies.
+
+| Command | |
+|---|---|
+| `/cap coach` · `hermes nocap coach` | status: active rules with before/after, drafts |
+| `/cap coach scan` | mine the store, draft fixes (applies nothing) |
+| `/cap coach show <id>` | evidence, examples, the rule, the skill diff, the memory note |
+| `/cap coach approve <id> [rule\|skill\|memory] [--apply]` | approve one form |
+| `/cap coach revert <id> [--apply]` · `/cap coach dismiss <id>` | stop a rule (its record is kept) · drop a draft |
+
+Settings (`plugins.entries.no-cap.settings.coach.*`):
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `mode` | `suggest` | `off`: no mining, no injection. `suggest`: drafts on `/cap coach scan`. `auto-suggest-after-N-caps` (or `auto` + `auto_after_caps`): also one footer line the first time a pattern reaches N caps (a draft, never applied) |
+| `min_evidence` | `5` | caps of one pattern before a fix is drafted |
+| `window_days` | `14` | baseline window frozen at approval |
+| `min_sample` | `10` | replies needed on each side before a before/after rate is shown |
+| `max_rules` | `5` | most rules injected into one turn |
+
+**Proof on a real local model** (PROOF_PLACEHOLDER)
+
 ## How good is it
 
 🧾 precision 0.88 (88/100, 95% CI 0.80-0.93) and 🧢 8 of 11 on a fresh blind sample of public SWE-rebench runs at 7c6cbc0, two raters (Claude, Gemini; kappa 0.77), adjudicated; about 1 in 4 unstamped completion replies carried an unsupported claim.
@@ -197,6 +243,12 @@ Limits:
   `gh pr view`, `curl -sI` to a public URL) or the plain test command parsed from an earlier run (`pytest -q`, never a
   line with `;`, `&&`, `|`, `$(`, backticks, quotes or redirects); otherwise it says "run your test suite". Strict
   mode's `pre_verify` can continue a coding turn at most twice.
+- **Cap Coach:** drafts and approved rules live in `coach.json` in the same folder (`0600`): pattern id, scope
+  (agent profile, model, skill), counts, up to 3 redacted, truncated example claims per pattern, the rule text, and
+  the frozen baseline. Reply records also store the names of skills loaded in the session (from `skill_view` calls)
+  and the ids of coach rules injected that turn. Approved coach rules reach the model through `pre_llm_call` as
+  labelled context, only in scope, never as a system-prompt edit. No Cap never writes skills, memory or config; with
+  `--apply` it sends one message asking the agent to make the approved skill or memory edit with its own tools.
 - **The demo:** `demo/stub_model.py` is a scripted model on 127.0.0.1. It is test scaffolding, not part of the plugin.
 
 ## Known limits and what is not tested
