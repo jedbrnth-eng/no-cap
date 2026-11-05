@@ -12,13 +12,14 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from . import board, card, doctor, score
+from . import card, doctor, score
 from .claims import extract_claims, forged_stamps
 from .evidence import extract, summary
 from .render import EMOJI, TAG, claim_text, compose, footer, receipt_line
 from .store import Store
 from .verdict import CAP, DEFAULT_SHOW_UNCERTAIN, NO_CAP, NO_RECEIPT, judge, level_of, shown
 from .verify import recheck, suggestion
+from . import board  # Cap Board: identity at hook time, /capscore board
 
 MAX_OPEN_TURNS = 64
 MAX_CALLS = 500
