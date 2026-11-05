@@ -208,7 +208,7 @@ test('panel lists replies newest first with their chips', () => {
   const t = text(SessionReceiptsView({ view, open: '', onToggle() {} }))
   assert.ok(t.indexOf('newer') < t.indexOf('older'))
   assert.match(t, /🧾 1 · 🧢 1/)
-  assert.match(t, /streak reset by a 🧢|no cap in a row/)
+  assert.match(t, /streak 0 \(only all-🧾 replies count\)|no cap in a row/)
   assert.match(t, /🤫 2 unsure claim\(s\) not stamped/)
 })
 
