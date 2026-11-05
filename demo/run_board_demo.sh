@@ -71,7 +71,7 @@ stop_home() {  # the gateway/language servers `hermes chat` started for one home
 }
 
 say "4/6 real \`hermes chat\` turns (each turn: tools really run, the plugin stamps the reply)"
-TURNS_alpha=${NOCAP_BOARD_TURNS_ALPHA:-7}; TURNS_beta=${NOCAP_BOARD_TURNS_BETA:-7}; TURNS_gamma=${NOCAP_BOARD_TURNS_GAMMA:-3}
+TURNS_alpha=${NOCAP_BOARD_TURNS_ALPHA:-10}; TURNS_beta=${NOCAP_BOARD_TURNS_BETA:-10}; TURNS_gamma=${NOCAP_BOARD_TURNS_GAMMA:-3}
 for P in alpha beta gamma; do
   eval "N=\$TURNS_$P"
   H="$ROOTH/profiles/$P"

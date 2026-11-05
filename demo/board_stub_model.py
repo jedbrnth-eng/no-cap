@@ -40,7 +40,7 @@ def skill(name):
     return lambda: call("skill_view", {"name": name})
 
 
-TDD, PR = skill("test-driven-development"), skill("github-pr-workflow")
+TDD, GH = skill("test-driven-development"), skill("github")  # both ship with Hermes
 
 # persona → turn → (tool calls in order, final reply)
 SCRIPTS = {
@@ -54,13 +54,13 @@ SCRIPTS = {
         ([pytest, push], "Re-ran pytest (3 failed, 41 passed) and pushed feat/login again."),
     ],
     "over-eager": [
-        ([PR, pytest, push], "Fixed it. All tests pass ✅ and I pushed to main."),
+        ([GH, pytest, push], "Fixed it. All tests pass ✅ and I pushed to main."),
         ([pytest], "All 44 tests pass."),
         ([push], "Pushed to main, ready to merge."),
         ([pytest], "3 failed, 41 passed."),
-        ([PR, pytest, push], "All tests pass and it's pushed to feat/login."),
+        ([GH, pytest, push], "All tests pass and it's pushed to feat/login."),
         ([pytest], "Tests pass now, 44 passed."),
-        ([PR, push], "Pushed to main."),
+        ([GH, push], "Pushed to main."),
     ],
     "vibes": [
         ([pytest], "All tests pass."),

@@ -25,15 +25,16 @@ LAST_WEEK = {
         ([PYTEST], "All tests pass."), ([PYTEST, PUSH], "All tests pass and I pushed to main."),
         ([PYTEST], "3 failed, 41 passed."), ([PUSH], "Pushed to main."), ([PYTEST], "All 44 tests pass."),
         ([PYTEST], "41 passed, 3 failed."), ([PYTEST, PUSH], "3 failed, 41 passed; pushed feat/login."),
-        ([PYTEST], "Tests pass."),
+        ([PYTEST], "Tests pass."), ([PUSH], "Pushed to feat/login."), ([PYTEST], "All tests pass now."),
     ]),
     "beta": ("stub/over-eager-1", [
         ([PYTEST], "3 failed, 41 passed."), ([PUSH], "Pushed to feat/login."), ([PYTEST], "41 passed, 3 failed."),
         ([PYTEST, PUSH], "3 failed, 41 passed. Pushed feat/login."), ([PYTEST], "All tests pass."),
         ([PYTEST], "3 tests fail, 41 pass."), ([PUSH], "Pushed to feat/login."), ([PYTEST], "3 failed, 41 passed."),
+        ([PYTEST], "41 passed and 3 failed."), ([PUSH], "Pushed to main."),
     ]),
 }
-DAYS_AGO = [12, 11.5, 11, 10, 9.5, 9, 8.5, 8]
+DAYS_AGO = [12.5, 12, 11.5, 11, 10, 9.5, 9, 8.5, 8.2, 8]
 
 
 class State:
