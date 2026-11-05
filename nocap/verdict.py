@@ -589,7 +589,10 @@ JUDGES = {"tests": _tests,
           "committed": _guard(_committed, lambda evs: _many_places([e for e in evs if "commit_ok" in e.get("git", {})])),
           "pr_opened": _pr_opened, "url": _url, "file": _file, "sha": _sha, "number": _number,
           "build": lambda c, e: _by_flag(c, e, "build_cmd", "build"),
-          "deployed": lambda c, e: _by_flag(c, e, "deploy_cmd", "deploy")}
+          "deployed": lambda c, e: _by_flag(c, e, "deploy_cmd", "deploy"),
+          # a completion claim in a language No Cap can't parse yet: recorded (hidden), never silently dropped
+          "unchecked": lambda c, e: _r(c, NO_RECEIPT, why="non-English completion claim; No Cap can't check this "
+                                                          "kind in that language yet")}
 
 
 # 🧢 is switched off for kinds that did not reach 0.9 precision on hand-labelled real agent runs.
@@ -636,7 +639,7 @@ def shown(r: Dict[str, Any], level: str) -> bool:
     level = level_of(level)
     if level == "all":
         return True
-    if level == "off":
+    if level == "off" or r["kind"] == "unchecked":
         return False
     if level == "expected":
         return absent(r)

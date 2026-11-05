@@ -277,7 +277,10 @@ Limits:
 
 ## Known limits and what is not tested
 
-- English claims only. Claims inside code blocks and quotes are ignored on purpose.
+- Claims are read in English, plus Chinese, Thai and Spanish for tests, push, merge and deploy (with negation, future,
+  conditional and question near-misses per language). Other claim kinds in those languages, and completion phrases in
+  a few other languages ("完了しました", "готово", "erledigt"), are recorded as a hidden 🤔 for `/nocap all`, never
+  stamped. Claims inside code blocks and quotes are ignored on purpose.
 - Long inputs are read in a window, so no hook can stall Hermes (every parser stays under 50 ms of CPU time on 100 KB of
   adversarial input; `tests/test_redos.py`, `scripts/redos_timings.py`). Per tool output: the first 8 KB and the last
   32 KB, plus up to 400 summary or failure lines from the middle (the full output is never stored). A longer run that

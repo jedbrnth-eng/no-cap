@@ -1,4 +1,5 @@
-"""Find checkable claims in a final reply. Deterministic, English-only, stdlib only.
+"""Find checkable claims in a final reply. Deterministic, stdlib only. English here; Chinese, Thai and Spanish for
+tests / push / merge / deploy in lang.py.
 
 A claim is a past/present statement of fact about work done ("All tests pass", "Pushed to
 origin/feat-x", "Created src/app.py"). Hedged, future, conditional and negated statements are not
@@ -9,6 +10,8 @@ from __future__ import annotations
 import re
 import unicodedata
 from typing import Any, Dict, Iterator, List, Optional, Tuple
+
+from .lang import foreign_claims
 
 MAX_SCAN = 64_000  # characters of a reply that are read (a final reply is rarely more than a few KB)
 MAX_CLAIMS = 200
@@ -22,9 +25,13 @@ IMPERATIVE_RE = re.compile(r"^(?:run|try|use|check|make|ensure|verify|open|insta
 IMPERATIVE_ANY_RE = re.compile(r"^to \w+\b|(?:^|[,:;]\s*|\b(?:then|and|please|so)\s+)(?:run|confirm|verify|check(?:\s+that)?|"
                                r"make sure|ensure|merge|push|deploy|install|re-?run|open|approve)\b(?![-\w])", re.I)
 ACK_RE = re.compile(r"\b(?:fail(?:s|ed|ing|ure|ures)?|errors?|except|pre-?existing|unrelated|flak(?:y|e|es)|skipped|"
-                    r"broken|known issues?|xfail\w*)\b|失败|错误|跳过|未通过", re.I)
+                    r"broken|known issues?|xfail\w*)\b|失败|错误|跳过|未通过|ล้มเหลว|ไม่ผ่าน|"
+                    r"\bfall(?:a|an|[oó]|aron|ido|idas?|os)\b|\berrores\b", re.I)
 ZERO_FAIL_RE = re.compile(r"\b(?:0|no|zero|without) (?:test )?(?:failures?|failed|failing|errors?)\b|\b(?:nothing|none) failed\b|"
-                          r"\b0 failed\b|\b0 errors?\b|\bfailures?:? 0\b|\berrors?:? 0\b", re.I)
+                          r"\b0 failed\b|\b0 errors?\b|\bfailures?:? 0\b|\berrors?:? 0\b|"
+                          r"没有(?:任何)?(?:失败|错误)|无(?:失败|错误)|0\s{0,2}个?(?:失败|错误)|"
+                          r"ไม่มี(?:การ|ตัวไหน|อันไหน)?(?:ที่)?\s{0,2}(?:ล้มเหลว|พัง|ข้อผิดพลาด)|"
+                          r"\b(?:sin|ning[uú]n|ninguna|cero|0)\s+(?:fallos?|errores?|fallas?)\b", re.I)
 REPORTED_RE = re.compile(r"\byou (?:said|mentioned|told|asked|wrote|reported|claimed|noted)\b|\baccording to\b|"
                          r"\byesterday\b|\blast (?:week|night|time|run|session)\b|\bearlier\b|\bpreviously\b|"
                          r"\bbefore (?:my|the|this|that) (?:change|edit|fix|commit)\b|\bas (?:i|we) (?:showed|said|mentioned)\b|"
@@ -96,7 +103,7 @@ DESCRIBES_TEST_RE = re.compile(
     r"\b(?:tests?|specs?|cases?|assertions?|checks?)\s+(?:that|which|to)\s+(?:\w+\s+)?(?:checks?|verif\w*|ensures?|"
     r"asserts?|confirms?|covers?|makes sure)\b|\b(?:verifies|ensures|asserts|checks)\s+that\b", re.I)
 KIND_ORDER = ["tests", "ci", "build", "merged", "pushed", "committed", "pr_opened", "deployed", "url", "file",
-              "sha", "number"]
+              "sha", "number", "unchecked"]
 FILE_VERBS = (r"\b(created|wrote|written|saved|updated|added|edited|modified|generated|exported|rendered|"
               r"moved|renamed|deleted|removed|patched|changed|fixed|rewrote|refactored)\b")
 _AGENT_VERB_RE = re.compile(
@@ -179,7 +186,9 @@ def forged_stamps(text: str) -> int:
 _GATE = (r"\d|test|spec|suite|pytest|jest|vitest|mocha|pass|fail|\bci\b|check|action|workflow|pipeline|green|succe|"
          r"build|compil|merg|land|push|commit|\bprs?\b|pull|deploy|ship|publish|releas|roll|live|\bup\b|online|http|head|"
          r"creat|wr[io]t|sav|updat|add|edit|modif|generat|export|render|mov|renam|delet|remov|patch|chang|fix|refactor|"
-         r"失败|错误|跳过|未通过")
+         r"失败|错误|跳过|未通过|测试|通过|推送|合并|合入|部署|上线|发布|完成|搞定|修复|ทดสอบ|เทส|ผ่าน|พุช|เมิร์|"
+         r"ดีพลอย|เสร็จ|เรียบร้อย|prueba|sub[ií]|fusion|despleg|producci|integr|listo|hecho|terminad|arregl|resuelt|"
+         r"完了|成功|ました|완료|통과|푸시|병합|배포|готово|сделано|исправ|erledigt|fertig|behoben|termin|corrig|conclu|implant")
 GATE_RE = re.compile(_GATE, re.I)
 _GATE_LOWER_RE = re.compile(_GATE)  # on lowercased text: no ignore-case, so re can skip ahead by first character
 
@@ -561,22 +570,27 @@ def extract_claims(text: str) -> List[Dict[str, Any]]:
         if budget < 0 or n_clauses > MAX_CLAUSES:
             break  # a reply this long is read up to here: every regex pass stays short (tests/test_redos.py)
         plain = clause.replace("\u2019", "'").replace("\u2018", "'")
+        foreign = foreign_claims(clause)  # its own near-miss rules per language (negation, future, questions)
         revived = False
         if clause.rstrip().endswith("?") or HEDGE_RE.search(plain) or IMPERATIVE_RE.search(plain) \
                 or IMPERATIVE_ANY_RE.search(plain):
-            continue
-        if REPORTED_RE.search(plain) or SESSION_REF_RE.search(plain):
+            claims = []
+        elif REPORTED_RE.search(plain) or SESSION_REF_RE.search(plain):
             # earlier work in this session: kept, marked, and judged only on earlier turns (verdict.judge)
             revived = bool(SESSION_REF_RE.search(plain)) and not REPORTED_RE.search(SESSION_REF_RE.sub(" ", plain)) \
                 and not FAR_RE.search(plain)
-            if not revived:
-                continue
-        claims = _claims_in(clause)
+            claims = _claims_in(clause) if revived else []
+        else:
+            claims = _claims_in(clause)
         if revived or ALREADY_RE.search(plain):
             for c in claims:
                 c["earlier"] = True
                 if revived:
                     c["revived"] = True
+        kinds = {c["kind"] for c in claims}
+        claims += [c for c in foreign if c["kind"] not in kinds and c["kind"] != "unchecked"]
+        if not claims:  # a completion phrase No Cap can't check yet: a hidden 🤔, only when nothing else was found
+            claims = [c for c in foreign if c["kind"] == "unchecked"][:1]
         if not claims:
             continue
         if DESCRIBES_TEST_RE.search(plain):  # "a test that checks the build succeeds" says what a test does
