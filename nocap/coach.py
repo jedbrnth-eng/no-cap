@@ -104,6 +104,11 @@ PATTERNS: List[Dict[str, Any]] = [
      "rule": "Before you say all tests pass, run the full suite with the project's test command (no -k, ::, or "
              "single-file filter) after your last edit, and quote its summary line. If you only ran a subset, say which.",
      "why": "a filtered run proves only the tests it selected, not the suite"},
+    {"id": "tests.named_unshown", "kind": "tests", "match": _why("no run of that scope after the last code edit"),
+     "title": "claims a named test passes, but no run after the last edit shows that test passing",
+     "rule": "When you say a specific test passes, quote the line from a run after your last edit that shows it "
+             "passing, or run the full suite and quote its summary line. Don't infer a pass from the code.",
+     "why": "no run after the last edit names that test or shows the suite green"},
     {"id": "tests.stale_after_edit", "kind": "tests",
      "match": _why("code changed after", "after the last code edit"),
      "title": "claims tests pass, but edited code after the last test run",

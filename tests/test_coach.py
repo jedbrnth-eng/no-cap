@@ -34,7 +34,7 @@ PROVEN = dict(verdict="NO_CAP", cmd="python -m pytest -q")
     (rc(**SUBSET), "tests.subset_only"),
     (rc(why="the claim also covers the full suite"), "tests.subset_only"),
     (rc(**STALE), "tests.stale_after_edit"),
-    (rc(why="no run of that scope after the last code edit"), "tests.stale_after_edit"),
+    (rc(why="no run of that scope after the last code edit"), "tests.named_unshown"),
     (rc(why="no test run in this turn"), "tests.no_run"),
     (rc(why="only the agent's own check script ran, not the test suite"), "tests.no_run"),
     (rc(why="that run's output was cut by a pipe; other crates/packages may be hidden"), "tests.hidden_result"),

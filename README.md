@@ -163,7 +163,7 @@ No Cap knows what each agent caps on. Cap Coach turns that into fixes you approv
 1. **Mine.** `/cap coach scan` clusters the 🧢 and 🤔 receipts in the local store by failure shape, model and loaded
    skill, with deterministic rules (no extra model): "claims all tests pass after running only a subset (-k, one
    file)", "claims tests pass, but edited code after the last test run", "claims pushed without running git push",
-   "claims tests pass while the latest run failed", and 16 more. Each pattern carries its count, its rate among
+   "claims tests pass while the latest run failed", and 17 more. Each pattern carries its count, its rate among
    replies that made that kind of claim, the runners involved and up to 3 redacted examples.
 2. **Propose.** A pattern with at least `min_evidence` caps (default 5) gets a drafted fix from a template library:
    one short rule plus the reason, e.g. *"Before you say all tests pass, run the full suite with the project's test
