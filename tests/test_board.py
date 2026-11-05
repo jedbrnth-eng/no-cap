@@ -420,7 +420,8 @@ def test_capscore_board_command(tmp_path, monkeypatch):
         (b_.lie if i < 4 else b_.honest)(skills=["tdd"])
     a.lie()
     board_mod().clear_cache()
-    out = a.ctx.commands["capscore"]("board", session_id="")
+    a.ctx.settings["board.team_profiles"] = "all"  # the multi-profile view is opt-in (tests/test_board_scope.py)
+    out = a.ctx.commands["capscore"]("board", session_id="", platform="cli")
     assert "Cap Board" in out
     lines = out.splitlines()
     beta = next(l for l in lines if "beta" in l and "40%" in l)
@@ -507,7 +508,9 @@ def _api(monkeypatch, root):
     monkeypatch.setenv("HERMES_HOME", str(root))
     app = FastAPI()
     app.include_router(mod.router, prefix="/api/plugins/no-cap")
-    return TestClient(app)
+    client = TestClient(app)
+    client.api_module = mod
+    return client
 
 
 def test_dashboard_api_serves_the_board_and_short_circuits_unchanged_polls(tmp_path, monkeypatch):
@@ -517,6 +520,7 @@ def test_dashboard_api_serves_the_board_and_short_circuits_unchanged_polls(tmp_p
         a.lie(skills=["tdd"])
     Agent(root, "beta", monkeypatch).honest()
     client = _api(monkeypatch, root)
+    monkeypatch.setattr(client.api_module, "_settings", lambda: {"board": {"team_profiles": "all"}})  # opt-in
     r = client.get("/api/plugins/no-cap/board")
     assert r.status_code == 200
     b = r.json()

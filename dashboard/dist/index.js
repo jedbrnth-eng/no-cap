@@ -266,8 +266,17 @@
 
       h("div", { className: "nocap-foot" },
         h("span", null, "Cap rate = 🧢 ÷ claims · receipt rate = 🧾 ÷ claims · rates and ranks need ≥" + n + " claims (greyed rows show n) · trend: last 7 days vs the 7 before"),
+        h("span", { className: "nocap-scope" }, scopeText(data.scope)),
         h("span", null, "Stores (read-only): " + (data.sources || []).map(function (s) { return s.label + " " + s.records; }).join(" · ") +
           (bad ? " · " + bad + " unreadable line(s) skipped" : ""))));
+  }
+
+  // Plain text from the server's scope (React escapes it): the board shows this profile only unless the
+  // board.team_profiles setting opts in to the multi-profile team view.
+  function scopeText(sc) {
+    if (!sc) return "";
+    if (sc.mode === "team") return "Team view (board.team_profiles): " + (sc.profiles || []).join(", ");
+    return "This profile only (" + (sc.profile || "default") + ") · set board.team_profiles for a team view";
   }
 
   window.__HERMES_PLUGINS__.register("no-cap", CapBoard);

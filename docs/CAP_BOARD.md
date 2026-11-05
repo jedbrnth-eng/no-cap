@@ -8,6 +8,26 @@ from `/capscore board` or `hermes nocap board`.
 
 ## What it reads
 
+**Scope.** By default the board shows only the profile it is asked from: the dashboard tab shows the profile the
+dashboard request is scoped to, `/capscore board` the profile of the session. Other profiles are a **team view** and
+need an explicit opt-in in that profile's settings:
+
+```yaml
+plugins:
+  entries:
+    no-cap:
+      settings:
+        board:
+          team_profiles: all          # or a list: [alpha, beta]
+```
+
+Even with it set, only the CLI (`hermes nocap board`, `/capscore board` in a CLI session) and the dashboard tab show the
+team view. `/capscore board` in a gateway chat (Telegram, Discord, Slack, ...), the TUI or Desktop always shows the
+current profile, so a bot never posts another profile's claims, commands or evidence into a group chat. Hall of Cap
+items carry the claim, the cited command (120 characters) and the evidence line (220 characters), redacted for secrets
+but not for repo names, hostnames or paths: turn the team view on only where everyone who can open the dashboard may
+see every listed profile's work. The tab footer and the text header say which scope is shown.
+
 Every profile on the machine keeps its own No Cap store (`<HERMES_HOME>/plugin-data/agent-plugin-no-cap-4890e304/receipts.jsonl`,
 or `plugin-data/no-cap/` on older builds). The board finds profiles the way Hermes does (`hermes_cli/profiles.py:481-511`):
 the root home is `default`, `<root>/profiles/<name>` are the named ones, directories without an identity file
@@ -18,7 +38,9 @@ Stores are opened read-only (`"rb"`), never locked, pruned or written. Only comp
 written right now is picked up on the next poll; appends are read incrementally and a pruned or purged store is read
 again in full. Unreadable lines are skipped and counted at the bottom of the tab.
 
-Extra stores (a copied store, an arena run, another machine's export) go in `board_sources` or `NOCAP_BOARD_SOURCES`:
+In the team view, extra stores (a copied store, an arena run, another machine's export) go in `board_sources` or
+`NOCAP_BOARD_SOURCES` (ignored outside the team view). A folder entry is searched at most 6 levels and 2000 folders
+deep, for at most 5000 stores, and never through a symlinked folder:
 `label=path` entries separated by `:`. A path can be a Hermes home, a `receipts.jsonl`, a folder searched for them, or a
 glob (`arena-strict=/tmp/nocap-arena/runs/*/C`). A labelled source's label names the agent.
 

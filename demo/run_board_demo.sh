@@ -44,6 +44,8 @@ hermes config set model.provider custom >/dev/null
 (cd "$HOME/.hermes/hermes-agent" 2>/dev/null && "$HOME/.hermes/hermes-agent/venv/bin/python" -c \
   "from hermes_cli.observability.shared_metrics_consent import save_consent; save_consent(False, False)" 2>/dev/null) || true
 hermes plugins install "file://$REPO" --enable --yes-deps 2>&1 | grep -E "Installed|enabled|Error" || true
+# The root profile opts in to the team view (off by default: a profile sees only its own board)
+hermes config set plugins.entries.no-cap.settings.board.team_profiles all >/dev/null
 for P in alpha beta gamma; do
   [ -d "$ROOTH/profiles/$P" ] || hermes profile create "$P" --no-alias >/dev/null
 done

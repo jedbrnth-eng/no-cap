@@ -12,6 +12,7 @@ time.time() shifted 8-12 days back. No JSON is written by hand: every record com
 import importlib.util
 import json
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -78,7 +79,13 @@ def load_installed(home: Path):
 
 
 def run(cmd: str, cwd: Path):
-    p = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True)
+    # argv list (the commands are the hardcoded PYTEST / PUSH strings above), no shell, bounded in time
+    try:
+        p = subprocess.run(shlex.split(cmd), cwd=cwd, capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired as exc:
+        out = ((exc.stdout or b"") + (exc.stderr or b"")).decode(errors="replace") if isinstance(exc.stdout, bytes) \
+            else (exc.stdout or "") + (exc.stderr or "")
+        return json.dumps({"output": (out + "\n[timed out after 60 s]")[-4000:], "exit_code": 124})
     return json.dumps({"output": (p.stdout + p.stderr)[-4000:], "exit_code": p.returncode})
 
 

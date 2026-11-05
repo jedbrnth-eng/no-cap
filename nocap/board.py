@@ -1,4 +1,8 @@
-"""Cap Board: who caps most, across every Hermes profile on this machine. Read-only, local, no model.
+"""Cap Board: who caps most, per agent (Hermes profile), model and skill. Read-only, local, no model.
+
+Scope (security): by default the board shows ONLY the profile it is asked from. The multi-profile team view is an
+explicit opt-in (``plugins.entries.no-cap.settings.board.team_profiles``: a list of names or ``all``) and is only
+served on ``cli`` and the dashboard; a gateway chat always gets the current profile (``scoped_sources``).
 
 Each profile (HERMES_HOME) keeps its own receipt store under ``plugin-data/``. The board finds them the way Hermes
 finds profiles (the root home is ``default``, ``<root>/profiles/<name>`` the named ones; ghosts without an identity
@@ -48,6 +52,9 @@ _NS_RE = re.compile(r"^agent-plugin-no-cap-[0-9a-f]{8}$")
 _PROFILE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _MARKERS = ("config.yaml", ".env", "SOUL.md", "profile.yaml", "auth.json", "state.db")
 MAX_GLOB_FILES = 5000
+MAX_WALK_DEPTH = 6  # a board_sources folder is searched this many levels down at most
+MAX_WALK_DIRS = 2000  # and opens at most this many directories, whatever the tree holds
+TEAM_PLATFORMS = ("cli", "dashboard")  # the only surfaces that may show other profiles (team mode)
 
 
 def _hc():
@@ -174,6 +181,36 @@ def parse_sources(spec: Any) -> List[Tuple[Optional[str], str]]:
     return out
 
 
+def _walk(top: Path) -> List[Path]:
+    """Stores under ``top``, breadth first, bounded BEFORE the walk: at most ``MAX_WALK_DEPTH`` levels, ``MAX_WALK_DIRS``
+    directories opened and ``MAX_GLOB_FILES`` stores. Symlinked directories are never entered (no loops, no escape)."""
+    found: List[Path] = []
+    queue: List[Tuple[Path, int]] = [(top, 0)]
+    opened = 0
+    while queue and opened < MAX_WALK_DIRS and len(found) < MAX_GLOB_FILES:
+        d, depth = queue.pop(0)
+        opened += 1
+        try:
+            with os.scandir(d) as it:
+                entries = sorted(it, key=lambda e: e.name)
+        except OSError:
+            continue
+        for e in entries:
+            try:
+                if e.is_symlink():
+                    continue
+                if e.is_dir(follow_symlinks=False):
+                    if depth + 1 <= MAX_WALK_DEPTH:
+                        queue.append((Path(e.path), depth + 1))
+                elif e.name == STORE_FILE and e.is_file(follow_symlinks=False):
+                    found.append(Path(e.path))
+                    if len(found) >= MAX_GLOB_FILES:
+                        break
+            except OSError:
+                continue
+    return found
+
+
 def _paths_of(pattern: str) -> List[Path]:
     pattern = os.path.expanduser(pattern)
     matches = sorted(glob.glob(pattern)) if any(c in pattern for c in "*?[") else [pattern]
@@ -188,10 +225,7 @@ def _paths_of(pattern: str) -> List[Path]:
             elif (p / STORE_FILE).is_file():
                 files.append(p / STORE_FILE)
             else:
-                for i, f in enumerate(sorted(p.rglob(STORE_FILE))):
-                    if i >= MAX_GLOB_FILES:
-                        break
-                    files.append(f)
+                files.extend(_walk(p))
     seen, uniq = set(), []
     for f in files:
         k = str(f)
@@ -235,6 +269,62 @@ def discover_sources(root: Optional[Path] = None, extra: Optional[Sequence[Tuple
         else:
             out.append(Source(lab, paths, explicit=bool(label)))
     return out
+
+
+def parse_team(spec: Any) -> Any:
+    """``board.team_profiles``: ``None`` (team view off, the default), ``"all"``, or a list of profile names.
+    Anything else (a number, a bad name) is off or dropped: the multi-profile view needs a clear opt-in."""
+    if spec is None or isinstance(spec, bool):
+        return None
+    if isinstance(spec, str):
+        items = [x for x in re.split(r"[\s,]+", spec.strip()) if x]
+    elif isinstance(spec, (list, tuple)):
+        items = [str(x).strip() for x in spec if isinstance(x, str) and str(x).strip()]
+    else:
+        return None
+    low = [x.lower() for x in items]
+    if any(x in ("all", "*") for x in low):
+        return "all"
+    if not items or low in (["off"], ["none"], ["false"], ["no"]):
+        return None
+    names = [x for x in items if _PROFILE_RE.match(x)]
+    return names or None
+
+
+def current_home() -> Path:
+    """The home of the profile the request/turn is scoped to (Hermes binds it per request)."""
+    hc = _hc()
+    if hc is not None:
+        try:
+            return Path(hc.get_hermes_home())
+        except Exception:
+            pass
+    return Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes").expanduser()
+
+
+def scoped_sources(team: Any = None, platform: str = "", root: Optional[Path] = None,
+                   extra: Optional[Sequence[Tuple[Optional[str], str]]] = None) -> Tuple[List[Source], Dict[str, Any]]:
+    """What the board may show, and why.
+
+    Default: ONLY the current profile's own store (extra ``board_sources`` are ignored too). The team view (other
+    profiles, extra stores) needs ``board.team_profiles`` set AND a local surface (``cli`` or the dashboard); a
+    gateway chat (telegram, discord, ...), the TUI, Desktop or an unknown platform always gets the current profile."""
+    me = profile_name()
+    want = parse_team(team)
+    surface = str(platform or "").strip().lower()
+    if want is None or surface not in TEAM_PLATFORMS:
+        paths = home_stores(current_home())
+        srcs = [Source(me, paths)] if paths else []
+        return srcs, {"mode": "profile", "profile": me, "team_setting": want is not None, "profiles": [me]}
+    srcs = discover_sources(root=root, extra=extra if extra is not None else [])
+    if want != "all":
+        allowed = set(want) | {me}
+        names = {n for n, _ in profile_homes(root)}
+        srcs = [s for s in srcs if (s.label in allowed) or (s.label not in names)]
+        profiles = [n for n, _ in profile_homes(root) if n in allowed]
+    else:
+        profiles = [n for n, _ in profile_homes(root)]
+    return srcs, {"mode": "team", "profile": me, "team_setting": True, "profiles": profiles}
 
 
 # ---- read-only, incremental store reader ---------------------------------------------------------------------
@@ -554,13 +644,26 @@ def row_text(r: Dict[str, Any], min_claims: int, with_model: bool = False) -> st
     return " · ".join(bits)
 
 
+def scope_text(scope: Optional[Dict[str, Any]]) -> str:
+    if not scope:
+        return ""
+    if scope.get("mode") == "team":
+        return f"team view: {', '.join(scope.get('profiles') or [])} (board.team_profiles)"
+    note = f"this profile only ({scope.get('profile') or 'default'})"
+    if scope.get("team_setting"):
+        note += " · the team view is only shown in the CLI and the dashboard"
+    return note
+
+
 def board_text(b: Dict[str, Any], limit: int = 8, hall: int = 5) -> str:
     t = b["totals"]
+    where = scope_text(b.get("scope"))
     if not t["replies"]:
-        return "🧢 Cap Board: no checked replies yet in any profile. Make a claim, get a receipt."
+        return ("🧢 Cap Board: no checked replies yet" + (f" ({where})" if where else "")
+                + ". Make a claim, get a receipt.")
     n = b["min_claims"]
     lines = [f"🧢 **Cap Board** · top cappers across {t['agents']} agent(s) · {t['replies']} replies, "
-             f"{t['claims']} claims · rates need ≥{n} claims"]
+             f"{t['claims']} claims · rates need ≥{n} claims" + (f" · {where}" if where else "")]
     for title, key, with_model in (("Agents", "agents", True), ("Models", "models", False), ("Skills", "skills", False)):
         rows = b[key]
         if not rows:

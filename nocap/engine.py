@@ -254,12 +254,16 @@ class Engine:
             out.append(f"{i}. {TAG[r['verdict']]} your reply said “{claim}” ({why}) → {suggestion(r, test_cmds)}")
         return "\n".join(out)
 
-    def capscore(self, raw_args: str = "", session_id: str = "") -> str:
-        records = self.store.records()
+    def capscore(self, raw_args: str = "", session_id: str = "", platform: str = "") -> str:
         arg = (raw_args or "").strip().lower()
         if arg in ("board", "team"):
-            return board.board_text(board.build_board(board.discover_sources(extra=self.board_sources()),
-                                                      min_claims=self.board_min_claims()))
+            # Own profile only unless board.team_profiles opts in AND this is the CLI (never a gateway chat).
+            srcs, scope = board.scoped_sources(team=self.setting("board.team_profiles", None), platform=platform,
+                                               extra=self.board_sources())
+            b = board.build_board(srcs, min_claims=self.board_min_claims())
+            b["scope"] = scope
+            return board.board_text(b)
+        records = self.store.records()
         if arg in ("card", "image", "png", "share"):
             rows = score.table(records)
             mine = [r for r in score.scored(records) if r.get("session_id") == session_id]

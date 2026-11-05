@@ -1,7 +1,7 @@
 {
   "name": "no-cap",
   "label": "Cap Board",
-  "description": "No Cap leaderboard: which agents, models and skills make the most false claims (🧢) across every profile on this machine, live. Read-only, local files only.",
+  "description": "No Cap leaderboard: which agents, models and skills make the most false claims (🧢), live. This profile only unless the board.team_profiles opt-in is set. Read-only, local files only.",
   "icon": "BarChart3",
   "version": "0.2.0",
   "tab": {

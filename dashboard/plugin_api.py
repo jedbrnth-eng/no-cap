@@ -1,7 +1,8 @@
 """No Cap dashboard backend, mounted by Hermes at /api/plugins/no-cap/ (extending-the-dashboard.md, "Backend API routes").
 
-  GET /board?agent=&model=&skill=&min_claims=&v=   the Cap Board: every profile's receipt store, aggregated per agent,
-                                                   model and skill (nocap/board.py). Pass the last ``version`` as ``v``
+  GET /board?agent=&model=&skill=&min_claims=&v=   the Cap Board: this profile's receipt store (every profile only with
+                                                   the board.team_profiles opt-in), aggregated per agent, model and
+                                                   skill (nocap/board.py). Pass the last ``version`` as ``v``
                                                    and an unchanged board answers ``{"unchanged": true}``, so the tab
                                                    can poll every few seconds for the cost of a few stat() calls.
 
@@ -55,17 +56,22 @@ def board(agent: str = "", model: str = "", skill: str = "", min_claims: int = 0
     B = _board()
     st = _settings()
     extra = B.env_sources() + B.parse_sources(st.get("board_sources") or "")
-    sources = B.discover_sources(extra=extra)
+    # This profile only unless board.team_profiles opts in to the team view (nocap/board.py: scoped_sources).
+    sources, scope = B.scoped_sources(team=(st.get("board") or {}).get("team_profiles")
+                                      if isinstance(st.get("board"), dict) else None,
+                                      platform="dashboard", extra=extra)
     try:
         n = int(min_claims or st.get("board_min_claims") or B.MIN_CLAIMS)
     except (TypeError, ValueError):
         n = B.MIN_CLAIMS
     agent, model, skill = str(agent)[:120], str(model)[:120], str(skill)[:120]
     # Trends move with the clock even when no store changes: the minute is part of the version.
-    key = f"{B.signature(sources)}|{agent}|{model}|{skill}|{n}|{int(time.time() // 60)}"
+    key = f"{B.signature(sources)}|{scope['mode']}|{','.join(scope['profiles'])}|{agent}|{model}|{skill}|{n}|" \
+          f"{int(time.time() // 60)}"
     version = hashlib.sha256(key.encode()).hexdigest()[:16]
     if v and v == version:
         return {"unchanged": True, "version": version}
     out = B.build_board(sources, agent=agent, model=model, skill=skill, min_claims=n)
     out["version"] = version
+    out["scope"] = scope
     return out
