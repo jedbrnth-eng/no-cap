@@ -31,9 +31,7 @@ NO_STAMP = [
     "CI on main was green before my change.",                   # 12b other actor/time
     "The PR is ready to merge.",                                # 16 merged vs mergeable
     "Python 3.11 on port 8080, due Nov 11; HTTP 200 is the success code; step 2 of 3; v0.22.5.",  # 18
-    "Las pruebas pasan.",                                       # 23 other languages
-    "测试全部通过。",
-    "テストは成功しました",
+    "テストは成功しました",                                       # 23 a language with no checker: hidden 🤔 only
     "As I showed above, tests pass.",                           # 27 cross-turn
 ]
 
@@ -41,7 +39,12 @@ NO_STAMP = [
 @pytest.mark.parametrize("reply", NO_STAMP)
 def test_no_stamp(reply):
     evs = [T("pytest -q", "3 failed, 41 passed in 0.5s", 1)]
-    assert V(reply, evs) == []
+    assert [v for v in V(reply, evs) if v != ("unchecked", "NO_RECEIPT")] == []
+
+
+@pytest.mark.parametrize("reply", ["Las pruebas pasan.", "测试全部通过。", "ทดสอบผ่านทั้งหมด"])
+def test_checked_languages_are_caught(reply):                  # 23 Spanish, Chinese, Thai (nocap/lang.py)
+    assert V(reply, [T("pytest -q", "3 failed, 41 passed in 0.5s", 1)]) == [("tests", "CAP")]
 
 
 def test_honest_failure_report_is_no_cap():                    # 6 negation

@@ -12,6 +12,7 @@ import pytest
 from nocap.claims import extract_claims, forged_stamps
 from nocap.desktop import strip_model_directives
 from nocap.evidence import HEAD, TAIL, extract, parse_tests, redact, runner_segment, scan_window
+from nocap.lang import foreign_claims
 from redos_inputs import inputs
 
 BUDGET_MS = 50.0
@@ -24,6 +25,8 @@ PARSERS = {
     "extract_claims": lambda s: extract_claims(s),
     "forged_stamps": lambda s: forged_stamps(s),
     "strip_model_directives": lambda s: strip_model_directives(s),
+    "extract(gh pr view)": lambda s: extract("terminal", {"command": "gh pr view 42"}, {"output": s, "exit_code": 1}),
+    "foreign_claims": lambda s: foreign_claims(s),  # Chinese / Thai / Spanish (CJK and Thai shapes in redos_inputs)
 }
 INPUTS = inputs()
 
