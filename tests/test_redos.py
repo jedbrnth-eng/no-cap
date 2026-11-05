@@ -36,36 +36,44 @@ def _alarm(*_):
 
 def _calibration() -> float:
     """How much slower this machine is right now than the one the budget was set on (1.0 = same, capped at 4).
-    A linear regex pass over 100 KB takes about 1 ms there; a loaded laptop can be several times slower."""
+    A linear regex pass over 100 KB takes about 1 ms of CPU there; a slower or throttled core takes longer."""
     import re
     s, rx = "word 12 " * 12_500, re.compile(r"\b\w+\s+\d+\b")
     best = min(_timed(lambda: rx.findall(s)) for _ in range(5))
     return min(4.0, max(1.0, best / 1.0))
 
 
+def _clock() -> float:
+    """CPU time of this thread, in seconds. Wall time also counts the time a loaded machine spends running other
+    processes: at load ~22 on 14 cores a 35 ms parse measured 70-120 ms of wall time and failed the budget, while
+    the 1 ms calibration, short enough to finish inside one time slice, did not slow down with it. CPU time
+    counts only the parser's own work, so a real slowdown still fails and a busy scheduler does not."""
+    return time.thread_time()
+
+
 def _timed(fn) -> float:
-    t = time.perf_counter()
+    t = _clock()
     fn()
-    return (time.perf_counter() - t) * 1000
+    return (_clock() - t) * 1000
 
 
-def _best_ms(fn, s, reps=5):
-    """Best of 5, so a busy machine doesn't fail the test; a 2 s alarm stops a quadratic case early."""
-    old = signal.signal(signal.SIGALRM, _alarm)
+def _best_ms(fn, s, reps=5, limit_s=2.0):
+    """Best of 5 in CPU ms. A CPU-time alarm (ITIMER_PROF, limit_s seconds) stops a quadratic case early."""
+    old = signal.signal(signal.SIGPROF, _alarm)
     best = float("inf")
     try:
         for _ in range(reps):
-            signal.setitimer(signal.ITIMER_REAL, 2.0)
-            t = time.perf_counter()
+            signal.setitimer(signal.ITIMER_PROF, limit_s)
+            t = _clock()
             try:
                 fn(s)
             except _Slow:
                 return float("inf")
             finally:
-                signal.setitimer(signal.ITIMER_REAL, 0)
-            best = min(best, (time.perf_counter() - t) * 1000)
+                signal.setitimer(signal.ITIMER_PROF, 0)
+            best = min(best, (_clock() - t) * 1000)
     finally:
-        signal.signal(signal.SIGALRM, old)
+        signal.signal(signal.SIGPROF, old)
     return best
 
 
@@ -74,10 +82,34 @@ def _best_ms(fn, s, reps=5):
 def test_parser_time_budget(parser, shape):
     ms = _best_ms(PARSERS[parser], INPUTS[shape])
     scale = _calibration()  # measured next to the case, so a burst of load elsewhere scales both
-    if ms >= BUDGET_MS * scale:  # one retry after a pause: a scheduler hiccup is not a regression
+    if ms >= BUDGET_MS * scale:  # one retry after a pause: a stretch on a slower core is not a regression
         time.sleep(0.2)
         ms, scale = _best_ms(PARSERS[parser], INPUTS[shape]), _calibration()
     assert ms < BUDGET_MS * scale, f"{parser} on {shape!r}: {ms:.1f} ms (budget {BUDGET_MS * scale:.0f} ms)"
+
+
+def _spin(cpu_s: float) -> None:
+    end = time.thread_time() + cpu_s
+    while time.thread_time() < end:
+        pass
+
+
+def test_budget_clock_ignores_time_off_cpu():
+    """A loaded machine preempts the test thread; that wait is not parser time. Sleeping is the same
+    as being descheduled, so it must not count (wall-clock timing failed this suite at load ~22)."""
+    assert _best_ms(lambda s: time.sleep(0.15), "", reps=1) < 20
+    assert _timed(lambda: time.sleep(0.15)) < 20  # the calibration uses the same clock
+
+
+def test_budget_clock_still_counts_cpu_work():
+    """The fix must not hide a real slowdown: work done on the CPU is measured in full."""
+    assert _best_ms(lambda s: _spin(0.12), "", reps=1) >= 100
+
+
+def test_runaway_parser_is_cut_by_the_cpu_alarm():
+    """A quadratic case is still stopped early (and reported as inf), by CPU time, not wall time."""
+    assert _best_ms(lambda s: _spin(5.0), "", reps=1, limit_s=0.2) == float("inf")
+    assert _best_ms(lambda s: time.sleep(0.3), "", reps=1, limit_s=0.2) < 20  # waiting is not running
 
 
 def test_scan_window_keeps_head_tail_and_middle_summaries():
