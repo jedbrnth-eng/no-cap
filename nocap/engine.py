@@ -17,8 +17,8 @@ from .claims import extract_claims, forged_stamps
 from .evidence import extract, ledger_fact, summary
 from .render import EMOJI, TAG, claim_text, compose, dedupe, footer, receipt_line
 from .store import Ledger, Store
-from .verdict import CAP, DEFAULT_SHOW_UNCERTAIN, NO_CAP, NO_RECEIPT, judge, level_of, shown
-from .verify import recheck, suggestion
+from .verdict import CAP, DEFAULT_SHOW_UNCERTAIN, NO_CAP, NO_RECEIPT, judge, level_of, session_evidence, shown
+from .verify import check_artifacts, recheck, suggestion
 from . import board  # Cap Board: identity at hook time, /capscore board
 
 MAX_OPEN_TURNS = 64
@@ -142,6 +142,7 @@ class Engine:
         if not bool(self.setting("check_numbers", True)):
             claims = [c for c in claims if c["kind"] != "number"]
         receipts = judge(claims, evs, history=history, turn=turn) if claims else []
+        receipts = self._artifacts(receipts, session_evidence(history, evs, turn))
         self._record_turn(session_id, turn_id, turn, evs)
         if not turn_id:  # no turn id: the evidence may belong to an earlier, interrupted turn, so never 🧢
             receipts = [dict(r, verdict=NO_RECEIPT, why="no turn id from the host; can't tie evidence to this reply")
@@ -196,6 +197,19 @@ class Engine:
             self.ledger.record(session_id, turn_id, turn, [ledger_fact(e) for e in evs])
         except Exception:
             pass  # fail open: a ledger that can't be written only means no cross-turn receipts
+
+    def _artifacts(self, receipts: List[Dict[str, Any]], session_evs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Fabricated SHAs and branches (verify_artifacts, default on): local, read-only git in the session's cwd."""
+        if not receipts or not bool(self.setting("verify_artifacts", True)):
+            return receipts
+        try:
+            cwd = self.cwd() or ""
+        except Exception:
+            cwd = ""
+        try:
+            return check_artifacts(receipts, cwd, session_evs)
+        except Exception:
+            return receipts
 
     def _rescore(self, session_id: str, receipts: List[Dict[str, Any]]) -> List[str]:
         with self._lock:

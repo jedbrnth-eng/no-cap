@@ -24,6 +24,7 @@ PARSERS = {
     "extract_claims": lambda s: extract_claims(s),
     "forged_stamps": lambda s: forged_stamps(s),
     "strip_model_directives": lambda s: strip_model_directives(s),
+    "extract(gh pr view)": lambda s: extract("terminal", {"command": "gh pr view 42"}, {"output": s, "exit_code": 1}),
 }
 INPUTS = inputs()
 

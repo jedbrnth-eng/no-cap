@@ -692,6 +692,13 @@ def parse_git(cmd: str, text: str, exit_code: Optional[int]) -> Dict[str, Any]:
             g["pr_view_prs"] = nums
             if states[0].upper() == "MERGED":
                 g["merged_prs"] = nums
+        # `gh pr view 42` on a PR that doesn't exist: the number is named in the command (or the GraphQL error)
+        gone = re.search(r"(?i)could not resolve to a pull ?request with the number of (\d+)|"
+                         r"^no pull requests? (?:found|match)", text[:2000], re.M)
+        if gone and len(set(nums)) <= 1 and "$" not in cmd and not states:
+            n = int(gone.group(1)) if gone.group(1) else (nums[0] if nums else None)
+            if n is not None and (not nums or nums[0] == n):
+                g["pr_missing"] = [n]
     elif re.search(r"\bgit\b(?:(?!\bgit\b)[^|;&])*\bmerge\b", cmd) and not re.search(r"--abort", cmd):
         g["git_merge_failed"] = bool(re.search(r"CONFLICT|Automatic merge failed|^fatal:", text, re.M))
         g["git_merge_ok"] = ok and not g["git_merge_failed"]

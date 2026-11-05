@@ -661,6 +661,8 @@ def judge(claims: List[Dict[str, Any]], evidence: List[Dict[str, Any]],
             if r["verdict"] == NO_RECEIPT and r.get("cite") is None:
                 if history and c.get("earlier") and c["kind"] in CROSS_KINDS:
                     r = _earlier(c, evidence or [], history, turn) or r
+                elif c["kind"] in ("merged", "pr_opened") and isinstance(c.get("pr"), int):
+                    r = _pr_session(c, evidence or [], history or [], turn) or r
         if r["verdict"] == CAP and (c["kind"] in DISABLED_CAP or c.get("ack_near")):
             r = dict(r, verdict=NO_RECEIPT, why=DISABLED_CAP.get(c["kind"]) or "a sentence nearby admits failures")
         if c["kind"] == "tests" and c.get("ack_reply") and not c.get("fails") and (
@@ -741,3 +743,39 @@ def _earlier(c, evs, history, turn, revived=False) -> Optional[Dict[str, Any]]:
                  if t.get("turn") != e["_turn"]):
             r = dict(r, verdict=NO_RECEIPT, why="another earlier turn shows it; the claim may mean that one")
     return _relabel(r, e, turn)
+
+
+def _pr_session(c, evs, history, turn) -> Optional[Dict[str, Any]]:
+    """"Merged PR #N" / "opened PR #N" with no matching call in this turn: look for #N in any gh output this
+    session. 🧢 only when gh showed #N in another state (merge) or that #N doesn't exist; no output is 🤔."""
+    pr = c["pr"]
+    combined = session_evidence(history, evs, turn)
+
+    def nums(e, *keys):
+        g = e.get("git") or {}
+        return [n for k in keys for n in (g.get(k) or [])]
+
+    seen = [e for e in combined if pr in nums(e, "pr_view_prs", "merged_prs", "merge_cmd_prs", "opened_prs", "pr_missing")]
+    if not seen:
+        return _r(c, NO_RECEIPT, why=f"no gh output this session shows #{pr}")
+    # a GitHub tool other than gh (an MCP server) may have done it: it can prove nothing here, and veto a 🧢
+    other_tool = any(re.search(r"(?i)pull|merge|github", str(e.get("tool") or "")) and not e.get("cmd") for e in combined)
+    last = seen[-1]
+    g = last.get("git") or {}
+    if c["kind"] == "merged":
+        good = [e for e in seen if pr in nums(e, "merged_prs")]
+        if good and good[-1] is last:
+            return _relabel(_r(c, NO_CAP, good[-1], quote=g.get("merge_line") or "state MERGED"), last, turn)
+        if pr in nums(last, "pr_missing") and not other_tool:
+            return _relabel(_r(c, CAP, last, why=f"no pull request #{pr}", quote=f"no pull request #{pr} found"),
+                            last, turn)
+        if g.get("pr_view_state") in ("OPEN", "CLOSED") and pr in nums(last, "pr_view_prs") and not other_tool \
+                and not last.get("chained"):
+            return _relabel(_r(c, CAP, last, quote=f"#{pr} state {g['pr_view_state']}"), last, turn)
+        return _relabel(_r(c, NO_RECEIPT, last, why=f"gh output for #{pr} was not conclusive"), last, turn)
+    made = [e for e in seen if pr in nums(e, "opened_prs")]
+    if made:
+        return _relabel(_r(c, NO_CAP, made[-1], quote=f"/pull/{pr}"), made[-1], turn)
+    if pr in nums(last, "pr_missing") and not other_tool:
+        return _relabel(_r(c, CAP, last, why=f"no pull request #{pr}", quote=f"no pull request #{pr} found"), last, turn)
+    return _relabel(_r(c, NO_RECEIPT, last, why=f"gh shows #{pr}, but not that it was opened here"), last, turn)
