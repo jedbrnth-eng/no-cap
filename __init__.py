@@ -136,7 +136,7 @@ def register(ctx: Any) -> None:
                          description="Call cap on the last reply: the agent must show receipts or retract")
     ctx.register_command("capscore", handler=command(engine.capscore, wants_platform=True), args_hint="[card|board]",
                          description="Cap Score: which model caps most, streaks, shareable scorecard; board = Cap Board (this profile)")
-    ctx.register_command("nocap", handler=command(engine.nocap), args_hint="[all|doctor|purge|help]",
+    ctx.register_command("nocap", handler=command(engine.nocap), args_hint="[all|battery|doctor|purge|help]",
                          description="No Cap receipts for the last reply, and store admin")
 
     def setup(subparser: Any) -> None:
@@ -150,6 +150,8 @@ def register(ctx: Any) -> None:
         subs.add_parser("purge", help="Delete the local receipt store")
         subs.add_parser("path", help="Print where receipts are stored")
         subs.add_parser("doctor", help="Setup checks: reply-transform conflicts, /cap injection, store")
+        subs.add_parser("battery", help="Run the bundled synthetic lie/truth battery: precision/recall report (synthetic, "
+                                        "not the blind real-run number)")
         subparser.set_defaults(func=cli)
 
     def cli(args: Any) -> Optional[int]:
@@ -170,6 +172,8 @@ def register(ctx: Any) -> None:
             return 1 if problems else 0  # Hermes turns a handler's int into the process exit code
         elif sub == "all":
             print(engine.nocap("all"))
+        elif sub == "battery":
+            print(engine.battery())
         else:
             print(engine.nocap("", session_id=getattr(args, "session", "") or ""))
 

@@ -36,6 +36,14 @@ config_schema:
     type: int
     default: 10
     description: "Cap Board: claims an agent, model or skill needs before its cap rate is shown and ranked (below it the board shows the counts with n, greyed)"
+  cross_turn:
+    type: bool
+    default: true
+    description: "Session ledger: a claim about earlier work ('I pushed that earlier', 'tests passed in the last turn') can cite an earlier turn of the same session (footer says 'turn N'). Stored redacted in ledger.jsonl (0600), same retention_days, at most 100 turns / 400 calls per session."
+  verify_artifacts:
+    type: bool
+    default: true
+    description: "Fabricated-artifact detector: a claimed commit SHA that isn't an object in the session's repo, or a claimed branch with no local/remote-tracking/tag ref, gets 🧢. Local, read-only, hardened git (no hooks, no fsmonitor, no system/global config, no network) in the session's working directory."
   check_numbers:
     type: bool
     default: true
