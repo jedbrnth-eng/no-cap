@@ -2,7 +2,7 @@ name: no-cap
 version: "0.1.0"
 manifest_version: 2
 api_version: 1
-description: "Receipts for agent claims. Checks the claims in each final reply (tests pass, merged, pushed, deployed, file written, URL live, SHAs, numbers) against the tool calls of the same turn, with no extra model: 🧾 NO CAP, 🧢 CAP or 🤔 NO RECEIPT. /cap makes the agent prove it or retract, /capscore keeps an honesty leaderboard."
+description: "Receipts for agent claims. Checks the claims in each final reply (tests pass, merged, pushed, deployed, file written, URL live, SHAs, numbers) against the tool calls of the same turn, with no extra model: 🧾 NO CAP, 🧢 CAP or 🤔 NO RECEIPT. /cap makes the agent prove it or retract, /capscore keeps an honesty leaderboard, and the Cap Board dashboard tab ranks every profile, model and skill live."
 author: "jedbrnth-eng"
 license: MIT
 requires_hermes: ">=0.22.5"
@@ -24,6 +24,14 @@ config_schema:
     type: int
     default: 30
     description: "Days to keep receipt records in plugin-data/no-cap"
+  board_sources:
+    type: str
+    default: ""
+    description: "Cap Board: extra receipt stores to rank beside this machine's Hermes profiles (which are found automatically and read only). label=path entries separated by ':' or newlines; a path may be a Hermes home, a receipts.jsonl, a folder searched for receipts.jsonl, or a glob. Also read from NOCAP_BOARD_SOURCES."
+  board_min_claims:
+    type: int
+    default: 10
+    description: "Cap Board: claims an agent, model or skill needs before its cap rate is shown and ranked (below it the board shows the counts with n, greyed)"
   check_numbers:
     type: bool
     default: true

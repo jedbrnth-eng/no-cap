@@ -4,6 +4,7 @@ Two hooks and three slash commands, public plugin surfaces only:
   post_tool_call        → record an evidence ledger for the turn (facts only, raw output never stored)
   transform_llm_output  → check the final reply's claims against that ledger, append the receipts
   /cap /capscore /nocap → call cap on the last reply, honesty leaderboard, receipts and store admin
+  dashboard/            → the Cap Board tab: every profile's store, ranked live (read-only)
   hermes nocap ...      → the same from a terminal
 
 Fail open by design: if anything in here raises, the reply goes out unchanged and the error is logged.
@@ -109,8 +110,8 @@ def register(ctx: Any) -> None:
     ctx.register_hook("pre_verify", on_verify)
     ctx.register_command("cap", handler=command(engine.cap, wants_key=True),
                          description="Call cap on the last reply: the agent must show receipts or retract")
-    ctx.register_command("capscore", handler=command(engine.capscore), args_hint="[card]",
-                         description="Cap Score: which model caps most, streaks, shareable scorecard")
+    ctx.register_command("capscore", handler=command(engine.capscore), args_hint="[card|board]",
+                         description="Cap Score: which model caps most, streaks, shareable scorecard; board = every profile")
     ctx.register_command("nocap", handler=command(engine.nocap), args_hint="[all|doctor|purge|help]",
                          description="No Cap receipts for the last reply, and store admin")
 
@@ -121,6 +122,7 @@ def register(ctx: Any) -> None:
         subs.add_parser("all", help="Every receipt line of the most recent checked reply")
         subs.add_parser("score", help="Cap Score leaderboard")
         subs.add_parser("card", help="Write the shareable scorecard image")
+        subs.add_parser("board", help="Cap Board: top cappers across every profile, model and skill")
         subs.add_parser("purge", help="Delete the local receipt store")
         subs.add_parser("path", help="Print where receipts are stored")
         subs.add_parser("doctor", help="Setup checks: reply-transform conflicts, /cap injection, store")
@@ -134,6 +136,8 @@ def register(ctx: Any) -> None:
             print(engine.capscore(""))
         elif sub == "card":
             print(engine.capscore("card"))
+        elif sub == "board":
+            print(engine.capscore("board"))
         elif sub == "purge":
             print(engine.nocap("purge"))
         elif sub == "doctor":
