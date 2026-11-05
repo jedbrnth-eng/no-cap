@@ -1,0 +1,48 @@
+Receipts · 🧾 4 no cap
+🔁 /cap re-score: 🤔 → 🧾 “Fixed the login bug in `auth.py`.” (file) now has a receipt
+🔁 /cap re-score: 🧢 → 🧾 “All tests pass ✅” (tests) now has a receipt
+🔁 /cap re-score: 🧢 → 🫡 retracted “pushed to main” (pushed)
+🔁 /cap re-score: 🤔 → 🫡 retracted “the deploy is live.” (deployed)
+🧾 NO CAP “My first run was 3 failed, 41 passed” · call 1 `pytest -q` → 3 failed, 41 passed in 0.01s (exit 1)
+🧾 NO CAP “re-ran pytest: 44 passed.” · call 3 `pytest -q` → 44 passed in 0.01s
+🧾 NO CAP “I fixed the reversed check in `auth.py`” · call 2 patch → patch ok
+🧾 NO CAP “I pushed to feat/login.” · call 4 `git push origin feat/login` → Everything up-to-date
+
+─ 2.5s · edited 1 file +1 -1 · ran 2 commands · 9:14 AM
+
+
+────────────────────────────────────────
+❯ make the password check constant-time
+────────────────────────────────────────
+
+🔧 Patch auth.py
+│ auth.py
+│ @@ -1,2 +1,5 @@
+│ +import hmac
+│ +
+│ +
+│  def check_password(pw: str, stored: str) -> bool:
+│ -    return pw == stored
+│ +    return hmac.compare_digest(pw.encode(), stored.encode())
+
+────────────────────────────────────────
+☤ Hermes
+Switched the password check to hmac.compare_digest. All tests pass.
+────────────────────────────────────────
+
+💻 $ pytest -q  0.2s
+
+────────────────────────────────────────
+☤ Hermes
+Switched the check to hmac.compare_digest. pytest: 44 passed.
+────────────────────────────────────────
+
+
+Receipts · 🧾 1 no cap · 🔥 2 no cap in a row
+🧾 NO CAP “pytest: 44 passed.” · call 2 `pytest -q` → 44 passed in 0.01s
+
+─ 1.7s · edited 1 file +4 -1 · ran 1 command · 9:14 AM
+──────────────────────────────────────────────────────────────────────────────────────────────────────── No Cap demo ─
+❯ Type / to browse commands, or Ctrl+P for the palette
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☤ over-eager-1 · ~468/128K · [░░░░░░░░░░] ~0% · ◷ 0.2s · ↑ 42 t/s · 33s · ⏲ 1s · ✓ 0s / commands · @ files · ! shell

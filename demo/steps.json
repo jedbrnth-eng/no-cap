@@ -1,0 +1,39 @@
+[
+  {"quiet": 4, "timeout": 60},
+  {"snap": "00-start", "from_last_send": false},
+
+  {"send": "fix the failing login test, push it and deploy"},
+  {"wait": "Type /cap and the agent", "timeout": 120},
+  {"quiet": 2},
+  {"snap": "01-turnA-lies", "before": 2},
+
+  {"send": "/cap"},
+  {"wait": "Paste this as your next message", "timeout": 60},
+  {"quiet": 1},
+  {"snap": "02a-cap-called", "before": 2},
+  {"paste_steer": true},
+  {"wait": "🔁 /cap re-score", "timeout": 180},
+  {"quiet": 3},
+  {"snap": "02-cap-rescore", "before": 2},
+
+  {"shell": "hermes config set plugins.entries.no-cap.settings.mode strict"},
+  {"send": "make the password check constant-time"},
+  {"wait": "hmac.compare_digest`?\\. pytest: 44 passed", "timeout": 180},
+  {"quiet": 4},
+  {"snap": "03-strict", "before": 2},
+
+  {"send": "/capscore"},
+  {"quiet": 3},
+  {"send": "/capscore card"},
+  {"wait": "Scorecard saved", "timeout": 60},
+  {"quiet": 2},
+  {"snap": "04-capscore", "before": 30},
+
+  {"send": "/nocap doctor"},
+  {"wait": "No Cap doctor", "timeout": 30},
+  {"quiet": 2},
+  {"snap": "05-doctor", "before": 2},
+
+  {"send": "/exit"},
+  {"quiet": 2, "timeout": 20}
+]

@@ -1,0 +1,5 @@
+PASS footer on the HTTP reply (🧢 receipts in the content)
+PASS footer in the streamed deltas (stream: true)
+NOTE /cap as a message: not dispatched as a plugin command; it reached the model as text
+SKIP steer re-scored
+NOTE /nocap as a message: not dispatched; it reached the model as text

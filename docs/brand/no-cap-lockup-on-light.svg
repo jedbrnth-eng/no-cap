@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1669 512" width="1669" height="512" role="img" aria-labelledby="t">
+  <title id="t">No Cap</title>
+  <circle cx="256" cy="256" r="248" fill="#0E0F12"/>
+  <g transform="translate(256 262) scale(0.95) translate(-287 -240)">
+    <path d="M128 300 C118 226 168 170 240 166 C310 162 356 206 366 282 C318 296 268 306 214 308 C176 310 148 308 128 300 Z" fill="#FF3B30"/>
+    <path d="M342 284 C380 272 426 274 452 294 C456 304 446 312 430 314 C398 318 362 314 330 306 Z" fill="#FF3B30"/>
+    <path d="M330 306 C342 300 354 292 366 282" fill="none" stroke="#0E0F12" stroke-width="9" stroke-linecap="round"/>
+    <path d="M240 172 C214 206 202 254 204 306" fill="none" stroke="#0E0F12" stroke-width="8" stroke-linecap="round"/>
+    <path d="M242 172 C282 196 306 238 312 296" fill="none" stroke="#0E0F12" stroke-width="8" stroke-linecap="round"/>
+    <circle cx="240" cy="166" r="11" fill="#FF3B30" stroke="#0E0F12" stroke-width="6"/>
+  </g>
+  <circle cx="256" cy="256" r="206" fill="none" stroke="#FF3B30" stroke-width="34"/>
+  <g transform="rotate(45 256 256)">
+    <path d="M60.0 229.0 L452.0 229.0 L442.0 236.7 L452.0 244.4 L442.0 252.1 L452.0 259.9 L442.0 267.6 L452.0 275.3 L442.0 283.0 L60.0 283.0 L60.0 275.3 L70.0 267.6 L60.0 259.9 L70.0 252.1 L60.0 244.4 L70.0 236.7 Z" fill="#F4EEDF" stroke="#0E0F12" stroke-width="16" stroke-linejoin="round" paint-order="stroke"/>
+    <g fill="#0E0F12"><rect x="168" y="238" width="8" height="36"/><rect x="182" y="238" width="4" height="36"/><rect x="192" y="238" width="10" height="36"/><rect x="208" y="238" width="4" height="36"/><rect x="218" y="238" width="6" height="36"/><rect x="230" y="238" width="12" height="36"/><rect x="248" y="238" width="4" height="36"/><rect x="258" y="238" width="8" height="36"/><rect x="272" y="238" width="4" height="36"/><rect x="282" y="238" width="10" height="36"/><rect x="298" y="238" width="6" height="36"/><rect x="310" y="238" width="4" height="36"/><rect x="320" y="238" width="8" height="36"/><rect x="334" y="238" width="4" height="36"/><rect x="94" y="239" width="6" height="18" rx="2"/><rect x="108" y="239" width="6" height="30" rx="2"/><rect x="122" y="239" width="6" height="24" rx="2"/><rect x="386" y="239" width="6" height="26" rx="2"/><rect x="400" y="239" width="6" height="16" rx="2"/><rect x="414" y="239" width="6" height="30" rx="2"/></g>
+  </g>
+  <g transform="translate(560 146) scale(2.2)"><polygon transform="translate(0 0)" points="0,100 0,0 22,0 56,60 56,0 78,0 78,100 56,100 22,40 22,100" fill="#0E0F12"/><rect transform="translate(92 0)" x="11" y="11" width="62" height="78" rx="31" fill="none" stroke="#0E0F12" stroke-width="22" stroke-linecap="butt" stroke-linejoin="miter"/><path transform="translate(230 0)" d="M76 30 C70 17 58 11 44 11 C24 11 11 27 11 50 C11 73 24 89 44 89 C58 89 70 83 76 70" fill="none" stroke="#FF3B30" stroke-width="22" stroke-linecap="butt" stroke-linejoin="miter"/><path transform="translate(324 0)" d="M11 100 V42 C11 23 25 11 42 11 C59 11 73 23 73 42 V100 M11 64 H73" fill="none" stroke="#FF3B30" stroke-width="22" stroke-linecap="butt" stroke-linejoin="miter"/><path transform="translate(422 0)" d="M11 100 V11 H46 C63 11 74 23 74 38 C74 53 63 64 46 64 H11" fill="none" stroke="#FF3B30" stroke-width="22" stroke-linecap="butt" stroke-linejoin="miter"/></g>
+</svg>

@@ -1,0 +1,81 @@
+[
+ {
+  "quiet": 5,
+  "timeout": 90
+ },
+ {
+  "snap": "00-start",
+  "from_last_send": false
+ },
+ {
+  "send": "fix the failing login test, push it and deploy"
+ },
+ {
+  "wait": "Type /cap and the agent",
+  "timeout": 120
+ },
+ {
+  "quiet": 2,
+  "timeout": 10
+ },
+ {
+  "snap": "01-tui-turnA",
+  "from_last_send": false
+ },
+ {
+  "send": "/cap"
+ },
+ {
+  "wait": "Cap called",
+  "timeout": 60
+ },
+ {
+  "quiet": 2,
+  "timeout": 10
+ },
+ {
+  "snap": "02-tui-cap",
+  "from_last_send": false
+ },
+ {
+  "paste_steer": true,
+  "optional": true,
+  "close_overlay": true
+ },
+ {
+  "wait": "re-score",
+  "timeout": 180,
+  "required": false
+ },
+ {
+  "quiet": 3,
+  "timeout": 10
+ },
+ {
+  "snap": "03-tui-rescore",
+  "from_last_send": false
+ },
+ {
+  "send": "/nocap"
+ },
+ {
+  "wait": "Ledger:",
+  "timeout": 30,
+  "required": false
+ },
+ {
+  "quiet": 2,
+  "timeout": 10
+ },
+ {
+  "snap": "04-tui-nocap",
+  "from_last_send": false
+ },
+ {
+  "send": "/exit"
+ },
+ {
+  "quiet": 2,
+  "timeout": 10
+ }
+]

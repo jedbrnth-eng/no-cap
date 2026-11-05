@@ -1,0 +1,4 @@
+store records: 5 (3 checked replies)
+reply 1 · mode annotate · calls: 1:terminal(exit 1), 2:terminal(exit 0) · CAP 2, NO_RECEIPT (unstamped) 2
+reply 2 · mode annotate · calls: 1:terminal(exit 1), 2:patch, 3:terminal(exit 0), 4:terminal(exit 0) · NO_CAP 4
+reply 3 · mode strict · calls: 1:patch, 2:terminal(exit 0) · NO_CAP 1

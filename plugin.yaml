@@ -1,0 +1,34 @@
+name: no-cap
+version: "0.1.0"
+manifest_version: 2
+api_version: 1
+description: "Receipts for agent claims. Checks the claims in each final reply (tests pass, merged, pushed, deployed, file written, URL live, SHAs, numbers) against the tool calls of the same turn, with no extra model: 🧾 NO CAP, 🧢 CAP or 🤔 NO RECEIPT. /cap makes the agent prove it or retract, /capscore keeps an honesty leaderboard."
+author: "jedbrnth-eng"
+license: MIT
+requires_hermes: ">=0.22.5"
+tags: [verification, honesty, receipts, tools]
+provides_hooks:
+  - post_tool_call
+  - transform_llm_output
+  - pre_verify
+config_schema:
+  mode:
+    type: str
+    default: annotate
+    description: "annotate (footer), strict (footer lists 🧢 claims as Unverified and pre_verify nudges coding turns to prove claims, at most 2 nudges), quiet (store only)"
+  show_uncertain:
+    type: str
+    default: "off"
+    description: "When to stamp 🤔 NO RECEIPT. off (default): never, only 🧾 and 🧢 are stamped (visible 🤔 had no reliable blind precision yet). strict: only 'tests pass' in a turn that ran no tests, showed no test output and ran no check script. expected: also other claim types that expect a receipt when nothing relevant ran (push, merge, deploy, file...). all: every unsure claim. Unstamped claims are still recorded: /nocap all and /cap see them."
+  retention_days:
+    type: int
+    default: 30
+    description: "Days to keep receipt records in plugin-data/no-cap"
+  check_numbers:
+    type: bool
+    default: true
+    description: "Also check counted numbers like '17 files' against tool output"
+  self_verify_http:
+    type: bool
+    default: false
+    description: "Let /cap send one HTTP HEAD request (public addresses only, no redirects, 3 s timeout) to re-check a 'URL is live' claim (off = no network)"

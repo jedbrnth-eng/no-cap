@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 560" width="1600" height="560" role="img" aria-labelledby="t">
+  <title id="t">No Cap: receipts for agent claims</title><defs><pattern id="scan" width="6" height="6" patternUnits="userSpaceOnUse">
+    <rect width="6" height="1" fill="#ffffff" fill-opacity="0.018"/></pattern>
+    <radialGradient id="glow" cx="0.22" cy="0.5" r="0.6"><stop offset="0" stop-color="#FF3B30" stop-opacity="0.16"/>
+    <stop offset="1" stop-color="#FF3B30" stop-opacity="0"/></radialGradient></defs>
+  <rect width="1600" height="560" fill="#0E0F12"/><rect width="1600" height="560" fill="url(#glow)"/>
+  <rect width="1600" height="560" fill="url(#scan)"/>
+  <g transform="translate(52 112) scale(0.66)">
+  <circle cx="256" cy="256" r="248" fill="#0E0F12"/>
+  <g transform="translate(256 262) scale(0.95) translate(-287 -240)">
+    <path d="M128 300 C118 226 168 170 240 166 C310 162 356 206 366 282 C318 296 268 306 214 308 C176 310 148 308 128 300 Z" fill="#FF3B30"/>
+    <path d="M342 284 C380 272 426 274 452 294 C456 304 446 312 430 314 C398 318 362 314 330 306 Z" fill="#FF3B30"/>
+    <path d="M330 306 C342 300 354 292 366 282" fill="none" stroke="#0E0F12" stroke-width="9" stroke-linecap="round"/>
+    <path d="M240 172 C214 206 202 254 204 306" fill="none" stroke="#0E0F12" stroke-width="8" stroke-linecap="round"/>
+    <path d="M242 172 C282 196 306 238 312 296" fill="none" stroke="#0E0F12" stroke-width="8" stroke-linecap="round"/>
+    <circle cx="240" cy="166" r="11" fill="#FF3B30" stroke="#0E0F12" stroke-width="6"/>
+  </g>
+  <circle cx="256" cy="256" r="206" fill="none" stroke="#FF3B30" stroke-width="34"/>
+  <g transform="rotate(45 256 256)">
+    <path d="M60.0 229.0 L452.0 229.0 L442.0 236.7 L452.0 244.4 L442.0 252.1 L452.0 259.9 L442.0 267.6 L452.0 275.3 L442.0 283.0 L60.0 283.0 L60.0 275.3 L70.0 267.6 L60.0 259.9 L70.0 252.1 L60.0 244.4 L70.0 236.7 Z" fill="#F4EEDF" stroke="#0E0F12" stroke-width="16" stroke-linejoin="round" paint-order="stroke"/>
+    <g fill="#0E0F12"><rect x="168" y="238" width="8" height="36"/><rect x="182" y="238" width="4" height="36"/><rect x="192" y="238" width="10" height="36"/><rect x="208" y="238" width="4" height="36"/><rect x="218" y="238" width="6" height="36"/><rect x="230" y="238" width="12" height="36"/><rect x="248" y="238" width="4" height="36"/><rect x="258" y="238" width="8" height="36"/><rect x="272" y="238" width="4" height="36"/><rect x="282" y="238" width="10" height="36"/><rect x="298" y="238" width="6" height="36"/><rect x="310" y="238" width="4" height="36"/><rect x="320" y="238" width="8" height="36"/><rect x="334" y="238" width="4" height="36"/><rect x="94" y="239" width="6" height="18" rx="2"/><rect x="108" y="239" width="6" height="30" rx="2"/><rect x="122" y="239" width="6" height="24" rx="2"/><rect x="386" y="239" width="6" height="26" rx="2"/><rect x="400" y="239" width="6" height="16" rx="2"/><rect x="414" y="239" width="6" height="30" rx="2"/></g>
+  </g></g>
+  <g transform="translate(436 150) scale(0.9524)"><polygon transform="translate(0 0)" points="0,100 0,0 22,0 56,60 56,0 78,0 78,100 56,100 22,40 22,100" fill="#F4EEDF"/><rect transform="translate(92 0)" x="11" y="11" width="62" height="78" rx="31" fill="none" stroke="#F4EEDF" stroke-width="22" stroke-linecap="butt" stroke-linejoin="miter"/><path transform="translate(230 0)" d="M76 30 C70 17 58 11 44 11 C24 11 11 27 11 50 C11 73 24 89 44 89 C58 89 70 83 76 70" fill="none" stroke="#FF3B30" stroke-width="22" stroke-linecap="butt" stroke-linejoin="miter"/><path transform="translate(324 0)" d="M11 100 V42 C11 23 25 11 42 11 C59 11 73 23 73 42 V100 M11 64 H73" fill="none" stroke="#FF3B30" stroke-width="22" stroke-linecap="butt" stroke-linejoin="miter"/><path transform="translate(422 0)" d="M11 100 V11 H46 C63 11 74 23 74 38 C74 53 63 64 46 64 H11" fill="none" stroke="#FF3B30" stroke-width="22" stroke-linecap="butt" stroke-linejoin="miter"/></g>
+  <text x="438" y="300" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="38" font-weight="700" fill="#F4EEDF">Receipts for agent claims.</text>
+  <text x="438" y="348" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="23" fill="#8B8F98">Every “done” is checked against that turn’s tool calls.</text>
+  <text x="438" y="382" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="23" fill="#8B8F98">Proven, capped or flagged. No extra model, no network.</text>
+  <text x="438" y="456" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="19" fill="#8B8F98">$ hermes plugins install no-cap</text>
+  <g transform="rotate(2.2 1295.0 280.0)">
+
+    <path d="M1050 56 H1540 V500 L1520 512 L1500 500 L1480 512 L1460 500 L1440 512 L1420 500 L1400 512 L1380 500 L1360 512 L1340 500 L1320 512 L1300 500 L1280 512 L1260 500 L1240 512 L1220 500 L1200 512 L1180 500 L1160 512 L1140 500 L1120 512 L1100 500 L1080 512 L1060 500 Z" fill="#F4EEDF"/>
+    <text x="1295.0" y="108" text-anchor="middle" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="26" font-weight="700" fill="#0E0F12">RECEIPTS</text>
+    <text x="1295.0" y="138" text-anchor="middle" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="15" fill="#5b5e66">stub/over-eager-1 · 2 turns · real engine output</text>
+    <line x1="1074" x2="1516" y1="160" y2="160" stroke="#0E0F12" stroke-width="2" stroke-dasharray="6 6"/>
+    <g transform="translate(1076 176) scale(0.4) translate(-27.5 -14) scale(0.27)">
+    <path d="M128 300 C118 226 168 170 240 166 C310 162 356 206 366 282 C318 296 268 306 214 308 C176 310 148 308 128 300 Z" fill="#FF3B30"/>
+    <path d="M342 284 C380 272 426 274 452 294 C456 304 446 312 430 314 C398 318 362 314 330 306 Z" fill="#FF3B30"/>
+    <path d="M330 306 C342 300 354 292 366 282" fill="none" stroke="#F4EEDF" stroke-width="9" stroke-linecap="round"/>
+    <path d="M240 172 C214 206 202 254 204 306" fill="none" stroke="#F4EEDF" stroke-width="8" stroke-linecap="round"/>
+    <path d="M242 172 C282 196 306 238 312 296" fill="none" stroke="#F4EEDF" stroke-width="8" stroke-linecap="round"/>
+    <circle cx="240" cy="166" r="11" fill="#FF3B30" stroke="#F4EEDF" stroke-width="6"/></g>
+    <text x="1130" y="198" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="19" font-weight="700" fill="#0E0F12">CAP <tspan font-weight="400">“All tests pass”</tspan></text>
+    <text x="1130" y="224" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="15" fill="#5b5e66">pytest -q → 3 failed, 41 passed (exit 1)</text><g transform="translate(1076 250) scale(0.4) translate(-27.5 -14) scale(0.27)">
+    <path d="M128 300 C118 226 168 170 240 166 C310 162 356 206 366 282 C318 296 268 306 214 308 C176 310 148 308 128 300 Z" fill="#FF3B30"/>
+    <path d="M342 284 C380 272 426 274 452 294 C456 304 446 312 430 314 C398 318 362 314 330 306 Z" fill="#FF3B30"/>
+    <path d="M330 306 C342 300 354 292 366 282" fill="none" stroke="#F4EEDF" stroke-width="9" stroke-linecap="round"/>
+    <path d="M240 172 C214 206 202 254 204 306" fill="none" stroke="#F4EEDF" stroke-width="8" stroke-linecap="round"/>
+    <path d="M242 172 C282 196 306 238 312 296" fill="none" stroke="#F4EEDF" stroke-width="8" stroke-linecap="round"/>
+    <circle cx="240" cy="166" r="11" fill="#FF3B30" stroke="#F4EEDF" stroke-width="6"/></g>
+    <text x="1130" y="272" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="19" font-weight="700" fill="#0E0F12">CAP <tspan font-weight="400">“pushed to main”</tspan></text>
+    <text x="1130" y="298" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="15" fill="#5b5e66">git push origin feat/login</text><g transform="translate(1076 324) scale(0.4)">
+    <path d="M50 6 C76 6 94 22 94 44 C94 66 76 82 50 82 C44 82 38 81 33 79 L14 94 L18 72 C10 64 6 55 6 44 C6 22 24 6 50 6 Z" fill="#FFB627"/>
+    <path d="M37 34 C37 24 44 19 51 19 C59 19 65 24 65 32 C65 41 53 43 53 53" fill="none" stroke="#F4EEDF" stroke-width="9" stroke-linecap="round"/>
+    <circle cx="53" cy="67" r="6" fill="#F4EEDF"/></g>
+    <text x="1130" y="346" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="19" font-weight="700" fill="#0E0F12">NO RECEIPT <tspan font-weight="400">“the deploy is live”</tspan></text>
+    <text x="1130" y="372" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="15" fill="#5b5e66">no deploy command in this turn</text><g transform="translate(1076 398) scale(0.4)">
+    <path d="M20 4 H80 V88 L72 96 L64 88 L56 96 L48 88 L40 96 L32 88 L24 96 L20 92 Z" fill="#0E0F12"/>
+    <rect x="30" y="20" width="40" height="7" rx="3" fill="#F4EEDF"/><rect x="30" y="36" width="28" height="7" rx="3" fill="#F4EEDF"/>
+    <rect x="30" y="52" width="36" height="7" rx="3" fill="#F4EEDF"/><rect x="30" y="68" width="22" height="7" rx="3" fill="#F4EEDF"/></g>
+    <text x="1130" y="420" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="19" font-weight="700" fill="#0E0F12">NO CAP <tspan font-weight="400">“44 passed”</tspan></text>
+    <text x="1130" y="446" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="15" fill="#5b5e66">pytest -q → 44 passed (exit 0)</text>
+    <line x1="1074" x2="1516" y1="488" y2="488" stroke="#0E0F12" stroke-width="2" stroke-dasharray="6 6"/>
+  </g>
+</svg>

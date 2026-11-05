@@ -1,0 +1,64 @@
+"""Adversarial inputs for the parser time budget (tests/test_redos.py and scripts/redos_timings.py).
+
+Each is about 100 KB: long digit runs, blank-line runs, long flag lists and other shapes that made a regex scan
+the rest of the input from every start position (quadratic time) before the parsers were bounded.
+"""
+import itertools
+
+N = 100_000
+
+
+def inputs(n: int = N) -> dict:
+    return {
+        "a*": "a" * n,
+        "spaces": " " * n,
+        "tabs": "\t" * n,
+        "npm flags": "npm " + "-w x " * (n // 5) + "!",
+        "npm workspace": "pnpm " + "--filter a " * (n // 11) + "-",
+        "long flag list": "pytest " + "-x " * (n // 3),
+        "long --flag=v list": "pytest " + "--opt=1 " * (n // 8),
+        "digits,": "1," * (n // 2) + "x",
+        "digits": "1" * n + ".",
+        "digits spaced": "1 " * (n // 2),
+        "digits slash": "1/" * (n // 2),
+        "dots": "1." * (n // 2),
+        "bangs": "!" * n,
+        "pytest words": "pytest " * (n // 7),
+        "passed tokens": "1 passed " * (n // 9),
+        "backticks": "`" * n,
+        "quotes": "'\"" * (n // 2),
+        "heredoc": "cat <<EOF\n" + "x\n" * (n // 2),
+        "sh -c": "bash -c '" + "a'" * (n // 2),
+        "url": "https://" + "a." * (n // 2),
+        "userinfo": "https://" + "a:" * (n // 2),
+        "hexish": "deadbeef " * (n // 9),
+        "token-ish": "Ab1-" * (n // 4),
+        "secret kw": "token " * (n // 6),
+        "secret kw=": "MY_TOKEN=" * (n // 9),
+        "git -C": "git " + "-C x " * (n // 5) + "stash",
+        "claim words": "I pushed and merged and deployed and created " * (n // 45),
+        "pushed to": "pushed to " * (n // 10),
+        "tests pass sentence": "All tests pass, " * (n // 16),
+        "paths": "src/" * (n // 4) + "x.py",
+        "ansi": "\x1b[" + "1;" * (n // 2),
+        "osc": "\x1b]" + "a" * n,
+        "newlines": "\n" * n,
+        "blank-ish lines": " \n" * (n // 2),
+        "status": "status: " * (n // 8),
+        "Tests run": "Tests run: " * (n // 11),
+        "git words": "git " * (n // 4) + "x",
+        "gradle words": "./gradlew " * (n // 10),
+        "mvn words": "mvn " * (n // 4),
+        "cargo words": "cargo " * (n // 6),
+        "xcodebuild words": "xcodebuild " * (n // 11),
+        "gcloud words": "gcloud " * (n // 7),
+        "curl words": "curl " * (n // 5),
+        "gh api words": "gh api " * (n // 7),
+        "grep pipes": "pytest | grep x " * (n // 16),
+        "pull request words": "pull request " * (n // 13),
+        "sh -c openers": "bash -c '" * (n // 9),
+        "heredoc openers": "<<A\n" * (n // 4),
+        "heredoc distinct": "".join(f"<<E{i}\n" for i in range(n // 8)),
+        "fence + blank lines": "```\n" + "\n" * n,
+        "mixed": "".join(itertools.islice(itertools.cycle("a1 -_/.:`'\"=,#\n"), n)),
+    }

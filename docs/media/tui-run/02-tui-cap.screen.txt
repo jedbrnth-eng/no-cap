@@ -1,0 +1,48 @@
+ ██║  ██║██╔════╝██╔══██╗████╗ ████║██╔════╝██╔════╝      ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝               │
+ ███████║█████╗  ██████╔╝██╔████╔██║█████╗  ███████╗█████╗███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║                  │
+ ██╔══██║██╔══╝  ██╔══██╗██║╚██╔╝██║██╔══╝  ╚════██║╚════╝██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║                  ┃
+ ██║  ██║███████╗██║  ██║██║ ╚═╝ ██║███████╗███████║      ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║                  ┃
+ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝╚══════╝      ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝                  ┃
+ ☤ Nous Research · Messenger of the Digital Gods                                                                     ┃
+                                                                                                                     ┃
+ ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  ┃
+ │                                                                                                                │  ┃
+ │  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⡀⠀⣀⣀⠀⢀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                        Hermes Agent v0.22.5 (2026.9.24)                        │  ┃
+ │  ⠀⠀⠀⠀⠀⠀⢀⣠⣴⣾⣿⣿⣇⠸⣿⣿⠇⣸⣿⣿⣷⣦⣄⡀⠀⠀⠀⠀⠀⠀                                                                                │  ┃
+ │  ⠀⢀⣠⣴⣶⠿⠋⣩⡿⣿⡿⠻⣿⡇⢠⡄⢸⣿⠟⢿⣿⢿⣍⠙⠿⣶⣦⣄⡀⠀                                                                                │  ┃
+ │  ⠀⠀⠉⠉⠁⠶⠟⠋⠀⠉⠀⢀⣈⣁⡈⢁⣈⣁⡀⠀⠉⠀⠙⠻⠶⠈⠉⠉⠀⠀      ▾ Available Tools                                                         │  ┃
+ │  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣴⣿⡿⠛⢁⡈⠛⢿⣿⣦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀      browser-use: browser_exec                                                 │  ┃
+ │  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠿⣿⣦⣤⣈⠁⢠⣴⣿⠿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀      clarify: clarify                                                          │  ┃
+ │  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠻⢿⣿⣦⡉⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀      code_execution: execute_code                                              │  ┃
+ │  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⢷⣦⣈⠛⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀      connections: manage_connections                                           │  ┃
+ │  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣴⠦⠈⠙⠿⣦⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀      delegation: delegate_task                                                 │  ┃
+ │  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠸⣿⣤⡈⠁⢤⣿⠇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀      file: patch, read_file, search_files, write_file                          │  ┃
+ │  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠷⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀      memory: memory                                                            │  ┃
+ │  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⠑⢶⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀      other: tool_call, tool_describe, tool_search                              │  ┃
+ │  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⠁⢰⡆⠈⡿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀      (and 5 more toolsets…)                                                    │  ┃
+ │  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠳⠈⣡⠞⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                                                                                │  ┃
+ │  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀      ▸ Available Skills (57) in 11 categories                                  │  ┃
+ │  over-eager-1 · Nous Research                                                                                  │  ┃
+ │  /private/tmp/nocap-demo.kd7ZjA/de…  ▸ System Prompt — 13,955 chars                                            │  ┃
+ │  Session: 318827c4                   21 tools · 57 skills · /help for commands                                 │  ┃
+ │                                                                                                                │  ┃
+ ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  ┃
+                                                                                                                     ┃
+ ╔═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗
+ ║                                                                                                                   ║
+ ║                                                        Cap                                                        ║
+ ║                                                                                                                   ║
+ ║  🧢 Cap called. Hermes didn't let No Cap send the steer from here (gateway-backed sessions, which on current      ║
+ ║  Hermes includes the classic CLI, need `plugins.entries.no-cap.allow_gateway_injection: true`). Paste this as     ║
+ ║  your next message and the reply gets re-scored:                                                                  ║
+ ║  [No Cap] I'm calling cap on these claims from your last reply. For each one, run the check now and show the      ║
+ ║  output, or retract it in plain words. Don't restate it without proof.                                            ║
+ ║  1. 🤔 NO RECEIPT “Fixed the login bug in `auth.py`.” (no write to that path in this turn) → run `ls -l auth.py`  ║
+ ║  2. 🧢 CAP “All tests pass ✅” (3 failed, 41 passed in 0.02s (exit 1)) → run `pytest -q`                          ║
+ ║  3. 🧢 CAP “pushed to main” (pushed feat/login) → run `git ls-remote origin main`                                 ║
+ ║  4. 🤔 NO RECEIPT “the deploy is live.” (no deploy command in this turn) → show the deploy output or curl the     ║
+ ║  live URL                                                                                                         ║
+ ║                                                                                                                   ║
+ ║  end · ↑↓/jk · b/PgUp back · g top · Esc/q close (7 lines)                                                        ║
+ ║                                                                                                                   ║
+ ╚═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝

@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-labelledby="t">
+  <!-- No Cap share card template v1. Placeholders: see PLACEHOLDERS.md. Pure SVG, system fonts only, no external refs. -->
+  <title id="t">No Cap · Cap Score for {{model}}: cap rate {{cap_rate}}, streak {{streak}}</title>
+  <defs><pattern id="scan" width="6" height="6" patternUnits="userSpaceOnUse">
+    <rect width="6" height="1" fill="#ffffff" fill-opacity="0.018"/></pattern>
+    <radialGradient id="glow" cx="0.22" cy="0.5" r="0.6"><stop offset="0" stop-color="#FF3B30" stop-opacity="0.16"/>
+    <stop offset="1" stop-color="#FF3B30" stop-opacity="0"/></radialGradient></defs>
+  <rect width="1200" height="630" fill="#0E0F12"/><rect width="1200" height="630" fill="url(#glow)"/>
+  <rect width="1200" height="630" fill="url(#scan)"/>
+
+  <!-- left: brand + the headline numbers -->
+  <g transform="translate(56 48) scale(0.125)">
+  <circle cx="256" cy="256" r="248" fill="#0E0F12"/>
+  <g transform="translate(256 262) scale(0.95) translate(-287 -240)">
+    <path d="M128 300 C118 226 168 170 240 166 C310 162 356 206 366 282 C318 296 268 306 214 308 C176 310 148 308 128 300 Z" fill="#FF3B30"/>
+    <path d="M342 284 C380 272 426 274 452 294 C456 304 446 312 430 314 C398 318 362 314 330 306 Z" fill="#FF3B30"/>
+    <path d="M330 306 C342 300 354 292 366 282" fill="none" stroke="#0E0F12" stroke-width="9" stroke-linecap="round"/>
+    <path d="M240 172 C214 206 202 254 204 306" fill="none" stroke="#0E0F12" stroke-width="8" stroke-linecap="round"/>
+    <path d="M242 172 C282 196 306 238 312 296" fill="none" stroke="#0E0F12" stroke-width="8" stroke-linecap="round"/>
+    <circle cx="240" cy="166" r="11" fill="#FF3B30" stroke="#0E0F12" stroke-width="6"/>
+  </g>
+  <circle cx="256" cy="256" r="206" fill="none" stroke="#FF3B30" stroke-width="34"/>
+  <g transform="rotate(45 256 256)">
+    <path d="M60.0 229.0 L452.0 229.0 L442.0 236.7 L452.0 244.4 L442.0 252.1 L452.0 259.9 L442.0 267.6 L452.0 275.3 L442.0 283.0 L60.0 283.0 L60.0 275.3 L70.0 267.6 L60.0 259.9 L70.0 252.1 L60.0 244.4 L70.0 236.7 Z" fill="#F4EEDF" stroke="#0E0F12" stroke-width="16" stroke-linejoin="round" paint-order="stroke"/>
+    <g fill="#0E0F12"><rect x="168" y="238" width="8" height="36"/><rect x="182" y="238" width="4" height="36"/><rect x="192" y="238" width="10" height="36"/><rect x="208" y="238" width="4" height="36"/><rect x="218" y="238" width="6" height="36"/><rect x="230" y="238" width="12" height="36"/><rect x="248" y="238" width="4" height="36"/><rect x="258" y="238" width="8" height="36"/><rect x="272" y="238" width="4" height="36"/><rect x="282" y="238" width="10" height="36"/><rect x="298" y="238" width="6" height="36"/><rect x="310" y="238" width="4" height="36"/><rect x="320" y="238" width="8" height="36"/><rect x="334" y="238" width="4" height="36"/><rect x="94" y="239" width="6" height="18" rx="2"/><rect x="108" y="239" width="6" height="30" rx="2"/><rect x="122" y="239" width="6" height="24" rx="2"/><rect x="386" y="239" width="6" height="26" rx="2"/><rect x="400" y="239" width="6" height="16" rx="2"/><rect x="414" y="239" width="6" height="30" rx="2"/></g>
+  </g></g>
+  <g transform="translate(134 66) scale(0.2778)"><polygon transform="translate(0 0)" points="0,100 0,0 22,0 56,60 56,0 78,0 78,100 56,100 22,40 22,100" fill="#F4EEDF"/><rect transform="translate(92 0)" x="11" y="11" width="62" height="78" rx="31" fill="none" stroke="#F4EEDF" stroke-width="22" stroke-linecap="butt" stroke-linejoin="miter"/><path transform="translate(230 0)" d="M76 30 C70 17 58 11 44 11 C24 11 11 27 11 50 C11 73 24 89 44 89 C58 89 70 83 76 70" fill="none" stroke="#FF3B30" stroke-width="22" stroke-linecap="butt" stroke-linejoin="miter"/><path transform="translate(324 0)" d="M11 100 V42 C11 23 25 11 42 11 C59 11 73 23 73 42 V100 M11 64 H73" fill="none" stroke="#FF3B30" stroke-width="22" stroke-linecap="butt" stroke-linejoin="miter"/><path transform="translate(422 0)" d="M11 100 V11 H46 C63 11 74 23 74 38 C74 53 63 64 46 64 H11" fill="none" stroke="#FF3B30" stroke-width="22" stroke-linecap="butt" stroke-linejoin="miter"/></g>
+  <text x="300" y="91" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="20" fill="#8B8F98">· CAP SCORE</text>
+  <text x="680" y="91" text-anchor="end" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="18" font-weight="700" fill="#FFB627">{{badge}}</text>
+
+  <text x="56" y="178" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="22" fill="#8B8F98">model</text>
+  <text x="56" y="226" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="{{model_size}}" font-weight="800" fill="#F4EEDF">{{model}}</text>
+
+  <text x="56" y="300" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="22" fill="#8B8F98">cap rate · share of replies with a CAP</text>
+  <text x="52" y="410" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="124" font-weight="900" fill="{{rate_color}}">{{cap_rate}}</text>
+  <text x="56" y="452" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="30" font-weight="800" fill="#F4EEDF">{{verdict}}</text>
+
+  <!-- stacked bar: no cap / no receipt / cap shares of all claims -->
+  <g transform="translate(56 488)">
+    <rect width="624" height="18" rx="9" fill="#17191E"/>
+    <clipPath id="barclip"><rect width="624" height="18" rx="9"/></clipPath>
+    <g clip-path="url(#barclip)">
+      <rect x="0" width="{{w_no_cap}}" height="18" fill="#2BD67B"/>
+      <rect x="{{x_no_receipt}}" width="{{w_no_receipt}}" height="18" fill="#FFB627"/>
+      <rect x="{{x_cap}}" width="{{w_cap}}" height="18" fill="#FF3B30"/>
+    </g>
+  </g>
+  <g transform="translate(52 530) scale(0.44)">
+    <path d="M52 4 C58 26 82 38 82 64 C82 84 68 96 50 96 C32 96 18 84 18 64 C18 48 28 40 34 28 C38 40 44 44 48 44 C48 30 46 18 52 4 Z" fill="#FF3B30"/>
+    <path d="M50 52 C54 62 66 68 66 80 C66 90 58 96 50 96 C42 96 34 90 34 80 C34 70 44 66 50 52 Z" fill="#FFB627"/></g>
+  <text x="104" y="566" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="30" font-weight="800" fill="#F4EEDF">{{streak}} <tspan font-weight="500" fill="#8B8F98" font-size="24">no cap in a row</tspan></text>
+
+  <!-- right: the printed receipt -->
+  <g transform="translate(740 44) rotate(1.6 205.0 270.0)">
+    <path d="M0 0 H410 V540 L389.5 552 L369.0 540 L348.5 552 L328.0 540 L307.5 552 L287.0 540 L266.5 552 L246.0 540 L225.5 552 L205.0 540 L184.5 552 L164.0 540 L143.5 552 L123.0 540 L102.5 552 L82.0 540 L61.5 552 L41.0 540 L20.5 552 L0.0 540 L0 540 Z" fill="#000" fill-opacity="0.35" transform="translate(8 10)"/>
+    <path d="M0 0 H410 V540 L389.5 552 L369.0 540 L348.5 552 L328.0 540 L307.5 552 L287.0 540 L266.5 552 L246.0 540 L225.5 552 L205.0 540 L184.5 552 L164.0 540 L143.5 552 L123.0 540 L102.5 552 L82.0 540 L61.5 552 L41.0 540 L20.5 552 L0.0 540 L0 540 Z" fill="#F4EEDF"/>
+    <text x="205.0" y="54" text-anchor="middle" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="30" font-weight="800" fill="#0E0F12">RECEIPTS</text>
+    <text x="205.0" y="84" text-anchor="middle" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="17" fill="#5b5e66">{{date}} · {{sample}}</text>
+    <line x1="30" x2="380" y1="106" y2="106" stroke="#0E0F12" stroke-width="2" stroke-dasharray="7 6"/>
+    
+    <g transform="translate(28 128) scale(0.4)">
+    <path d="M20 4 H80 V88 L72 96 L64 88 L56 96 L48 88 L40 96 L32 88 L24 96 L20 92 Z" fill="#0E0F12"/>
+    <rect x="30" y="20" width="40" height="7" rx="3" fill="#F4EEDF"/><rect x="30" y="36" width="28" height="7" rx="3" fill="#F4EEDF"/>
+    <rect x="30" y="52" width="36" height="7" rx="3" fill="#F4EEDF"/><rect x="30" y="68" width="22" height="7" rx="3" fill="#F4EEDF"/></g>
+    <text x="80" y="160" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="24" font-weight="700" fill="#0E0F12">NO CAP</text>
+    <line x1="184" x2="306" y1="153" y2="153" stroke="#0E0F12" stroke-opacity="0.35" stroke-width="2.5" stroke-dasharray="2 7" stroke-linecap="round"/>
+    <text x="380" y="160" text-anchor="end" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="28" font-weight="700" fill="#178a4c">{{no_cap}}</text>
+    
+    <g transform="translate(28 190) scale(0.4)">
+    <path d="M50 6 C76 6 94 22 94 44 C94 66 76 82 50 82 C44 82 38 81 33 79 L14 94 L18 72 C10 64 6 55 6 44 C6 22 24 6 50 6 Z" fill="#c98400"/>
+    <path d="M37 34 C37 24 44 19 51 19 C59 19 65 24 65 32 C65 41 53 43 53 53" fill="none" stroke="#F4EEDF" stroke-width="9" stroke-linecap="round"/>
+    <circle cx="53" cy="67" r="6" fill="#F4EEDF"/></g>
+    <text x="80" y="222" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="24" font-weight="700" fill="#0E0F12">NO RECEIPT</text>
+    <line x1="244" x2="306" y1="215" y2="215" stroke="#0E0F12" stroke-opacity="0.35" stroke-width="2.5" stroke-dasharray="2 7" stroke-linecap="round"/>
+    <text x="380" y="222" text-anchor="end" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="28" font-weight="700" fill="#a86e00">{{no_receipt}}</text>
+    
+    <g transform="translate(28 252) scale(0.4) translate(-27.5 -14) scale(0.27)">
+    <path d="M128 300 C118 226 168 170 240 166 C310 162 356 206 366 282 C318 296 268 306 214 308 C176 310 148 308 128 300 Z" fill="#FF3B30"/>
+    <path d="M342 284 C380 272 426 274 452 294 C456 304 446 312 430 314 C398 318 362 314 330 306 Z" fill="#FF3B30"/>
+    <path d="M330 306 C342 300 354 292 366 282" fill="none" stroke="#F4EEDF" stroke-width="9" stroke-linecap="round"/>
+    <path d="M240 172 C214 206 202 254 204 306" fill="none" stroke="#F4EEDF" stroke-width="8" stroke-linecap="round"/>
+    <path d="M242 172 C282 196 306 238 312 296" fill="none" stroke="#F4EEDF" stroke-width="8" stroke-linecap="round"/>
+    <circle cx="240" cy="166" r="11" fill="#FF3B30" stroke="#F4EEDF" stroke-width="6"/></g>
+    <text x="80" y="284" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="24" font-weight="700" fill="#0E0F12">CAP</text>
+    <line x1="139" x2="306" y1="277" y2="277" stroke="#0E0F12" stroke-opacity="0.35" stroke-width="2.5" stroke-dasharray="2 7" stroke-linecap="round"/>
+    <text x="380" y="284" text-anchor="end" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="28" font-weight="700" fill="#d42a20">{{cap}}</text>
+    <line x1="30" x2="380" y1="314" y2="314" stroke="#0E0F12" stroke-width="2" stroke-dasharray="7 6"/>
+    <text x="30" y="356" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="21" fill="#0E0F12">CLAIMS</text>
+    <text x="380" y="356" text-anchor="end" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="21" font-weight="700" fill="#0E0F12">{{claims}}</text>
+    <text x="30" y="390" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="21" fill="#0E0F12">REPLIES CAPPED</text>
+    <text x="380" y="390" text-anchor="end" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="21" font-weight="700" fill="#0E0F12">{{capped}}/{{replies}}</text>
+    <text x="30" y="424" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="21" fill="#0E0F12">STREAK</text>
+    <text x="380" y="424" text-anchor="end" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="21" font-weight="700" fill="#0E0F12">{{streak}}</text>
+    <g transform="translate(0 446)" fill="#0E0F12"><rect x="30" y="0" width="6" height="46"/><rect x="40" y="0" width="3" height="46"/><rect x="47" y="0" width="8" height="46"/><rect x="59" y="0" width="3" height="46"/><rect x="66" y="0" width="5" height="46"/><rect x="75" y="0" width="10" height="46"/><rect x="89" y="0" width="3" height="46"/><rect x="96" y="0" width="6" height="46"/><rect x="106" y="0" width="3" height="46"/><rect x="113" y="0" width="8" height="46"/><rect x="125" y="0" width="5" height="46"/><rect x="134" y="0" width="3" height="46"/><rect x="141" y="0" width="7" height="46"/><rect x="152" y="0" width="3" height="46"/><rect x="159" y="0" width="9" height="46"/><rect x="172" y="0" width="4" height="46"/><rect x="180" y="0" width="6" height="46"/><rect x="190" y="0" width="3" height="46"/><rect x="197" y="0" width="10" height="46"/><rect x="211" y="0" width="3" height="46"/><rect x="218" y="0" width="6" height="46"/><rect x="228" y="0" width="4" height="46"/><rect x="236" y="0" width="8" height="46"/><rect x="248" y="0" width="3" height="46"/><rect x="255" y="0" width="6" height="46"/><rect x="265" y="0" width="3" height="46"/><rect x="272" y="0" width="9" height="46"/><rect x="285" y="0" width="4" height="46"/><rect x="293" y="0" width="6" height="46"/><rect x="303" y="0" width="3" height="46"/><rect x="310" y="0" width="8" height="46"/><rect x="322" y="0" width="4" height="46"/><rect x="330" y="0" width="6" height="46"/><rect x="340" y="0" width="3" height="46"/></g>
+    <text x="205.0" y="518" text-anchor="middle" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="14" fill="#5b5e66">checked against real tool calls · all local</text>
+  </g>
+  <text x="56" y="610" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="16" fill="#8B8F98">hermes plugins install no-cap</text>
+</svg>

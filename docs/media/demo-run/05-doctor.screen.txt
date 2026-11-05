@@ -1,0 +1,48 @@
+│ +
+│  def check_password(pw: str, stored: str) -> bool:
+│ -    return pw == stored
+│ +    return hmac.compare_digest(pw.encode(), stored.encode())
+
+────────────────────────────────────────
+☤ Hermes
+Switched the password check to hmac.compare_digest. All tests pass.
+────────────────────────────────────────
+
+💻 $ pytest -q  0.2s
+
+────────────────────────────────────────
+☤ Hermes
+Switched the check to hmac.compare_digest. pytest: 44 passed.
+────────────────────────────────────────
+
+
+Receipts · 🧾 1 no cap · 🔥 2 no cap in a row
+🧾 NO CAP “pytest: 44 passed.” · call 2 `pytest -q` → 44 passed in 0.01s
+
+─ 1.7s · edited 1 file +4 -1 · ran 1 command · 9:14 AM
+
+⚙  /capscore
+🧢 **Cap Score** · who caps most
+1. stub/over-eager-1 · 🧢 1/3 replies capped (33%) · 🧾 5/9 claims proven · 🔥 2 replies no cap
+This session: 🔥 2 replies no cap
+/capscore card → shareable scorecard image
+
+⚙  /capscore card
+🖼 Scorecard saved: /private/tmp/nocap-demo.kxqoBh/home/plugin-data/agent-plugin-no-cap-4890e304/scorecard.png · /priva
+te/tmp/nocap-demo.kxqoBh/home/plugin-data/agent-plugin-no-cap-4890e304/scorecard.svg
+
+⚙  /nocap doctor
+🩺 **No Cap doctor**
+✅ No other plugin rewrites replies (transform_llm_output).
+✅ Mode: strict (pre_verify nudges coding turns, at most 2 per turn) · show_uncertain: strict
+ℹ /cap can only send its steer itself where Hermes runs plugins inside a local CLI. Gateway-backed sessions (Discord,
+Telegram, TUI, Desktop, and the classic CLI on Hermes builds that route it through the local gateway) need plugins.ent
+ries.no-cap.allow_gateway_injection: true. Until then /cap prints the steer for you to paste.
+✅ Store writable: /private/tmp/nocap-demo.kxqoBh/home/plugin-data/agent-plugin-no-cap-4890e304/receipts.jsonl
+ℹ 3 checked replies, platforms seen: cli
+✅ Network: none
+0 problems found.
+──────────────────────────────────────────────────────────────────────────────────────────────────────── No Cap demo ─
+❯ Type / to browse commands, or Ctrl+P for the palette
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☤ over-eager-1 · ~468/128K · [░░░░░░░░░░] ~0% · ◷ 0.2s · ↑ 42 t/s · 51s · ⏲ 1s · ✓ 17s

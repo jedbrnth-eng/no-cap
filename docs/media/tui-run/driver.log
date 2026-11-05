@@ -1,0 +1,20 @@
+quiet 5
+snap 00-start
+send 'fix the failing login test, push it and deploy'
+wait 'Type /cap and the agent': ok
+quiet 2
+snap 01-tui-turnA
+send '/cap'
+wait 'Cap called': ok
+quiet 2
+snap 02-tui-cap
+paste_steer (5 lines)
+wait 're-score': ok
+quiet 3
+snap 03-tui-rescore
+send '/nocap'
+wait 'Ledger:': ok
+quiet 2
+snap 04-tui-nocap
+send '/exit'
+quiet 2

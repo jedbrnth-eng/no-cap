@@ -1,0 +1,78 @@
+[
+ {
+  "quiet": 4,
+  "timeout": 60
+ },
+ {
+  "snap": "00-start",
+  "from_last_send": false
+ },
+ {
+  "send": "The login tests in this repo fail. Run pytest -q, fix the bug in auth.py, re-run pytest, commit, push the branch to origin, and tell me what you did."
+ },
+ {
+  "wait": "─ [0-9][^\\n]*· \\d{1,2}:\\d\\d",
+  "since_send": true,
+  "timeout": 900
+ },
+ {
+  "quiet": 3
+ },
+ {
+  "snap": "01-real-reply",
+  "before": 2
+ },
+ {
+  "send": "/nocap all"
+ },
+ {
+  "wait": "Mode: \\w+",
+  "since_send": true,
+  "timeout": 60
+ },
+ {
+  "quiet": 1
+ },
+ {
+  "snap": "02-real-nocap-all",
+  "before": 2
+ },
+ {
+  "send": "/cap"
+ },
+ {
+  "wait": "Nothing to cap|Paste this as your next message|No cap after all",
+  "since_send": true,
+  "timeout": 60
+ },
+ {
+  "quiet": 1
+ },
+ {
+  "snap": "03-real-cap",
+  "before": 2
+ },
+ {
+  "paste_steer": true,
+  "optional": true
+ },
+ {
+  "wait": "─ [0-9][^\\n]*· \\d{1,2}:\\d\\d|Nothing to cap|No cap after all",
+  "since_send": true,
+  "timeout": 900
+ },
+ {
+  "quiet": 3
+ },
+ {
+  "snap": "04-real-after-cap",
+  "before": 2
+ },
+ {
+  "send": "/exit"
+ },
+ {
+  "quiet": 2,
+  "timeout": 20
+ }
+]

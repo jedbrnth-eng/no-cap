@@ -1,0 +1,1 @@
+{"id": "chatcmpl-bc066f1a1bf44d90a2da60c9c0f47", "object": "chat.completion", "created": 1793844711, "model": "hermes-agent", "choices": [{"index": 0, "message": {"role": "assistant", "content": "Demo model: I only know the scripted No Cap demo turns."}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20}}

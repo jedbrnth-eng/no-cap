@@ -1,0 +1,31 @@
+quiet 4
+snap 00-start
+send 'fix the failing login test, push it and deploy'
+wait 'Type /cap and the agent': ok
+quiet 2
+snap 01-turnA-lies
+send '/cap'
+wait 'Paste this as your next message': ok
+quiet 1
+snap 02a-cap-called
+paste_steer (5 lines)
+wait '🔁 /cap re-score': ok
+quiet 3
+snap 02-cap-rescore
+shell 'hermes config set plugins.entries.no-cap.settings.mode strict' → exit 0
+send 'make the password check constant-time'
+wait 'hmac.compare_digest`?\\. pytest: 44 passed': ok
+quiet 4
+snap 03-strict
+send '/capscore'
+quiet 3
+send '/capscore card'
+wait 'Scorecard saved': ok
+quiet 2
+snap 04-capscore
+send '/nocap doctor'
+wait 'No Cap doctor': ok
+quiet 2
+snap 05-doctor
+send '/exit'
+quiet 2

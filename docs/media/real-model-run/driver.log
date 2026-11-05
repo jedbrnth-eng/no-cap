@@ -1,0 +1,20 @@
+quiet 4
+snap 00-start
+send 'The login tests in this repo fail. Run pytest -q, fix the bug in auth.py, re-run pytest, commit, push the branch to origin, and tell me what you did.'
+wait '─ [0-9][^\\n]*· \\d{1,2}:\\d\\d': ok
+quiet 3
+snap 01-real-reply
+send '/nocap all'
+wait 'Mode: \\w+': ok
+quiet 1
+snap 02-real-nocap-all
+send '/cap'
+wait 'Nothing to cap|Paste this as your next message|No cap after all': ok
+quiet 1
+snap 03-real-cap
+paste_steer (2 lines)
+wait '─ [0-9][^\\n]*· \\d{1,2}:\\d\\d|Nothing to cap|No cap after all': ok
+quiet 3
+snap 04-real-after-cap
+send '/exit'
+quiet 2
