@@ -30,6 +30,13 @@ REPORTED_RE = re.compile(r"\byou (?:said|mentioned|told|asked|wrote|reported|cla
                          r"\bbefore (?:my|the|this|that) (?:change|edit|fix|commit)\b|\bas (?:i|we) (?:showed|said|mentioned)\b|"
                          r"\babove\b|\bused to\b|\boriginally\b|\binitially\b|\bat first\b|\b(?:reported|reports|says|said|claimed|claims|mentioned|"
                          r"told me|tells me|confirmed to me)\b|\bbefore (?:my|the|this|that|your|our|his|her|their) \w+", re.I)
+# Earlier work in THIS session ("I pushed that earlier", "tests passed in the last turn"): judged on the session ledger
+# instead of being skipped. Anything else REPORTED_RE matches (someone else, yesterday, before my change) still is.
+SESSION_REF_RE = re.compile(r"\bearlier\b|\bpreviously\b|\blast run\b|\blast turn\b|\b(?:in|during|from|on) (?:the|my|our|"
+                            r"your) (?:last|previous|prior|earlier) (?:turn|step|message|reply|run|attempt)\b|"
+                            r"\bas (?:i|we) (?:showed|said|mentioned)\b|\ba (?:moment|minute|few minutes) ago\b", re.I)
+FAR_RE = re.compile(r"\btoday\b|\btonight\b|\bthis (?:morning|afternoon|evening|week)\b|\bon (?:main|master)\b", re.I)
+ALREADY_RE = re.compile(r"\balready\b", re.I)
 APPROX_RE = re.compile(r"(?:about|around|roughly|approximately|approx\.?|nearly|almost|over|under|more than|"
                        r"less than|fewer than|at least|at most|up to|~|≈|>|<)\s*$", re.I)
 SUMMARY_RE = re.compile(r"(?<!\d)\d+\s+(?:passed|failed|passing|failing)\b", re.I)
@@ -554,10 +561,24 @@ def extract_claims(text: str) -> List[Dict[str, Any]]:
         if budget < 0 or n_clauses > MAX_CLAUSES:
             break  # a reply this long is read up to here: every regex pass stays short (tests/test_redos.py)
         plain = clause.replace("\u2019", "'").replace("\u2018", "'")
+        revived = False
         if clause.rstrip().endswith("?") or HEDGE_RE.search(plain) or IMPERATIVE_RE.search(plain) \
-                or IMPERATIVE_ANY_RE.search(plain) or REPORTED_RE.search(plain):
+                or IMPERATIVE_ANY_RE.search(plain):
             continue
+        if REPORTED_RE.search(plain) or SESSION_REF_RE.search(plain):
+            # earlier work in this session: kept, marked, and judged only on earlier turns (verdict.judge)
+            revived = bool(SESSION_REF_RE.search(plain)) and not REPORTED_RE.search(SESSION_REF_RE.sub(" ", plain)) \
+                and not FAR_RE.search(plain)
+            if not revived:
+                continue
         claims = _claims_in(clause)
+        if revived or ALREADY_RE.search(plain):
+            for c in claims:
+                c["earlier"] = True
+                if revived:
+                    c["revived"] = True
+        if not claims:
+            continue
         if DESCRIBES_TEST_RE.search(plain):  # "a test that checks the build succeeds" says what a test does
             claims = [c for c in claims if c["kind"] not in ("tests", "build")]
         if sent_id not in acked_cache:

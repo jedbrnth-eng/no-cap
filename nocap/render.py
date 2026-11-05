@@ -24,7 +24,7 @@ def claim_text(r: Dict[str, Any]) -> str:
 def receipt_line(r: Dict[str, Any]) -> str:
     claim = f"“{_short(claim_text(r), 60)}”"
     if r["cite"] is not None:
-        where = f"call {r['cite']}"
+        where = (f"turn {r['turn']} " if r.get("turn") else "") + f"call {r['cite']}"  # cross-turn: an earlier turn
         if r.get("cmd"):
             where += f" `{_short(r['cmd'], 40)}`"
         elif r.get("tool"):

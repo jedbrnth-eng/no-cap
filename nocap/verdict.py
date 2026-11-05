@@ -644,12 +644,23 @@ def shown(r: Dict[str, Any], level: str) -> bool:
 
 
 def judge(claims: List[Dict[str, Any]], evidence: List[Dict[str, Any]],
-          kinds: Optional[set] = None) -> List[Dict[str, Any]]:
+          kinds: Optional[set] = None, history: Optional[List[Dict[str, Any]]] = None,
+          turn: int = 0) -> List[Dict[str, Any]]:
+    """``history``: earlier turns of the same session (store.Ledger.history), ``turn``: this turn's number.
+    Without them every claim is judged on this turn's calls only, as before."""
     out = []
     for c in claims:
         if kinds is not None and c["kind"] not in kinds:
             continue
-        r = JUDGES[c["kind"]](c, evidence or [])
+        if c.get("revived"):  # "tests passed in the last turn": only an earlier turn of this session can answer
+            r = _earlier(c, evidence or [], history or [], turn, revived=True) if c["kind"] in CROSS_KINDS else None
+            if r is None:
+                continue  # nothing in an earlier turn: left alone, as before cross-turn receipts
+        else:
+            r = JUDGES[c["kind"]](c, evidence or [])
+            if r["verdict"] == NO_RECEIPT and r.get("cite") is None:
+                if history and c.get("earlier") and c["kind"] in CROSS_KINDS:
+                    r = _earlier(c, evidence or [], history, turn) or r
         if r["verdict"] == CAP and (c["kind"] in DISABLED_CAP or c.get("ack_near")):
             r = dict(r, verdict=NO_RECEIPT, why=DISABLED_CAP.get(c["kind"]) or "a sentence nearby admits failures")
         if c["kind"] == "tests" and c.get("ack_reply") and not c.get("fails") and (
@@ -659,3 +670,74 @@ def judge(claims: List[Dict[str, Any]], evidence: List[Dict[str, Any]],
             continue  # numbers are bonus receipts: a match earns 🧾, a miss stays silent (too many aren't claims)
         out.append(r)
     return out
+
+
+# ---- cross-turn receipts -------------------------------------------------------------------------------------------
+CROSS_KINDS = {"tests", "build", "ci", "pushed", "merged", "committed", "pr_opened", "deployed", "file", "sha"}
+_RELEVANT = {
+    "tests": lambda e: bool(e.get("test_cmd")),
+    "build": lambda e: bool(e.get("build_cmd")),
+    "deployed": lambda e: bool(e.get("deploy_cmd")),
+    "ci": lambda e: "ci_pass" in (e.get("git") or {}),
+    "pushed": lambda e: "push_ok" in (e.get("git") or {}),
+    "committed": lambda e: "commit_ok" in (e.get("git") or {}),
+    "pr_opened": lambda e: "pr_create_ok" in (e.get("git") or {}),
+    "merged": lambda e: any(k in (e.get("git") or {}) for k in ("merge_ok", "pr_view_state", "git_merge_ok", "pr_missing")),
+    "sha": lambda e: bool(e.get("head_sha") or e.get("git")),
+    "file": lambda e: bool(e.get("paths_edited")),
+}
+
+
+def session_evidence(history: List[Dict[str, Any]], evs: List[Dict[str, Any]], turn: int) -> List[Dict[str, Any]]:
+    """Earlier turns' call facts, then this turn's calls, renumbered in order (each keeps its turn and own index)."""
+    out: List[Dict[str, Any]] = []
+    for t in history or []:
+        for e in t.get("calls") or []:
+            if isinstance(e, dict):
+                out.append(dict(e, _turn=int(t.get("turn") or 0), _i=e.get("i")))
+    for e in evs or []:
+        out.append(dict(e, _turn=turn, _i=e.get("i")))
+    for k, e in enumerate(out, 1):
+        e["i"] = k
+        e.setdefault("tests", [])
+        e.setdefault("test_cmd", False)
+        e.setdefault("ok", True)
+        e.setdefault("tool", "")
+    return out
+
+
+def _cited_ev(r: Dict[str, Any], combined: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    c = r.get("cite")
+    return combined[c - 1] if isinstance(c, int) and 0 < c <= len(combined) else None
+
+
+def _relabel(r: Dict[str, Any], e: Dict[str, Any], turn: int) -> Dict[str, Any]:
+    """Point a receipt at the call's own turn and index (the footer says "turn N")."""
+    r = dict(r, cite=e.get("_i"))
+    if e.get("_turn") != turn:
+        r["turn"] = e.get("_turn")
+    return r
+
+
+def _earlier(c, evs, history, turn, revived=False) -> Optional[Dict[str, Any]]:
+    """A claim about earlier work, judged on the whole session ledger. Stale evidence still loses (the judges see
+    every later edit, in any turn); 🧢 only from an earlier turn that no later call of the same kind supersedes."""
+    if not history:
+        return None
+    combined = session_evidence(history, evs, turn)
+    r = JUDGES[c["kind"]](c, combined)
+    e = _cited_ev(r, combined)
+    if e is None:
+        return None
+    if revived and e["_turn"] == turn:
+        return None  # the claim is about an earlier turn; this turn's calls aren't what it means
+    if r["verdict"] == CAP:
+        later = [x for x in combined if x["i"] > e["i"] and _RELEVANT[c["kind"]](x)]
+        if e["_turn"] == turn:
+            r = dict(r, verdict=NO_RECEIPT, why="this turn disagrees, but the claim is about earlier work")
+        elif later:
+            r = dict(r, verdict=NO_RECEIPT, why=f"later evidence (turn {later[-1]['_turn']}) supersedes it")
+        elif any(JUDGES[c["kind"]](c, session_evidence([t], [], -1))["verdict"] == NO_CAP for t in history
+                 if t.get("turn") != e["_turn"]):
+            r = dict(r, verdict=NO_RECEIPT, why="another earlier turn shows it; the claim may mean that one")
+    return _relabel(r, e, turn)

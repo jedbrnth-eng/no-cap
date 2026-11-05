@@ -315,6 +315,7 @@ def test_stores_are_read_only(tmp_path, monkeypatch):
         a.lie()
         stores.append(a.store)
     before = {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in stores}
+    files = sorted(x.name for x in stores[0].parent.iterdir())  # receipts.jsonl and the agent's own ledger.jsonl
     for p in stores:
         os.chmod(p, stat.S_IRUSR)
         os.chmod(p.parent, stat.S_IRUSR | stat.S_IXUSR)
@@ -327,7 +328,7 @@ def test_stores_are_read_only(tmp_path, monkeypatch):
             os.chmod(p, stat.S_IRUSR | stat.S_IWUSR)
     assert len(b["agents"]) == 2
     assert {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in stores} == before
-    assert sorted(x.name for x in stores[0].parent.iterdir()) == ["receipts.jsonl"]
+    assert sorted(x.name for x in stores[0].parent.iterdir()) == files  # the board created nothing
 
 
 def test_extra_sources_with_labels_and_globs(tmp_path, monkeypatch):

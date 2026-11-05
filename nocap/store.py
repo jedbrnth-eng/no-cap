@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 FILE = "receipts.jsonl"
+LEDGER_FILE = "ledger.jsonl"
 MAX_BYTES = 20 * 1024 * 1024
 
 
@@ -61,7 +62,7 @@ class Store:
     def purge(self) -> int:
         with self._lock:
             n = len(self.records())
-            for name in (FILE, "scorecard.png", "scorecard.svg"):
+            for name in (FILE, LEDGER_FILE, "scorecard.png", "scorecard.svg"):
                 try:
                     os.remove(Path(self._dir()) / name)
                 except FileNotFoundError:
@@ -117,3 +118,136 @@ def _scrub(v: Any, key: str = "") -> Any:
     if isinstance(v, (list, tuple)):
         return [_scrub(x) for x in v]
     return v
+
+
+# ---- session ledger (cross-turn receipts) ------------------------------------------------------------------------
+LEDGER_MAX_BYTES = 10 * 1024 * 1024
+MAX_SESSION_TURNS = 100  # turns kept per session (the newest); turn numbers keep counting
+MAX_SESSION_CALLS = 400  # call facts kept per session across those turns (the newest)
+MAX_SESSIONS = 64  # sessions cached in memory (the file is the source of truth across processes)
+
+
+class Ledger:
+    """Per-session evidence ledger: each checked turn's call facts (evidence.ledger_fact), so a later claim about
+    earlier work in the SAME session can cite them. In memory, plus an append-only JSONL next to the receipt store:
+    redacted like every stored field, 0600 in a 0700 folder, the same retention_days, purged by /nocap purge."""
+
+    def __init__(self, data_dir: Callable[[], Path], retention_days: Callable[[], int]):
+        self._dir = data_dir
+        self._retention = retention_days
+        self._lock = threading.Lock()
+        self._pruned = False
+        self._cache: "Dict[str, List[Dict[str, Any]]]" = {}
+        self._order: List[str] = []
+
+    @property
+    def path(self) -> Path:
+        return Path(self._dir()) / LEDGER_FILE
+
+    def clear(self) -> None:
+        with self._lock:
+            self._cache.clear()
+            self._order.clear()
+
+    def history(self, session_id: str) -> List[Dict[str, Any]]:
+        """Earlier turns of this session, oldest first: [{"turn": N, "turn_id": ..., "calls": [...]}, ...]."""
+        if not session_id:
+            return []
+        with self._lock:
+            turns = self._cache.get(session_id)
+            if turns is None:
+                turns = self._load_locked(session_id)
+                self._remember_locked(session_id, turns)
+            return [dict(t, calls=list(t["calls"])) for t in turns]
+
+    def record(self, session_id: str, turn_id: str, turn: int, calls: List[Dict[str, Any]]) -> None:
+        if not session_id:
+            return
+        line = _scrub({"type": "turn", "ts": time.time(), "session_id": session_id, "turn_id": turn_id,
+                       "turn": int(turn), "calls": calls})
+        with self._lock:
+            turns = self._cache.get(session_id)
+            if turns is None:
+                turns = self._load_locked(session_id)
+            turns.append({"turn": line["turn"], "turn_id": turn_id, "calls": line["calls"]})
+            _cap(turns)
+            self._remember_locked(session_id, turns)
+            p = self.path
+            _private_dir(p.parent)
+            if not self._pruned or (p.exists() and p.stat().st_size > LEDGER_MAX_BYTES):
+                self._prune_locked()
+                self._pruned = True
+            with _open_private(p, os.O_WRONLY | os.O_CREAT | os.O_APPEND) as fh:
+                fh.write(json.dumps(line, ensure_ascii=False, default=str) + "\n")
+
+    def _remember_locked(self, session_id: str, turns: List[Dict[str, Any]]) -> None:
+        self._cache[session_id] = turns
+        if session_id in self._order:
+            self._order.remove(session_id)
+        self._order.append(session_id)
+        while len(self._order) > MAX_SESSIONS:
+            self._cache.pop(self._order.pop(0), None)
+
+    def _lines(self) -> List[Dict[str, Any]]:
+        p = self.path
+        if not p.exists():
+            return []
+        out = []
+        with open(p, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    continue
+                if isinstance(rec, dict) and rec.get("type") == "turn":
+                    out.append(rec)
+        return out
+
+    def _load_locked(self, session_id: str) -> List[Dict[str, Any]]:
+        days = max(1, int(_num(self._retention(), 30)))
+        cutoff = time.time() - days * 86400
+        turns = []
+        for rec in self._lines():
+            if rec.get("session_id") != session_id or float(rec.get("ts", 0) or 0) < cutoff:
+                continue
+            calls = [c for c in rec.get("calls") or [] if isinstance(c, dict)]
+            turns.append({"turn": int(_num(rec.get("turn"), len(turns) + 1)), "turn_id": str(rec.get("turn_id") or ""),
+                          "calls": calls})
+        _cap(turns)
+        return turns
+
+    def _prune_locked(self) -> None:
+        p = self.path
+        if not p.exists():
+            return
+        days = max(1, int(_num(self._retention(), 30)))
+        cutoff = time.time() - days * 86400
+        keep = [r for r in self._lines() if float(r.get("ts", 0) or 0) >= cutoff]
+        if p.stat().st_size > LEDGER_MAX_BYTES:
+            keep = keep[len(keep) // 2:]
+        tmp = p.with_suffix(".tmp")
+        with _open_private(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC) as fh:
+            for r in keep:
+                fh.write(json.dumps(r, ensure_ascii=False, default=str) + "\n")
+        os.replace(tmp, p)
+
+
+def _num(v: Any, default: int) -> int:
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return default
+
+
+def _cap(turns: List[Dict[str, Any]]) -> None:
+    """Keep the newest MAX_SESSION_TURNS turns and MAX_SESSION_CALLS call facts of one session (in place)."""
+    del turns[:-MAX_SESSION_TURNS]
+    total = sum(len(t["calls"]) for t in turns)
+    while total > MAX_SESSION_CALLS and turns:
+        drop = min(len(turns[0]["calls"]), total - MAX_SESSION_CALLS)
+        if drop >= len(turns[0]["calls"]):
+            total -= len(turns[0]["calls"])
+            turns.pop(0)
+        else:
+            del turns[0]["calls"][:drop]
+            total -= drop

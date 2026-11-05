@@ -14,9 +14,9 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from . import card, desktop, doctor, score
 from .claims import extract_claims, forged_stamps
-from .evidence import extract, summary
+from .evidence import extract, ledger_fact, summary
 from .render import EMOJI, TAG, claim_text, compose, dedupe, footer, receipt_line
-from .store import Store
+from .store import Ledger, Store
 from .verdict import CAP, DEFAULT_SHOW_UNCERTAIN, NO_CAP, NO_RECEIPT, judge, level_of, shown
 from .verify import recheck, suggestion
 from . import board  # Cap Board: identity at hook time, /capscore board
@@ -38,7 +38,7 @@ def _match_key(r: Dict[str, Any]) -> Tuple:
 
 def _cited(evs: List[Dict[str, Any]], receipts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Only the calls a receipt cites are stored (as evidence.summary facts); the rest of the turn is a count and a digest."""
-    cited = {r.get("cite") for r in receipts if r.get("cite") is not None}
+    cited = {r.get("cite") for r in receipts if r.get("cite") is not None and not r.get("turn")}
     return [summary(e) for e in evs if e.get("i") in cited][-20:]
 
 
@@ -66,6 +66,7 @@ class Engine:
         self.cwd = cwd or (lambda: "")
         self.profile = board.profile_name  # who this turn runs as, recorded with each reply for the Cap Board
         self.store = Store(data_dir, lambda: setting("retention_days", 30))
+        self.ledger = Ledger(data_dir, lambda: setting("retention_days", 30))  # cross-turn receipts, per session
         self._turns: "OrderedDict[Tuple[str, str], List[Dict[str, Any]]]" = OrderedDict()
         self._pending_cap: Dict[str, List[Dict[str, Any]]] = {}
         self._lock = threading.Lock()
@@ -129,7 +130,9 @@ class Engine:
                  platform: str = "", **_: Any) -> Optional[str]:
         session_id, turn_id = session_id or "", turn_id or ""
         evs = self._take(session_id, turn_id)
+        history, turn = self._session(session_id, turn_id)
         if not isinstance(response_text, str) or not response_text.strip():
+            self._record_turn(session_id, turn_id, turn, evs)
             return None
         on_desktop = desktop.is_desktop(platform)
         # Every surface: a `::nocap` the model wrote (a replay of an earlier genuine chip included) is removed, because
@@ -138,7 +141,8 @@ class Engine:
         claims = extract_claims(response_text)
         if not bool(self.setting("check_numbers", True)):
             claims = [c for c in claims if c["kind"] != "number"]
-        receipts = judge(claims, evs) if claims else []
+        receipts = judge(claims, evs, history=history, turn=turn) if claims else []
+        self._record_turn(session_id, turn_id, turn, evs)
         if not turn_id:  # no turn id: the evidence may belong to an earlier, interrupted turn, so never 🧢
             receipts = [dict(r, verdict=NO_RECEIPT, why="no turn id from the host; can't tie evidence to this reply")
                         if r["verdict"] == CAP else r for r in receipts]
@@ -170,6 +174,28 @@ class Engine:
         if out is None and planted:  # quiet mode: no footer, but a planted directive still never goes out
             return response_text
         return out
+
+    def _session(self, session_id: str, turn_id: str) -> Tuple[List[Dict[str, Any]], int]:
+        """Earlier turns of this session from the ledger, and this turn's number (1 for the first checked turn).
+        No session or turn id, or `cross_turn: false`: no history (claims are judged on this turn alone)."""
+        if not (session_id and turn_id) or not bool(self.setting("cross_turn", True)):
+            return [], 0
+        try:
+            history = self.ledger.history(session_id)
+        except Exception:
+            return [], 0
+        same = [t for t in history if t.get("turn_id") == turn_id]  # the host re-ran this turn's reply hook
+        history = [t for t in history if t.get("turn_id") != turn_id]
+        turn = same[-1]["turn"] if same else (max((t["turn"] for t in history), default=0) + 1)
+        return history, turn
+
+    def _record_turn(self, session_id: str, turn_id: str, turn: int, evs: List[Dict[str, Any]]) -> None:
+        if not (session_id and turn_id and turn):
+            return  # every checked turn is recorded (calls or not), so "turn N" counts the session's replies
+        try:
+            self.ledger.record(session_id, turn_id, turn, [ledger_fact(e) for e in evs])
+        except Exception:
+            pass  # fail open: a ledger that can't be written only means no cross-turn receipts
 
     def _rescore(self, session_id: str, receipts: List[Dict[str, Any]]) -> List[str]:
         with self._lock:
@@ -337,6 +363,7 @@ class Engine:
         arg = (raw_args or "").strip().lower()
         if arg == "purge":
             n = self.store.purge()
+            self.ledger.clear()
             return f"🧹 Removed {n} receipt record(s) and the scorecard from {self.data_dir()}."
         if arg == "doctor":
             return self.doctor_report()[0]

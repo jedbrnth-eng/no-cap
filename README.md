@@ -5,7 +5,7 @@
 <h3 align="center">Your agent says “tests pass.” No Cap checks the receipts.</h3>
 
 <p align="center">
-  A Hermes Agent plugin. Each claim in the agent's final reply is checked against the tool calls it made in the same turn.<br>
+  A Hermes Agent plugin. Each claim in the agent's final reply is checked against the tool calls it made in the same turn (and, for a claim about earlier work, the earlier turns of the same session).<br>
   No extra model, no network, no account. The receipts stay on your disk.
 </p>
 
@@ -186,7 +186,8 @@ restart needed):
 | `mode` | `annotate` | `annotate` (footer), `strict` (footer restates 🧢 claims as Unverified, and `pre_verify` nudges coding turns), `quiet` (record only, no footer) |
 | `show_uncertain` | `off` | When to stamp 🤔. `off`: never (only 🧾 and 🧢). `strict`: only "tests pass" in a turn that ran no tests, showed no test output and ran no check script of the agent's own. `expected`: also other claim types that expect a receipt when nothing relevant ran (push, merge, deploy, file...). `all`: every unsure claim. `default` means `off` |
 | `check_numbers` | `true` | Also check counts like "changed 3 files" |
-| `retention_days` | `30` | How long receipts are kept |
+| `retention_days` | `30` | How long receipts (and the session ledger) are kept |
+| `cross_turn` | `true` | Session ledger: a claim about earlier work ("I pushed that earlier", "tests passed in the last turn") can cite an earlier turn of the same session; the footer says `turn N`. `false`: every claim is judged on its own turn only |
 | `board.team_profiles` | unset (off) | Cap Board team view: `all`, or a list of profile names, to also show those profiles' stores (claims, cited commands and evidence lines). Off by default: the board shows only the profile it runs in. Even when set, only the CLI (`hermes nocap board`, a CLI session's `/capscore board`) and the dashboard tab show the team view; `/capscore board` in a gateway chat (Telegram, Discord, ...), the TUI or Desktop always shows the current profile |
 | `board_sources` | `""` | Team view only: extra stores beside the team profiles, `label=path` entries separated by `:` (a Hermes home, a `receipts.jsonl`, a folder searched for them up to 6 levels and 2000 folders deep, never through a symlink, or a glob). Also `NOCAP_BOARD_SOURCES` |
 | `board_min_claims` | `10` | Claims a row needs before the board shows and ranks its rates |
@@ -228,6 +229,12 @@ Limits:
   secret, URL passwords, provider tokens, AWS keys, JWT/Discord tokens, PEM keys; `tests/test_redaction.py`); ids are
   stored as they are. Pruned after `retention_days` and halved past 20 MB. `/nocap purge` deletes the store and the
   scorecard.
+- **Session ledger** (`cross_turn`, on by default): `ledger.jsonl` in the same folder (`0600`, folder `0700`), one line
+  per checked turn: session id, turn id, turn number, and per tool call of that turn the parsed facts (tool name,
+  command up to 160 characters, exit code, error line, test summary lines, git facts such as push refs, commit SHA and
+  PR numbers and states, SHAs seen, paths written, and flags such as "edited code"). Never raw output, numbers or URLs.
+  The same secret masker runs on every field. At most 100 turns and 400 calls per session are kept (the newest), the
+  same `retention_days` applies, and `/nocap purge` deletes it.
 - **Network:** none by default. With `self_verify_http: true`, `/cap` may send one HTTP HEAD request to a URL the
   agent claimed is live, and only to a public address: the host is resolved first and refused if any address is
   loopback, link-local (cloud metadata such as 169.254.169.254), private, carrier-grade NAT, unique-local, multicast or
@@ -269,7 +276,10 @@ Limits:
   32 KB, plus up to 400 summary or failure lines from the middle (the full output is never stored). A longer run that
   exited non-zero never earns 🧾. Per command: the first 16 KB. Per reply: the first 64 KB, and claims are read from
   up to 10,000 characters of candidate sentences.
-- Evidence comes from the same turn only. "I pushed that earlier" gets no receipt, even if it is true.
+- Earlier turns count only for a claim that says it is about earlier work ("earlier", "in the last turn", "already").
+  A present-tense claim ("all tests pass") is judged on its own turn, because you may have changed things between
+  turns. A code edit in any later turn makes an earlier test run stale, and an earlier turn's 🧢 is dropped when a later
+  call supersedes it. Only the newest 100 turns / 400 calls per session are kept.
 - 🧢 for files and builds is switched off: on real runs most failed writes were redone another way (sed, heredocs)
   and chained builds made exit codes unreliable. They get 🧾 or an unstamped 🤔.
 - A count claim against a failing run is not a 🧢. In one demo run the agent said "pytest: 44 passed" after
