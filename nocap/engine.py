@@ -15,11 +15,11 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from . import card, desktop, doctor, score
 from .coach import Coach
 from .claims import extract_claims, forged_stamps
-from .evidence import extract, summary
+from .evidence import extract, ledger_fact, summary
 from .render import EMOJI, TAG, claim_text, compose, dedupe, footer, receipt_line
-from .store import Store
-from .verdict import CAP, DEFAULT_SHOW_UNCERTAIN, NO_CAP, NO_RECEIPT, judge, level_of, shown
-from .verify import recheck, suggestion
+from .store import Ledger, Store
+from .verdict import CAP, DEFAULT_SHOW_UNCERTAIN, NO_CAP, NO_RECEIPT, judge, level_of, session_evidence, shown
+from .verify import check_artifacts, recheck, suggestion
 from . import board  # Cap Board: identity at hook time, /capscore board
 
 MAX_OPEN_TURNS = 64
@@ -39,7 +39,7 @@ def _match_key(r: Dict[str, Any]) -> Tuple:
 
 def _cited(evs: List[Dict[str, Any]], receipts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Only the calls a receipt cites are stored (as evidence.summary facts); the rest of the turn is a count and a digest."""
-    cited = {r.get("cite") for r in receipts if r.get("cite") is not None}
+    cited = {r.get("cite") for r in receipts if r.get("cite") is not None and not r.get("turn")}
     return [summary(e) for e in evs if e.get("i") in cited][-20:]
 
 
@@ -68,9 +68,13 @@ class Engine:
         self.cwd = cwd or (lambda: "")
         self.profile = board.profile_name  # who this turn runs as, recorded with each reply for the Cap Board
         self.store = Store(data_dir, lambda: setting("retention_days", 30))
+        self.ledger = Ledger(data_dir, lambda: setting("retention_days", 30))  # cross-turn receipts, per session
         self._turns: "OrderedDict[Tuple[str, str], List[Dict[str, Any]]]" = OrderedDict()
         self._pending_cap: Dict[str, List[Dict[str, Any]]] = {}
         self._lock = threading.Lock()
+        # platform -> composer(text, receipts, mode, rescore, streak, notes, session_id=, turn_id=): a surface's own
+        # footer (nocap/surfaces/discord.py). Every other platform keeps render.compose.
+        self.surfaces: Dict[str, Callable[..., Optional[str]]] = {}
 
     # ---- hooks -------------------------------------------------------------------------------
     def on_tool(self, tool_name: str = "", args: Any = None, result: Any = None, session_id: str = "",
@@ -136,7 +140,9 @@ class Engine:
                  platform: str = "", **_: Any) -> Optional[str]:
         session_id, turn_id = session_id or "", turn_id or ""
         evs = self._take(session_id, turn_id)
+        history, turn = self._session(session_id, turn_id)
         if not isinstance(response_text, str) or not response_text.strip():
+            self._record_turn(session_id, turn_id, turn, evs)
             return None
         on_desktop = desktop.is_desktop(platform)
         # Every surface: a `::nocap` the model wrote (a replay of an earlier genuine chip included) is removed, because
@@ -145,7 +151,9 @@ class Engine:
         claims = extract_claims(response_text)
         if not bool(self.setting("check_numbers", True)):
             claims = [c for c in claims if c["kind"] != "number"]
-        receipts = judge(claims, evs) if claims else []
+        receipts = judge(claims, evs, history=history, turn=turn) if claims else []
+        receipts = self._artifacts(receipts, session_evidence(history, evs, turn))
+        self._record_turn(session_id, turn_id, turn, evs)
         if not turn_id:  # no turn id: the evidence may belong to an earlier, interrupted turn, so never 🧢
             receipts = [dict(r, verdict=NO_RECEIPT, why="no turn id from the host; can't tie evidence to this reply")
                         if r["verdict"] == CAP else r for r in receipts]
@@ -174,11 +182,51 @@ class Engine:
         forged = forged_stamps(response_text) + planted
         notes = [f"⚠️ This reply contained {forged} stamp(s) No Cap didn't issue. They were ignored."] if forged else None
         notes = self.coach.add_tip(notes, receipts)
-        out = compose(response_text, visible, self.mode(), rescore, streak, notes,
-                      plain=(platform or "").lower() == "cli", chips=chips)
+        surface = self.surfaces.get((platform or "").strip().lower())
+        if surface is not None:
+            out = surface(response_text, visible, self.mode(), rescore, streak, notes, session_id=session_id,
+                          turn_id=turn_id)
+        else:
+            out = compose(response_text, visible, self.mode(), rescore, streak, notes,
+                          plain=(platform or "").lower() == "cli", chips=chips)
         if out is None and planted:  # quiet mode: no footer, but a planted directive still never goes out
             return response_text
         return out
+
+    def _session(self, session_id: str, turn_id: str) -> Tuple[List[Dict[str, Any]], int]:
+        """Earlier turns of this session from the ledger, and this turn's number (1 for the first checked turn).
+        No session or turn id, or `cross_turn: false`: no history (claims are judged on this turn alone)."""
+        if not (session_id and turn_id) or not bool(self.setting("cross_turn", True)):
+            return [], 0
+        try:
+            history = self.ledger.history(session_id)
+        except Exception:
+            return [], 0
+        same = [t for t in history if t.get("turn_id") == turn_id]  # the host re-ran this turn's reply hook
+        history = [t for t in history if t.get("turn_id") != turn_id]
+        turn = same[-1]["turn"] if same else (max((t["turn"] for t in history), default=0) + 1)
+        return history, turn
+
+    def _record_turn(self, session_id: str, turn_id: str, turn: int, evs: List[Dict[str, Any]]) -> None:
+        if not (session_id and turn_id and turn):
+            return  # every checked turn is recorded (calls or not), so "turn N" counts the session's replies
+        try:
+            self.ledger.record(session_id, turn_id, turn, [ledger_fact(e) for e in evs])
+        except Exception:
+            pass  # fail open: a ledger that can't be written only means no cross-turn receipts
+
+    def _artifacts(self, receipts: List[Dict[str, Any]], session_evs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Fabricated SHAs and branches (verify_artifacts, default on): local, read-only git in the session's cwd."""
+        if not receipts or not bool(self.setting("verify_artifacts", True)):
+            return receipts
+        try:
+            cwd = self.cwd() or ""
+        except Exception:
+            cwd = ""
+        try:
+            return check_artifacts(receipts, cwd, session_evs)
+        except Exception:
+            return receipts
 
     def _rescore(self, session_id: str, receipts: List[Dict[str, Any]]) -> List[str]:
         with self._lock:
@@ -347,14 +395,17 @@ class Engine:
 
     def nocap(self, raw_args: str = "", session_id: str = "") -> str:
         arg = (raw_args or "").strip().lower()
+        if arg == "battery":
+            return self.battery()
         if arg == "purge":
             n = self.store.purge()
+            self.ledger.clear()
             return f"🧹 Removed {n} receipt record(s) and the scorecard from {self.data_dir()}."
         if arg == "doctor":
             return self.doctor_report()[0]
         if arg in ("help", "?"):
-            return ("/nocap → receipts for the last reply · /nocap all → every receipt line · /nocap purge → delete "
-                    "the local store · /nocap doctor → setup checks · /cap → make the agent prove it · /capscore [card] → honesty leaderboard")
+            return ("/nocap → receipts for the last reply · /nocap all → every receipt line · /nocap battery → the "
+                    "synthetic accuracy battery · /nocap purge → delete the local store · /nocap doctor → setup checks · /cap → make the agent prove it · /capscore [card] → honesty leaderboard")
         last = self.store.last(session_id or "") or self.store.last("")
         if not last:
             return f"🧾 No receipts yet. Mode: {self.mode()}. Store: {self.store.path}"
@@ -375,3 +426,8 @@ class Engine:
             lines.append(f"Ledger: {n} tool call(s)" + (f"; cited {cited}" if cited else ""))
         lines.append(f"Mode: {self.mode()} · model: {last.get('model')} · store: {self.store.path}")
         return "\n".join(lines)
+
+    def battery(self) -> str:
+        """The bundled synthetic battery through the real pipeline, as a markdown report (nocap/battery.py)."""
+        from . import battery
+        return battery.report(battery.run())

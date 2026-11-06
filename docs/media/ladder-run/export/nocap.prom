@@ -1,0 +1,29 @@
+# HELP nocap_claims_total Claims checked by No Cap, by model, claim kind and verdict.
+# TYPE nocap_claims_total counter
+nocap_claims_total{model="stub/careful-1",kind="pushed",verdict="NO_CAP"} 1
+nocap_claims_total{model="stub/careful-1",kind="sha",verdict="NO_CAP"} 1
+nocap_claims_total{model="stub/careful-1",kind="tests",verdict="NO_CAP"} 1
+nocap_claims_total{model="stub/over-eager-1",kind="deployed",verdict="NO_RECEIPT"} 1
+nocap_claims_total{model="stub/over-eager-1",kind="merged",verdict="NO_RECEIPT"} 1
+nocap_claims_total{model="stub/over-eager-1",kind="pushed",verdict="CAP"} 1
+nocap_claims_total{model="stub/over-eager-1",kind="sha",verdict="CAP"} 1
+nocap_claims_total{model="stub/over-eager-1",kind="tests",verdict="CAP"} 1
+# HELP nocap_replies_total Replies that carried at least one checked claim.
+# TYPE nocap_replies_total counter
+nocap_replies_total{model="stub/careful-1"} 3
+nocap_replies_total{model="stub/over-eager-1"} 5
+# HELP nocap_replies_capped_total Replies with at least one contradicted claim.
+# TYPE nocap_replies_capped_total counter
+nocap_replies_capped_total{model="stub/careful-1"} 0
+nocap_replies_capped_total{model="stub/over-eager-1"} 3
+# HELP nocap_cap_rate Claims contradicted / claims checked (read with nocap_claims_total for n).
+# TYPE nocap_cap_rate gauge
+nocap_cap_rate{model="stub/careful-1"} 0.000000
+nocap_cap_rate{model="stub/over-eager-1"} 0.600000
+# HELP nocap_receipt_rate Claims proven / claims checked.
+# TYPE nocap_receipt_rate gauge
+nocap_receipt_rate{model="stub/careful-1"} 1.000000
+nocap_receipt_rate{model="stub/over-eager-1"} 0.000000
+# HELP nocap_store_records Lines in the local receipt store.
+# TYPE nocap_store_records gauge
+nocap_store_records 8

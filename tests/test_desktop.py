@@ -46,7 +46,8 @@ def test_directive_never_reaches_a_non_desktop_surface(tmp_path, platform):
     ctx = make(tmp_path)
     tool(ctx, "pytest -q", "3 failed, 41 passed in 0.52s", 1)
     out = reply(ctx, "All tests pass.", platform)
-    assert "🧢 CAP" in out and "3 failed" in out  # the text footer still carries every receipt
+    stamp = "🧢 `" if platform == "discord" else "🧢 CAP"  # Discord has its own compact footer (nocap/surfaces)
+    assert stamp in out and "3 failed" in out  # the text footer still carries every receipt
     assert "::nocap" not in out
 
 

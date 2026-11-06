@@ -153,3 +153,129 @@ def render(rows: List[Dict[str, Any]], out_dir: Path, model: Optional[str] = Non
     except Exception:  # Pillow missing or broken: the SVG alone is still a complete card
         pass
     return paths
+
+
+# ---- shared canvas for the verdict and compare cards -------------------------------------------------------------
+# One list of draw operations rendered twice: as an SVG (stdlib, every string XML-escaped, no images, no web fonts,
+# nothing fetched) and, when Pillow is importable, as a PNG with the same layout. Local system fonts only.
+
+FAMILIES = {
+    "serif": ("Georgia, 'Times New Roman', serif",
+              ("/System/Library/Fonts/Supplemental/Georgia.ttf", "/System/Library/Fonts/Supplemental/Times New Roman.ttf",
+               "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf", "C:/Windows/Fonts/georgia.ttf")),
+    "serif-bold": ("Georgia, 'Times New Roman', serif",
+                   ("/System/Library/Fonts/Supplemental/Georgia Bold.ttf",
+                    "/System/Library/Fonts/Supplemental/Times New Roman Bold.ttf",
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf", "C:/Windows/Fonts/georgiab.ttf")),
+    "mono": ("ui-monospace, Menlo, Consolas, monospace",
+             ("/System/Library/Fonts/Menlo.ttc", "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+              "C:/Windows/Fonts/consola.ttf")),
+    "sans": ("-apple-system, 'Helvetica Neue', Arial, sans-serif",
+             ("/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Helvetica.ttc",
+              "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:/Windows/Fonts/arial.ttf")),
+    "sans-bold": ("-apple-system, 'Helvetica Neue', Arial, sans-serif",
+                  ("/System/Library/Fonts/Supplemental/Arial Bold.ttf", "/System/Library/Fonts/Helvetica.ttc",
+                   "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "C:/Windows/Fonts/arialbd.ttf")),
+}
+CHAR_W = {"serif": 0.52, "serif-bold": 0.56, "mono": 0.64, "sans": 0.53, "sans-bold": 0.58}
+
+
+def wrap(text: str, size: int, width_px: int, family: str = "serif", max_lines: int = 3):
+    """Character-count wrap from an average glyph width, the same for SVG and PNG, so both cards break alike."""
+    import textwrap
+    chars = max(8, int(width_px / (CHAR_W.get(family, 0.55) * size)))
+    lines = textwrap.wrap(" ".join(str(text or "").split()), chars) or [""]
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines[-1] = lines[-1][: max(1, chars - 1)].rstrip() + "…"
+    return lines
+
+
+class Canvas:
+    def __init__(self, w: int, h: int, bg: str):
+        self.w, self.h, self.bg = w, h, bg
+        self.ops: List[tuple] = []
+
+    def rect(self, x, y, w, h, fill, stroke=None, width=1):
+        self.ops.append(("rect", x, y, w, h, fill, stroke, width))
+
+    def line(self, x1, y1, x2, y2, color, width=1):
+        self.ops.append(("line", x1, y1, x2, y2, color, width))
+
+    def text(self, x, y, s, size, fill, family="serif", anchor="start"):
+        """``y`` is the top of the text box."""
+        self.ops.append(("text", x, y, str(s), size, fill, family, anchor))
+
+    def svg(self) -> str:
+        out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{self.w}" height="{self.h}" '
+               f'viewBox="0 0 {self.w} {self.h}" role="img">',
+               f'<rect width="{self.w}" height="{self.h}" fill="{self.bg}"/>']
+        for op in self.ops:
+            if op[0] == "rect":
+                _, x, y, w, h, fill, stroke, width = op
+                s = f' stroke="{stroke}" stroke-width="{width}"' if stroke else ""
+                out.append(f'<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="{fill or "none"}"{s}/>')
+            elif op[0] == "line":
+                _, x1, y1, x2, y2, color, width = op
+                out.append(f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="{color}" stroke-width="{width}"/>')
+            else:
+                _, x, y, s, size, fill, family, anchor = op
+                fam = FAMILIES.get(family, FAMILIES["serif"])[0]
+                weight = ' font-weight="700"' if family.endswith("-bold") else ""
+                out.append(f'<text x="{x}" y="{round(y + size * 0.82, 1)}" font-family="{escape(fam)}" '
+                           f'font-size="{size}"{weight} fill="{fill}" text-anchor="{anchor}">{escape(s)}</text>')
+        out.append("</svg>")
+        return "\n".join(out) + "\n"
+
+    def png(self, out: Path) -> Path:
+        from PIL import Image, ImageDraw, ImageFont  # Pillow is a core Hermes dependency
+        cache: Dict[tuple, Any] = {}
+
+        def font(family, size):
+            key = (family, size)
+            if key not in cache:
+                f = None
+                for p in FAMILIES.get(family, FAMILIES["serif"])[1]:
+                    try:
+                        f = ImageFont.truetype(p, size)
+                        break
+                    except Exception:
+                        continue
+                if f is None:
+                    try:
+                        f = ImageFont.load_default(size=size)
+                    except TypeError:
+                        f = ImageFont.load_default()
+                cache[key] = f
+            return cache[key]
+
+        img = Image.new("RGB", (self.w, self.h), self.bg)
+        g = ImageDraw.Draw(img)
+        for op in self.ops:
+            if op[0] == "rect":
+                _, x, y, w, h, fill, stroke, width = op
+                g.rectangle([x, y, x + w, y + h], fill=fill, outline=stroke, width=width if stroke else 0)
+            elif op[0] == "line":
+                _, x1, y1, x2, y2, color, width = op
+                g.line([x1, y1, x2, y2], fill=color, width=width)
+            else:
+                _, x, y, s, size, fill, family, anchor = op
+                a = {"start": "la", "middle": "ma", "end": "ra"}[anchor]
+                try:
+                    g.text((x, y), s, fill=fill, font=font(family, size), anchor=a)
+                except (ValueError, TypeError):  # a bitmap fallback font has no anchors
+                    g.text((x, y), s, fill=fill, font=font(family, size))
+        img.save(out, "PNG")
+        return out
+
+    def write(self, out_dir: Path, stem: str) -> List[Path]:
+        """``stem``.svg always; ``stem``.png too when Pillow works. The PNG is listed first (the one to paste)."""
+        out_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        svg = out_dir / f"{stem}.svg"
+        svg.write_text(self.svg(), encoding="utf-8")
+        paths = [svg]
+        try:
+            paths.insert(0, self.png(out_dir / f"{stem}.png"))
+        except Exception:  # Pillow missing or broken: the SVG alone is a complete card
+            pass
+        return paths

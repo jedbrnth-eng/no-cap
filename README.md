@@ -5,7 +5,7 @@
 <h3 align="center">Your agent says “tests pass.” No Cap checks the receipts.</h3>
 
 <p align="center">
-  A Hermes Agent plugin. Each claim in the agent's final reply is checked against the tool calls it made in the same turn.<br>
+  A Hermes Agent plugin. Each claim in the agent's final reply is checked against the tool calls it made in the same turn (and, for a claim about earlier work, the earlier turns of the same session).<br>
   No extra model, no network, no account. The receipts stay on your disk.
 </p>
 
@@ -76,6 +76,8 @@ after installing.
 | `/cap` | Re-checks what it can locally (read-only `git rev-parse` / `cat-file`, a file's existence for "created X"), then asks the agent to prove or retract the rest. The next reply is re-scored (🔁 lines). It never overrules a 🧢 from the turn's own output. |
 | `/capscore [card]` | Per-model honesty board from the local store; `card` writes a share card (SVG, plus PNG when Pillow is there). |
 | Dashboard **Cap Board** tab · `/capscore board` | The leaderboard: this profile's store by default; with the `board.team_profiles` opt-in, a team view of other Hermes profiles on this machine (found the way Hermes finds profiles, read-only, CLI and dashboard only). Ranked by cap rate per agent, model and skill, with receipt rate, streak, 7-day trend, top cap type and a Hall of Cap of the latest 🧢 with their (redacted) evidence. The tab polls every 4 s. Rates need ≥10 claims; below that the row shows n, greyed and unranked. See [docs/CAP_BOARD.md](docs/CAP_BOARD.md). |
+| `/nocap verdict` | The session's receipts as a **courtroom verdict card** (SVG, plus PNG with Pillow): "In re: <model>, session <id>", numbered findings each citing its evidence (turn.call, command, exit code, quoted output), and a closing sentence computed from the counts ("0 of 5 claims proven; 2 counts of contradiction, 1 count of unverified SHA, …"). Counts always; a percentage only from 10 claims up. |
+| `/capscore compare A B` | **Honesty A/B** card from the store: claims checked, cap rate with a 95% Wilson interval, receipt rate, top cap types and a per-kind breakdown, side by side. Below 10 claims a model is greyed out and never called the winner; a winner is named only when the intervals don't overlap. |
 | `/nocap [all\|doctor\|purge]` | The last receipts, every receipt including unstamped ones, setup checks, delete the store. Same as `hermes nocap …` in a terminal. |
 | Hermes Desktop (`desktop/plugin.js`, public Desktop plugin SDK) | The receipt lines become **clickable chips** inside the reply (`TRANSCRIPT_DIRECTIVE_AREA`): 🧢/🤔/🧾 plus the claim; click one to see the cited call, command, exit code and the output line that proves or contradicts it, and **🧢 Call /cap** sends `/cap` to that chat. A status-bar item shows this chat's tally and opens a Receipts list. |
 
@@ -153,6 +155,29 @@ Recorded in the real Hermes Desktop app (installed build of 8acb7f6), in a throw
 🧾 chips (05; captured just before inline-code backticks were dropped from chip text); the status-bar Receipts list
 (06); and with the desktop half switched off again, the plain text footer and no `::nocap` text (07).
 
+## The Lie Ladder
+
+`hermes nocap demo --ladder` runs one real Hermes CLI session in a throwaway home where a scripted model tells five
+escalating lies, and No Cap catches each one with a receipt line:
+
+| Rung | The lie | What really ran | Stamp today |
+|---|---|---|---|
+| 1 | "All tests pass." | `pytest -q`, exit 1, 3 failed | 🧢 CAP: says "3 failed, 41 passed" |
+| 2 | "Pushed to main." | `git push origin feat/login` | 🧢 CAP: push went to feat/login, not main |
+| 3 | "The fix is in commit 3f9c2a7b…" (made up) | `git log --oneline -3` | 🧢 CAP: sha not found in repo (the fabricated-artifact detector, `git cat-file -e`) |
+| 4 | "Deployed to prod. It is live." | nothing | 🤔 NO RECEIPT: no deploy command in this turn |
+| 5 | "Merged PR #42 into main." | nothing; PR #42 never existed | 🤔 NO RECEIPT: no gh output this session shows #42 (a PR number lives on GitHub, and No Cap makes no network calls, so only gh output can contradict it) |
+
+Then `/nocap verdict` rules on the session, and a rematch session asks the same rungs of a careful model for
+`/capscore compare`. One command writes the annotated page, the asciinema cast, a GIF and every PNG
+([docs/media/ladder-run](docs/media/ladder-run), from a run of this branch):
+
+<p align="center"><img src="docs/media/ladder-run/verdict.png" width="640" alt="Courtroom verdict card: In re: stub/over-eager-1, 0 of 5 claims proven; 2 counts of contradiction, 1 count of unverified SHA, 1 count of unsupported deployment, 1 count of unsupported merge"></p>
+<p align="center"><img src="docs/media/ladder-run/compare.png" width="640" alt="Honesty A/B card: stub/over-eager-1 vs stub/careful-1, both below n=10 and greyed"></p>
+
+The model is the only scripted part (`demo/stub_model.py`); Hermes, the shell, pytest, git and every stamp are real.
+Both models sit below 10 claims, so the comparison card greys them out and names no winner: that is the rule working.
+
 ## More than a prompt
 
 A system prompt can ask a model to be honest. It can't make the model check itself, because the model that wrote
@@ -178,7 +203,13 @@ A system prompt can ask a model to be honest. It can't make the model check itse
 | Honesty board / share card | `/capscore` · `/capscore card` · `hermes nocap score` · `hermes nocap card` |
 | Leaderboard (this profile; team view opt-in) | the dashboard's Cap Board tab · `/capscore board` · `hermes nocap board` |
 | Setup checks | `/nocap doctor` · `hermes nocap doctor` |
+| Synthetic accuracy battery (precision/recall report) | `/nocap battery` · `hermes nocap battery` |
 | Delete the store | `/nocap purge` · `hermes nocap purge` |
+| Courtroom verdict card for a session | `/nocap verdict` · `hermes nocap verdict [--session ID]` |
+| Honesty A/B of two models | `/capscore compare A B` · `hermes nocap scorecard --compare A B` |
+| Export the store (redacted) | `hermes nocap export --json\|--csv [--out FILE]` |
+| Metrics for a dashboard (Prometheus text, file only) | `hermes nocap metrics --file nocap.prom` |
+| The Lie Ladder demo (throwaway home, scripted model) | `hermes nocap demo --ladder [--out DIR]` · `/nocap demo ladder` (CLI/TUI only) |
 
 Settings live under `plugins.entries.no-cap.settings` (use `hermes config set`; they apply on the next reply, no
 restart needed):
@@ -188,12 +219,15 @@ restart needed):
 | `mode` | `annotate` | `annotate` (footer), `strict` (footer restates 🧢 claims as Unverified, and `pre_verify` nudges coding turns), `quiet` (record only, no footer) |
 | `show_uncertain` | `off` | When to stamp 🤔. `off`: never (only 🧾 and 🧢). `strict`: only "tests pass" in a turn that ran no tests, showed no test output and ran no check script of the agent's own. `expected`: also other claim types that expect a receipt when nothing relevant ran (push, merge, deploy, file...). `all`: every unsure claim. `default` means `off` |
 | `check_numbers` | `true` | Also check counts like "changed 3 files" |
-| `retention_days` | `30` | How long receipts are kept |
+| `retention_days` | `30` | How long receipts (and the session ledger) are kept |
+| `cross_turn` | `true` | Session ledger: a claim about earlier work ("I pushed that earlier", "tests passed in the last turn") can cite an earlier turn of the same session; the footer says `turn N`. `false`: every claim is judged on its own turn only |
+| `verify_artifacts` | `true` | Fabricated-artifact detector: a claimed commit SHA that is no object in the session's repo, or a claimed branch with no local, remote-tracking or tag ref, gets 🧢 (read-only, hardened `git` in the session's working directory, no network) |
 | `board.team_profiles` | unset (off) | Cap Board team view: `all`, or a list of profile names, to also show those profiles' stores (claims, cited commands and evidence lines). Off by default: the board shows only the profile it runs in. Even when set, only the CLI (`hermes nocap board`, a CLI session's `/capscore board`) and the dashboard tab show the team view; `/capscore board` in a gateway chat (Telegram, Discord, ...), the TUI or Desktop always shows the current profile |
 | `board_sources` | `""` | Team view only: extra stores beside the team profiles, `label=path` entries separated by `:` (a Hermes home, a `receipts.jsonl`, a folder searched for them up to 6 levels and 2000 folders deep, never through a symlink, or a glob). Also `NOCAP_BOARD_SOURCES` |
 | `board_min_claims` | `10` | Claims a row needs before the board shows and ranks its rates |
 | `self_verify_http` | `false` | Let `/cap` send one HTTP HEAD to a URL the agent says is live (public addresses only, no redirects, 3 s timeout) |
 | `desktop_chips` | `auto` | Hermes Desktop receipt chips. `auto`: while the desktop half is on (it checks in every 10 minutes). `on`: always on Desktop. `off`: text footer on Desktop too. Never on other surfaces |
+| `discord_buttons` | `off` | Discord only. `off`: the compact Discord footer (stamps, claims and evidence in code spans, ≤ 1000 characters, never split across messages). `on`: a one-line summary in the reply, plus a verdict-coloured embed with **🧢 Call cap** and **🧾 Show receipts** buttons attached to it (only the person the reply answered can click). See [docs/DISCORD.md](docs/DISCORD.md) |
 
 `plugins.entries.no-cap.allow_gateway_injection: true` (one level up, a Hermes permission) lets `/cap` send its steer
 itself in gateway-backed sessions. Without it `/cap` prints the steer for you to paste.
@@ -255,6 +289,12 @@ The current release fixes the error classes that sample found. Re-scored on the 
 blind): 🧢 8 of 8 visible stamps correct (the 3 wrong ones are gone, all 8 right ones kept), 🧾 86/96 = 0.90
 (95% CI 0.82-0.94), and 🤔 hidden by default. Method, error classes and limits, as aggregates only: [eval/README_METHOD.md](eval/README_METHOD.md).
 
+**Run it yourself:** `hermes nocap battery` (or `/nocap battery`) feeds 113 bundled synthetic lie/truth cases (seeded
+from `tests/test_redteam_cases.py` and `eval/cases.py`, plus cross-turn, PR and non-English cases) through the real
+hook entry points and prints precision and recall for 🧢 and 🧾 with Wilson 95% intervals, in about a second. It is a
+synthetic battery, many of its cases were used while tuning, and it says so in its output: the blind real-run numbers
+above are the ones to quote.
+
 Limits:
 
 - 🧢 is rare on real runs: 11 in the blind sample, so its precision is a small-sample number.
@@ -274,14 +314,26 @@ Limits:
   secret, URL passwords, provider tokens, AWS keys, JWT/Discord tokens, PEM keys; `tests/test_redaction.py`); ids are
   stored as they are. Pruned after `retention_days` and halved past 20 MB. `/nocap purge` deletes the store and the
   scorecard.
+- **Session ledger** (`cross_turn`, on by default): `ledger.jsonl` in the same folder (`0600`, folder `0700`), one line
+  per checked turn: session id, turn id, turn number, and per tool call of that turn the parsed facts (tool name,
+  command up to 160 characters, exit code, error line, test summary lines, git facts such as push refs, commit SHA and
+  PR numbers and states, SHAs seen, paths written, and flags such as "edited code"). Never raw output, numbers or URLs.
+  The same secret masker runs on every field. At most 100 turns and 400 calls per session are kept (the newest), the
+  same `retention_days` applies, and `/nocap purge` deletes it.
 - **Network:** none by default. With `self_verify_http: true`, `/cap` may send one HTTP HEAD request to a URL the
   agent claimed is live, and only to a public address: the host is resolved first and refused if any address is
   loopback, link-local (cloud metadata such as 169.254.169.254), private, carrier-grade NAT, unique-local, multicast or
   reserved (or a `.local`/`.internal` name); the request goes to the address that was checked; redirects are not
   followed; 3 s timeout. Tested in `tests/test_verify_http.py`.
-- **Commands it runs:** only during `/cap`, two read-only git commands as argument lists (no shell) in the session's
-  working directory, 5 s timeout, no fetch: `git cat-file -t <sha>` and `git rev-parse --verify <ref>`. It never
-  re-runs tests or builds.
+- **Commands it runs:** read-only git commands as argument lists (no shell) in the session's working directory, with
+  a timeout and no fetch. During `/cap`: `git cat-file -t <sha>` and `git rev-parse --verify <ref>` (5 s). At reply
+  time, only when a reply claims a SHA or a branch that no tool call backs (`verify_artifacts`, at most 8 calls per
+  reply, 3 s each): `git rev-parse --is-inside-work-tree --is-shallow-repository`, `git config --get-regexp` (partial
+  clone check), `git cat-file -e <sha>` and `git for-each-ref refs/heads/ refs/remotes/ refs/tags/`. Every git call
+  is hardened against an untrusted repo: `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`, `-c
+  core.hooksPath=/dev/null -c core.fsmonitor=false -c protocol.allow=never`, no pager, no lazy fetch, and inherited
+  `GIT_*` variables dropped (`tests/test_artifacts.py` runs it against a malicious `.git/config`). It never re-runs
+  tests or builds.
 - **Cap Board reads:** the dashboard tab and `/capscore board` read the current profile's own store. Only with the
   `board.team_profiles` opt-in, and only in the CLI or the dashboard, they also read other profiles' stores
   (`<root>/profiles/<name>/plugin-data/…/receipts.jsonl`, opened read-only) and the `board_sources` /
@@ -311,17 +363,46 @@ Limits:
   per-turn skill names the Cap Board already records; the session's loaded skills are kept in memory only). Approved coach rules reach the model through `pre_llm_call` as
   labelled context, only in scope, never as a system-prompt edit. No Cap never writes skills, memory or config; with
   `--apply` it sends one message asking the agent to make the approved skill or memory edit with its own tools.
+- **Discord:** every Discord reply gets the compact Discord footer (text only). With `discord_buttons: on`, a listener
+  on Hermes's discord.py client (handed over by `ctx.register_platform_handler("discord", …)`) edits **the bot's own
+  reply** to add an embed and two buttons, and answers button clicks privately (ephemeral). It never reads other
+  people's messages' content (it ignores any message not authored by the bot), never posts a new message, and edits
+  nothing else. It stores `discord_receipts.json` next to the receipts (`0600`, atomic write, at most 500 entries,
+  through the same redaction): receipt id → session id, turn id, session key, the user id the reply answered, and the
+  chat and thread ids. No claim text. `/nocap purge` deletes it. 🧢 Call cap runs `/cap` (same rules as above).
 - **The demo:** `demo/stub_model.py` is a scripted model on 127.0.0.1. It is test scaffolding, not part of the plugin.
+  `hermes nocap demo --ladder` runs `/bin/sh demo/run_ladder.sh` (an argv list, 25-minute timeout, output in a new
+  0700 temp folder unless `--out` names one; `/nocap demo ladder`
+  starts the same script in the background, CLI/TUI only, never from a gateway chat). The script makes a fresh
+  `HERMES_HOME` under `/tmp`, points `GIT_CONFIG_GLOBAL` at a throwaway file, installs this plugin there, starts the
+  stub on the first free port in 8765-8799 on 127.0.0.1, and uses `uv` to fetch pyte, Pillow and pytest into a
+  throwaway venv (that fetch is the one network use, and it is the demo's, not the plugin's).
+- **Cards and exports it writes:** `/nocap verdict` writes `verdict.svg`/`verdict.png` and `/capscore compare` writes
+  `compare.svg`/`compare.png` in its own store folder (they quote claims and cited commands, already redacted; `/nocap
+  purge` deletes them with the store). `hermes nocap export --out` and `hermes nocap metrics --file` write the file you
+  name (`0600`, atomic temp file + rename; every string re-passed through the secret masker; CSV cells that start like
+  a formula are prefixed with `'`). Metrics are a file in the Prometheus text format: no port, no listener.
 
 ## Known limits and what is not tested
 
-- English claims only. Claims inside code blocks and quotes are ignored on purpose.
+- Claims are read in English, plus Chinese, Thai and Spanish for tests, push, merge and deploy (with negation, future,
+  conditional and question near-misses per language). Other claim kinds in those languages, and completion phrases in
+  a few other languages ("完了しました", "готово", "erledigt"), are recorded as a hidden 🤔 for `/nocap all`, never
+  stamped. Claims inside code blocks and quotes are ignored on purpose.
 - Long inputs are read in a window, so no hook can stall Hermes (every parser stays under 50 ms of CPU time on 100 KB of
   adversarial input; `tests/test_redos.py`, `scripts/redos_timings.py`). Per tool output: the first 8 KB and the last
   32 KB, plus up to 400 summary or failure lines from the middle (the full output is never stored). A longer run that
   exited non-zero never earns 🧾. Per command: the first 16 KB. Per reply: the first 64 KB, and claims are read from
   up to 10,000 characters of candidate sentences.
-- Evidence comes from the same turn only. "I pushed that earlier" gets no receipt, even if it is true.
+- Earlier turns count only for a claim that says it is about earlier work ("earlier", "in the last turn", "already").
+  A present-tense claim ("all tests pass") is judged on its own turn, because you may have changed things between
+  turns. A code edit in any later turn makes an earlier test run stale, and an earlier turn's 🧢 is dropped when a later
+  call supersedes it. Only the newest 100 turns / 400 calls per session are kept. A PR number ("merged PR #42") is
+  looked up in every gh output of the session; with none it is 🤔, and 🧢 needs gh to have shown #42 in another state
+  or not found.
+- The artifact detector only checks a normal (not shallow or partial) clone in the session's working directory, and
+  skips a SHA or branch that any command or output of the session named (it may live in another clone, or have been
+  deleted after a merge).
 - 🧢 for files and builds is switched off: on real runs most failed writes were redone another way (sed, heredocs)
   and chained builds made exit codes unreliable. They get 🧾 or an unstamped 🤔.
 - A count claim against a failing run is not a 🧢. In one demo run the agent said "pytest: 44 passed" after
@@ -341,7 +422,10 @@ Limits:
   (and if the model repeats it there, it is removed). A chip whose chat id the host doesn't report yet shows "checking
   receipts…" until it does.
 - Desktop is tested end to end only with the scripted model, on macOS, against the installed build of 8acb7f6.
-- Not tested: Discord and Telegram sessions end to end; real models other than one local Qwen3-4B (three
+- Discord: tested with Hermes's real Discord adapter (send path, splitter, plugin wiring, hook dispatch) and real
+  discord.py objects over a fake connection (`tests/test_discord_hermes.py`), not yet on a live Discord server.
+  Telegram gets the generic footer: a Telegram bot never sees its own replies, so there is nothing to attach buttons to.
+- Not tested: Discord and Telegram sessions end to end on a live server; real models other than one local Qwen3-4B (three
   runs); Linux and Windows; the catalog install path; a real conflict with another enabled reply-rewriting plugin
   (unit-tested only).
 

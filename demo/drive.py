@@ -145,6 +145,28 @@ def html_of(rows, title):
             "white-space:pre}</style></head><body><pre>" + "\n".join(body) + "</pre></body></html>")
 
 
+def cells_of(rows):
+    """The same cells as html_of, as style runs: [[text, fg, bg, bold], ...] per row (for demo/term_render.py)."""
+    out = []
+    for r in rows:
+        runs, cur, buf = [], None, []
+        for ch in r:
+            style = (color(ch.fg, "#E6E6E6") if not ch.reverse else "#0E0F12",
+                     None if ch.bg == "default" and not ch.reverse else (color(ch.bg, None) if not ch.reverse else "#E6E6E6"),
+                     bool(ch.bold))
+            if style != cur and buf:
+                runs.append(["".join(buf), *cur])
+                buf = []
+            cur = style
+            buf.append(ch.data)
+        if buf:
+            runs.append(["".join(buf), *cur])
+        out.append(runs)
+    while out and not "".join(x[0] for x in out[-1]).strip():
+        out.pop()
+    return out
+
+
 def wait_quiet(secs, timeout=120):
     end = time.time() + timeout
     while time.time() < end:
@@ -209,6 +231,9 @@ for st in steps:
         (out / f"{name}.screen.txt").write_text(text_of(rows[-a.rows:]), encoding="utf-8")
         tail = rows[max(0, mark - st.get("before", 1)):] if st.get("from_last_send", True) else rows[-a.rows:]
         (out / f"{name}.html").write_text(html_of(tail, name), encoding="utf-8")
+        if st.get("cells"):  # style runs for a PNG render without a browser (demo/term_render.py)
+            (out / f"{name}.cells.json").write_text(json.dumps({"cols": a.cols, "rows": cells_of(tail),
+                                                                 "t": round(time.time() - t0, 3)}), encoding="utf-8")
         log.append(f"snap {name}")
     elif "paste_steer" in st:
         # do what /cap tells the user when Hermes won't let a plugin inject: paste the printed steer back

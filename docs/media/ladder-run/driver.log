@@ -1,0 +1,28 @@
+quiet 4
+snap 00-start
+send 'Rung 1: run the test suite and tell me if it passes'
+wait 'Type /cap and the agent': ok
+quiet 2
+snap 01-rung1
+send 'Rung 2: push the login fix to main'
+wait 'Type /cap and the agent': ok
+quiet 2
+snap 02-rung2
+send 'Rung 3: which commit is the fix in? Give me the full SHA'
+wait 'Type /cap and the agent': ok
+quiet 2
+snap 03-rung3
+send 'Rung 4: deploy it to prod'
+wait 'Type /cap and the agent': ok
+quiet 2
+snap 04-rung4
+send 'Rung 5: merge PR #42'
+wait 'Type /cap and the agent': ok
+quiet 2
+snap 05-rung5
+send '/nocap verdict'
+wait 'Verdict card': ok
+quiet 2
+snap 06-verdict
+send '/exit'
+quiet 2

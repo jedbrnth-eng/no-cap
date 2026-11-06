@@ -83,7 +83,9 @@ def test_only_allowlisted_git_runs(repo, monkeypatch):
     for r in (rec("sha", sha=sha[:7]), rec("pushed", branch="main"), rec("tests"), rec("merged", pr=3),
               rec("deployed"), rec("number", value="3")):
         verify.recheck(r, str(path))
-    assert seen and all(a[0] == "git" and tuple(a[3:5]) in verify.READ_ONLY_GIT for a in seen)
+    sub = lambda a: tuple(a[a.index("-C") + 2:a.index("-C") + 4])  # after the hardening flags and -C <cwd>
+    assert seen and all(a[0] == "git" and sub(a) in verify.READ_ONLY_GIT for a in seen)
+    assert all("core.hooksPath=/dev/null" in a and "core.fsmonitor=false" in a for a in seen)
 
 
 def test_url_needs_opt_in(monkeypatch):

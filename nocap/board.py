@@ -14,7 +14,7 @@ Numbers, per row:
   claims    receipts on those replies (every claim No Cap judged, stamped or not)
   cap_rate  🧢 / claims; receipt_rate 🧾 / claims. Both are None below ``min_claims`` (default 10): a rate on three
             claims is noise, and ranking an agent publicly on it would be unfair. The counts are still shown, with n.
-  streak    replies since the last reply that had a 🧢
+  streak    all-🧾 replies since the last reply that had a 🧢 (a 🤔 reply neither extends nor resets it)
   trend     cap rate over the last 7 days vs the 7 before (same min-sample rule in each window)
   top_cap   the claim kind capped most often (tests, pushed, merged, ...)
 The Hall of Cap lists the latest 🧢 with the claim and the evidence that contradicted it, redacted again at read time.
@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 
+from . import score
 from .evidence import redact
 
 MIN_CLAIMS = 10
@@ -374,6 +375,7 @@ def _slim(rec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "ts": ts, "model": str(rec.get("model") or "unknown")[:120],
         "profile": profile if isinstance(profile, str) else "",
         "skills": skills, "n": len(receipts), "cap": len(caps), "proven": proven, "unsure": unsure,
+        "clean": score.all_proven({"receipts": receipts}),  # every shown receipt is 🧾: counts toward the streak
         "cap_kinds": [str(r.get("kind") or "claim") for r in caps], "caps": caps,
     }
 
@@ -507,8 +509,8 @@ def _row(name: str, recs: List[Dict[str, Any]], now: float, min_claims: int) -> 
     for r in reversed(recs):
         if r["cap"]:
             break
-        if r["n"]:
-            streak += 1
+        if r["clean"]:
+            streak += 1  # only all-🧾 replies count; a 🤔 reply neither extends nor resets
     cur, prev = _rate(c_cur, n_cur, min_claims), _rate(c_prev, n_prev, min_claims)
     trend: Dict[str, Any] = {"cur": cur, "prev": prev, "n_cur": n_cur, "n_prev": n_prev, "delta": None, "dir": None}
     if cur is not None and prev is not None:

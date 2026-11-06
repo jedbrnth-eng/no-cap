@@ -8,6 +8,15 @@ Only these run, and only with argv lists (no shell):
   * url claims: one HTTP HEAD request, only when the user turns on `self_verify_http`, only to a public address
     (checked after DNS resolution), no redirects, 3 s timeout (see http_head)
 Everything else (tests, merges, deploys, numbers) becomes a suggested command in the /cap steer.
+
+Fabricated-artifact detector (reply time, `verify_artifacts`, default on): a claimed SHA that is no object in the
+session's repo (`git cat-file -e`) or a claimed branch with no local, remote-tracking or tag ref (`git for-each-ref`)
+gets 🧢. Local and read-only, in the session's working dir only.
+
+Every git call here is an argv list (no shell) with a timeout, and is hardened against an untrusted repo's own
+config: GIT_CONFIG_NOSYSTEM=1, GIT_CONFIG_GLOBAL=/dev/null, `-c core.hooksPath=/dev/null`, `-c core.fsmonitor=false`,
+`-c protocol.allow=never` (no transport, so no network), no pager, no lazy fetch, and inherited GIT_* variables
+(GIT_DIR and friends) dropped.
 """
 from __future__ import annotations
 
@@ -25,23 +34,45 @@ from typing import Any, Dict, List, Optional, Tuple
 from .verdict import CAP, NO_CAP
 
 SHA_OK = re.compile(r"^[0-9a-f]{7,40}$")
-REF_OK = re.compile(r"^(?!-)[\w./-]{1,200}$")
+REF_OK = re.compile(r"^(?!-)(?!.*\.\.)[\w./-]{1,200}$")
 READ_ONLY_GIT = {("cat-file", "-t"), ("rev-parse", "--verify")}
 TIMEOUT = 5
+ARTIFACT_TIMEOUT = 3
+MAX_ARTIFACT_CHECKS = 8  # git calls per reply at most (each well under 50 ms on a normal repo)
+HARDEN = ("-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "protocol.allow=never",
+          "-c", "core.pager=cat", "-c", "credential.helper=", "-c", "core.sshCommand=false")
+
+
+def git_env() -> Dict[str, str]:
+    """The environment for every git call: the untrusted repo can't pull in system/global config, hooks, a pager,
+    a lazy fetch or a credential prompt, and a GIT_DIR / GIT_WORK_TREE exported by the agent is ignored."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env.update({"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_TERMINAL_PROMPT": "0",
+                "GIT_OPTIONAL_LOCKS": "0", "GIT_NO_LAZY_FETCH": "1", "GIT_PAGER": "cat", "PAGER": "cat",
+                "GIT_ASKPASS": "", "SSH_ASKPASS": "", "GIT_NO_REPLACE_OBJECTS": "1"})
+    return env
+
+
+def run_git(cwd: str, args: List[str], timeout: float = TIMEOUT) -> Optional[Tuple[int, str, str]]:
+    """(returncode, stdout, stderr) of one hardened, read-only git call in cwd, or None if it couldn't run."""
+    if not cwd or not os.path.isdir(cwd):
+        return None
+    argv = ["git", "--no-pager", *HARDEN, "-C", cwd, *args]
+    try:
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, env=git_env(),  # argv list, no shell
+                           stdin=subprocess.DEVNULL, shell=False)
+    except Exception:
+        return None
+    return p.returncode, p.stdout[:200_000], p.stderr[:4000]
 CREATE_VERBS = re.compile(r"\b(creat\w*|add(ed|s)?|wr[io]te|written|sav(ed|es)|generat\w*|new file|scaffold\w*|"
                           r"exports?|exported|dump(ed)?|copied|moved|renamed|made)\b")
 
 
 def _git(cwd: str, sub: Tuple[str, str], arg: str) -> Optional[str]:
-    if sub not in READ_ONLY_GIT or not cwd or not os.path.isdir(cwd):
+    if sub not in READ_ONLY_GIT:
         return None
-    argv = ["git", "-C", cwd, sub[0], sub[1], arg]
-    try:
-        p = subprocess.run(argv, capture_output=True, text=True, timeout=TIMEOUT,
-                           env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"})
-    except Exception:
-        return None
-    return p.stdout.strip() if p.returncode == 0 else None
+    res = run_git(cwd, [sub[0], sub[1], arg])
+    return res[1].strip() if res and res[0] == 0 else None
 
 
 def _file(r, cwd) -> Optional[Tuple[str, str]]:
@@ -263,3 +294,115 @@ def recheck(r: Dict[str, Any], cwd: str, allow_http: bool = False) -> Optional[T
     except Exception:
         return None
     return None
+
+
+# ---- fabricated-artifact detector (reply time) ---------------------------------------------------------------------
+SHA_CONTEXT_RE = re.compile(r"(?i)\b(?:commit(?:ted|s)?|head|sha|pushed|merged|landed|rev(?:ision)?|cherry-pick\w*|"
+                            r"tagged|rebased|reverted|squash\w*|amend\w*)\b")
+NOT_GIT_HASH_RE = re.compile(r"(?i)\b(?:md5|sha-?(?:1|224|256|384|512)sum|sha-?256|sha-?512|checksum|digest|hash of|"
+                             r"image|container|docker|uuid|request id|trace id|build id|run id|etag|integrity|blob)\b")
+
+
+def _repo_state(cwd: str) -> Optional[str]:
+    """"ok" for a normal work tree (the only kind checked); None if not a repo, shallow, partial or unreadable:
+    there an object can be missing locally and still exist, so a missing SHA proves nothing."""
+    res = run_git(cwd, ["rev-parse", "--is-inside-work-tree", "--is-shallow-repository"], ARTIFACT_TIMEOUT)
+    if not res or res[0] != 0 or res[1].split() != ["true", "false"]:
+        return None
+    cfg = run_git(cwd, ["config", "--get-regexp", r"^(extensions\.partialclone|remote\..*\.promisor)$"],
+                  ARTIFACT_TIMEOUT)
+    if cfg is None or cfg[0] not in (0, 1) or cfg[1].strip():
+        return None
+    return "ok"
+
+
+def sha_exists(cwd: str, sha: str) -> Optional[bool]:
+    """True/False from `git cat-file -e <sha>` (an ambiguous short SHA counts as existing); None if unknown."""
+    if not SHA_OK.match(sha or ""):
+        return None
+    res = run_git(cwd, ["cat-file", "-e", sha], ARTIFACT_TIMEOUT)
+    if res is None:
+        return None
+    code, _, err = res
+    if code == 0 or "ambiguous" in err.lower():
+        return True
+    if code in (1, 128) and (not err.strip() or re.search(r"(?i)not a valid object name", err)):
+        return False
+    return None
+
+
+def branch_exists(cwd: str, branch: str) -> Optional[bool]:
+    """Is there a local branch, a remote-tracking branch on any remote, or a tag with that name? None if unknown."""
+    if not REF_OK.match(branch or ""):
+        return None
+    res = run_git(cwd, ["for-each-ref", "--format=%(refname)", "refs/heads/", "refs/remotes/", "refs/tags/"],
+                  ARTIFACT_TIMEOUT)
+    if res is None or res[0] != 0:
+        return None
+    refs = set(res[1].splitlines())
+    if f"refs/heads/{branch}" in refs or f"refs/tags/{branch}" in refs:
+        return True
+    return any(r.startswith("refs/remotes/") and r.split("/", 3)[-1] == branch for r in refs if r.count("/") >= 3)
+
+
+def _same_repo(where: str, cwd: str) -> bool:
+    if not where or where in (".", "./"):
+        return True
+    try:
+        w = Path(os.path.expanduser(where))
+        w = w if w.is_absolute() else Path(cwd) / w
+        return os.path.realpath(w) == os.path.realpath(cwd)
+    except Exception:
+        return False
+
+
+def check_artifacts(receipts: List[Dict[str, Any]], cwd: str, session_evs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Turn 🤔 into 🧢 for a claimed SHA that isn't an object in the session's repo, or a claimed branch that no ref
+    has. Only unproven receipts are looked at, only when every git call of the session ran in this repo, and never
+    for a SHA or branch that any tool output or command of the session named (it may live in another clone, or have
+    been deleted after a merge)."""
+    from .verdict import CAP, NO_RECEIPT
+    todo = [r for r in receipts if r.get("verdict") == NO_RECEIPT and (
+        (r["kind"] in ("sha", "committed") and (r.get("claim") or {}).get("sha"))
+        or (r["kind"] == "pushed" and (r.get("claim") or {}).get("branch")))]
+    if not todo or not cwd:
+        return receipts
+    if any(e.get("where") and re.search(r"(?:^|&&|;)\s*cd\s|\bgit\s", str(e.get("cmd") or ""))
+           and not _same_repo(str(e["where"]), cwd) for e in session_evs or []):
+        return receipts  # the session worked in another repo too: the artifact may live there
+    if _repo_state(cwd) != "ok":
+        return receipts
+    seen_shas = [str(s) for e in session_evs or [] for s in (e.get("shas") or []) + [e.get("head_sha") or ""] if s]
+    seen_shas += [str((e.get("git") or {}).get("commit") or "") for e in session_evs or []]
+    cmds = " ".join(str(e.get("cmd") or "") for e in session_evs or [])
+    out, n = [], 0
+    for r in receipts:
+        if r not in todo or n >= MAX_ARTIFACT_CHECKS:
+            out.append(r)
+            continue
+        c = r.get("claim") or {}
+        text = r.get("text") or ""
+        if r["kind"] in ("sha", "committed"):
+            sha = str(c.get("sha") or "").lower()
+            if not (7 <= len(sha) <= 12 or len(sha) == 40) or any(x and (x.startswith(sha) or sha.startswith(x))
+                                                                    for x in seen_shas if len(x) >= 7):
+                out.append(r)
+                continue
+            if not SHA_CONTEXT_RE.search(text) or NOT_GIT_HASH_RE.search(text):
+                out.append(r)
+                continue
+            n += 1
+            if sha_exists(cwd, sha) is False:
+                r = dict(r, verdict=CAP, why="sha not found in repo", quote=f"git cat-file -e {sha}: sha not found in repo",
+                         artifact=True)
+        else:
+            b = str(c.get("branch") or "")
+            if re.search(r"(?<![\w/.-])" + re.escape(b) + r"(?![\w/-])", cmds):
+                out.append(r)
+                continue
+            n += 1
+            if branch_exists(cwd, b) is False:
+                r = dict(r, verdict=CAP, why=f"branch {b} not found in repo",
+                         quote=f"no refs/heads/{b} and no remote-tracking ref for it", artifact=True)
+        out.append(r)
+    return out
