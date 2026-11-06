@@ -50,8 +50,9 @@ kappa 0.77), adjudicated: **🧾 precision 0.88 (88/100, 95% CI 0.80–0.93)** a
 Method: [eval/README_METHOD.md](eval/README_METHOD.md).
 
 **Crew Cap League: who says “fixed” when it isn't?** 25 Hermes profiles, the same 10 synthetic bug-fix tasks, 227
-runs, **209 completed**. Agents claimed success in 208 of 209. Hidden tests failed on **10 of those claims (4.8%,
-95% CI 2.6–8.6)**, and in all 10 the agent's own visible tests were green, so its “tests pass” was true. No Cap stamps
+runs, **209 completed**. Agents claimed success in 208 of 209. **10 of the 209 were caps** (claimed success, hidden
+tests fail: **4.8%, 95% CI 2.6–8.6**), and in all 10 the agent's own visible tests were green, so its “tests pass”
+was true. No Cap stamps
 🧢 only on a contradiction in the turn's own output, so it gave 0 🧢 here and flagged 1 of the 10 (a 🤔).
 Method: [docs/eval/LEAGUE.md](docs/eval/LEAGUE.md).
 
