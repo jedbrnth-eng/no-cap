@@ -313,8 +313,10 @@ class Engine:
                          f"them back; the next reply gets re-scored.")
         else:
             lines.append("🧢 Cap called. Hermes didn't let No Cap send the steer from here (gateway-backed sessions, "
-                         "which on current Hermes includes the classic CLI, need "
-                         "`plugins.entries.no-cap.allow_gateway_injection: true`). Paste this as your next message "
+                         "which on current Hermes includes the classic CLI and Desktop, need "
+                         "`plugins.entries.no-cap.allow_gateway_injection: true`; turn it on with "
+                         "`hermes config set plugins.entries.no-cap.allow_gateway_injection true`). Paste this as your "
+                         "next message "
                          "and the reply gets re-scored:\n\n" + steer)
         return "\n".join(lines)
 
@@ -397,8 +399,8 @@ class Engine:
             return "ℹ️ Desktop chips: on (forced). Without the desktop half enabled, Desktop shows a raw ::nocap line."
         if desktop.desktop_live(Path(self.data_dir())):
             return "✅ Desktop chips: auto, chips on: the desktop half said hello in the last 30 minutes."
-        return ("ℹ️ Desktop chips: auto, the desktop half hasn't said hello, so Desktop gets the text footer. Enable "
-                "No Cap in Desktop → Capabilities → Plugins for clickable receipt chips.")
+        return ("ℹ️ Desktop chips: auto, the desktop half hasn't said hello, so Desktop gets the text footer. Turn "
+                "it on in Desktop → Capabilities → Plugins → No Cap → Desktop (a switch) for clickable receipt chips.")
 
     def nocap(self, raw_args: str = "", session_id: str = "") -> str:
         arg = (raw_args or "").strip().lower()

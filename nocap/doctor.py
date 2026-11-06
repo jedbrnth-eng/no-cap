@@ -74,7 +74,8 @@ def check(home: Path, mode: str, entry: Dict[str, Any], store_path: Path, record
     else:
         lines.append("ℹ️ /cap can only send its steer itself where Hermes runs plugins inside a local CLI. Gateway-"
                      "backed sessions (Discord, Telegram, TUI, Desktop, and the classic CLI on Hermes builds that "
-                     "route it through the local gateway) need plugins.entries.no-cap.allow_gateway_injection: true. "
+                     "route it through the local gateway) need plugins.entries.no-cap.allow_gateway_injection: true "
+                     "(`hermes config set plugins.entries.no-cap.allow_gateway_injection true`). "
                      "Until then /cap prints the steer for you to paste.")
     err = store_writable(store_path)
     if err:

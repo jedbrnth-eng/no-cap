@@ -267,8 +267,14 @@
       h("div", { className: "nocap-foot" },
         h("span", null, "Cap rate = 🧢 ÷ claims · receipt rate = 🧾 ÷ claims · rates and ranks need ≥" + n + " claims (greyed rows show n) · trend: last 7 days vs the 7 before"),
         h("span", { className: "nocap-scope" }, scopeText(data.scope)),
-        h("span", null, "Stores (read-only): " + (data.sources || []).map(function (s) { return s.label + " " + s.records; }).join(" · ") +
-          (bad ? " · " + bad + " unreadable line(s) skipped" : ""))));
+        h("span", null, storesLine(data.sources, bad))));
+  }
+
+  // The footer's store line. A fresh install has no store file yet, so say so instead of trailing off.
+  function storesLine(sources, bad) {
+    var list = (sources || []).map(function (s) { return s.label + " " + s.records; }).join(" · ");
+    return "Stores (read-only): " + (list || "none yet · the first checked reply creates this profile's store") +
+      (bad ? " · " + bad + " unreadable line(s) skipped" : "");
   }
 
   // Plain text from the server's scope (React escapes it): the board shows this profile only unless the
@@ -279,5 +285,6 @@
     return "This profile only (" + (sc.profile || "default") + ") · set board.team_profiles for a team view";
   }
 
+  CapBoard.storesLine = storesLine;  // for tests/js/board.test.mjs
   window.__HERMES_PLUGINS__.register("no-cap", CapBoard);
 })();

@@ -118,6 +118,43 @@ Once the catalog entry is merged: `hermes plugins install no-cap`. From a clone:
 `git clone https://github.com/jedbrnth-eng/no-cap && hermes plugins install "file://$PWD/no-cap" --enable`. Hooks load at session start, so restart running sessions (and the gateway)
 after installing.
 
+That is all the CLI needs. For the other surfaces:
+
+- **Hermes Desktop chips:** Desktop installs the desktop half switched **off**, so the No Cap card says "Off" even
+  though the agent half is on. Open Capabilities → Plugins, search "no cap", open the card and turn on the
+  **Desktop** switch. Until then Desktop chats get the text footer.
+- **Let /cap send its steer** (Desktop, TUI, Discord, Telegram and other gateway-backed chats):
+  `hermes config set plugins.entries.no-cap.allow_gateway_injection true`. Without it, **Call /cap** / `/cap` prints
+  the steer for you to paste. In the install run below, Desktop picked the setting up on the next `/cap`, no restart.
+- **Cap Board:** run `hermes dashboard` (restart it if it was already running) and open the **Cap Board** tab under
+  Plugins.
+
+<details>
+<summary><b>Install run: these steps, from GitHub, in fresh throwaway homes</b></summary>
+
+`hermes plugins install jedbrnth-eng/no-cap --enable` at v0.2.0 into an empty `HERMES_HOME` under `/tmp`, then the
+installed Hermes Desktop app (v0.23.0) and `hermes dashboard` against that home. The model is the scripted
+[`demo/stub_model.py`](demo/stub_model.py); everything else is real. All captures:
+[docs/media/install-run/](docs/media/install-run/).
+
+| Desktop | |
+|---|---|
+| ![The No Cap card right after install: agent half on, Desktop switch off](docs/media/install-run/01-installed-desktop-half-off.png) | ![The 'tests pass' lie as two CAP chips](docs/media/install-run/03-chips.png) |
+| 01 · straight after install: the agent half is on, the **Desktop** switch is off | 03 · "All tests pass ✅" and "pushed to main" as 🧢 chips |
+| ![A chip opened: pytest -q exit 1, 3 failed, 41 passed](docs/media/install-run/04-chip-open.png) | ![Call /cap: the agent re-ran pytest, fixed auth.py and retracted](docs/media/install-run/05-call-cap-rescored.png) |
+| 04 · a chip opened: call 1, `pytest -q`, exit 1, "3 failed, 41 passed" | 05 · **Call /cap** (with `allow_gateway_injection` on): re-scored 🧾 chips |
+| ![The status-bar Receipts list](docs/media/install-run/06-receipts-popover.png) | ![Call /cap before allow_gateway_injection: the steer to paste](docs/media/install-run/05a-call-cap-default-config.png) |
+| 06 · the status-bar Receipts list for this chat | 05a · **Call /cap** with the default config: the steer to paste |
+
+| Dashboard Cap Board | |
+|---|---|
+| ![Empty Cap Board on a fresh install](docs/media/install-run/10-board-empty.png) | ![Cap Board after one stub turn](docs/media/install-run/11-board-after-1-turn.png) |
+| 10 · fresh install, no replies yet (captured before this PR's "none yet" store line) | 11 · one `hermes chat` turn later, without a reload: 2 🧢 in the Hall of Cap |
+| ![Cap Board after five turns](docs/media/install-run/12-board-after-5-turns.png) | ![Cap Board, Models view, two models](docs/media/install-run/14-board-models.png) |
+| 12 · five turns (the Lie Ladder's first four rungs added) | 14 · Models view after a `stub/careful-1` turn: its first 🧾 |
+
+</details>
+
 ## How it works
 
 | Hermes surface | What No Cap does with it |
