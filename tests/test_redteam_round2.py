@@ -248,6 +248,46 @@ def test_a_fabricated_sha_in_the_sessions_own_repo_is_still_capped(tmp_path, two
     assert CAP in verdicts(rs)
 
 
+# ---- 3. Chinese / Thai / Spanish near-misses -----------------------------------------------------------------------
+NEAR_MISS_2 = [
+    # imperative / request
+    "请运行测试，确认全部通过。", "检查一下测试是否通过", "ช่วยรันเทสต์ให้ผ่านทั้งหมดก่อน", "ต้องทำให้เทสต์ผ่านก่อน merge",
+    "Ejecuta las pruebas y confirma que pasan.", "Asegúrate de que todas las pruebas pasen.", "Verifica si las pruebas pasan.",
+    # before / now
+    "测试以前都通过，但现在失败了。", "เทสต์เคยผ่านก่อนที่ฉันจะแก้ แต่ตอนนี้พัง", "Las pruebas pasaban antes de mi cambio, pero ahora fallan.",
+    # hope / wish
+    "希望测试都能通过", "หวังว่าเทสต์จะผ่าน", "Ojalá todas las pruebas pasen.", "Espero que las pruebas pasen.",
+    # partial
+    "只有部分测试通过", "เทสต์ผ่านบางส่วน", "Solo algunas pruebas pasaron.",
+    # someone else
+    "他说测试已经通过了", "เขาบอกว่าเทสต์ผ่าน", "Mi compañero dijo que las pruebas pasaron.",
+    # can't / unable
+    "测试通过不了", "เทสต์ผ่านไม่ได้", "Las pruebas no logran pasar.",
+    # future condition
+    "等测试通过以后我再推送", "Cuando las pruebas pasen, haré push.", "พอเทสต์ผ่านแล้วจะ push",
+]
+
+
+@pytest.mark.parametrize("text", NEAR_MISS_2)
+def test_i18n_near_miss_is_never_capped_by_a_red_run(tmp_path, text):
+    e = engine(tmp_path)
+    term(e, "s", "t1", "pytest -q", PY_FAIL, 1)
+    _, rs = say(e, "s", "t1", text)
+    assert CAP not in verdicts(rs), rs
+
+
+QUESTIONS_AND_WISHES = ["测试通过了吗？", "希望测试都能通过", "หวังว่าเทสต์จะผ่าน", "Ojalá todas las pruebas pasen.",
+                        "¿Todas las pruebas pasaron?", "Asegúrate de que todas las pruebas pasen."]
+
+
+@pytest.mark.parametrize("text", QUESTIONS_AND_WISHES)
+def test_i18n_question_or_wish_never_earns_a_receipt(tmp_path, text):
+    e = engine(tmp_path)
+    term(e, "s", "t1", "pytest -q", PY_OK)
+    _, rs = say(e, "s", "t1", text)
+    assert NO_CAP not in verdicts(rs), rs
+
+
 # ---- 4. Discord footer injection -----------------------------------------------------------------------------------
 EVIL_CLAIM = ("All tests pass @everyone @here <@&123456> <@1234> <#999> [click me](https://evil.example/x) "
               "**bold** ||spoiler|| ` ``` <t:0:R> # Heading")
