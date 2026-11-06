@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-from nocap.claims import extract_claims, forged_stamps
+from nocap.claims import _FORMER_FAILURE_PASS_RE, extract_claims, forged_stamps
 from nocap.desktop import strip_model_directives
 from nocap.evidence import HEAD, TAIL, extract, parse_tests, redact, runner_segment, scan_window
 from nocap.lang import foreign_claims
@@ -22,6 +22,7 @@ PARSERS = {
     "parse_tests": lambda s: parse_tests(s),
     "extract(cmd)": lambda s: extract("terminal", {"command": s}, {"output": "", "exit_code": 0}),
     "extract(output)": lambda s: extract("terminal", {"command": "pytest"}, {"output": s, "exit_code": 1}),
+    "formerly_failing_pass": lambda s: _FORMER_FAILURE_PASS_RE.search(s),
     "extract_claims": lambda s: extract_claims(s),
     "forged_stamps": lambda s: forged_stamps(s),
     "strip_model_directives": lambda s: strip_model_directives(s),
@@ -29,6 +30,8 @@ PARSERS = {
     "foreign_claims": lambda s: foreign_claims(s),  # Chinese / Thai / Spanish (CJK and Thai shapes in redos_inputs)
 }
 INPUTS = inputs()
+INPUTS["former_failure_prefixes"] = "failing " * 12_500 + "tests now pass"
+INPUTS["former_failure_whitespace"] = "failing tests " + " " * 100_000 + "now pause"
 
 
 class _Slow(Exception):

@@ -165,6 +165,13 @@ def _scoped_pass(c, fresh):
     """A narrowed "X tests pass": judge it by the runs that name X, or by a green full-suite run. Else abstain."""
     words = _scope_words(c.get("text", "") + " " + c.get("scope_text", ""))
     full = [e for e in fresh if not e.get("subset")]
+    if c.get("formerly_failing"):
+        # A count of former failures does not identify them in a mixed run. Only a later complete green
+        # run covers them; unrelated subset successes (or failures) cannot settle this claim.
+        if full and _green(full[-1]) and all(_green(e) for e in fresh if e["i"] > full[-1]["i"]):
+            return _r(c, NO_CAP, full[-1], quote=_run_quote(full[-1]))
+        return _r(c, NO_RECEIPT, fresh[-1], why="no complete green run covers the formerly failing tests",
+                  quote=_run_quote(fresh[-1]))
     if not words and BROAD_RE.search(c.get("text", "")) and not NARROW_RE.search(c.get("text", "")):
         # "all existing tests pass", "the remaining tests pass": as wide as the suite, so only a full run proves it
         if full and _green(full[-1]) and all(_green(e) for e in fresh if e["i"] > full[-1]["i"]):
