@@ -58,3 +58,19 @@ def test_mixed_progress_report_is_not_a_formerly_failing_pass():
     claims = extract_claims("Two failing tests now pass, three still fail.")
     assert not any(c.get("formerly_failing") for c in claims)
     assert all(r["verdict"] != NO_CAP for r in judge(claims, [run("7 passed in 0.1s", 0)]))
+    assert all(r["verdict"] != NO_CAP for r in judge(claims, [run("3 failed, 2 passed", 1)]))
+
+
+def test_wrapped_runners_are_told_apart():
+    claim = extract_claims("The 2 failing tests now pass.")[0]
+    red = run("2 failed, 3 passed", 1, 1, "yarn jest src/a.test.js")
+    assert judge([claim], [red, run("5 passed", 0, 2, "yarn vitest run")])[0]["verdict"] == NO_RECEIPT
+    assert judge([claim], [red, run("5 passed", 0, 2, "yarn jest")])[0]["verdict"] == NO_CAP
+
+
+@pytest.mark.parametrize("text", ["Three of the failing tests now pass; two still error.",
+                                  "The failing tests now pass, but the lint job is still red."])
+def test_partial_progress_reports_are_never_stamped_by_a_red_run(text):
+    # clause-split: the "now pass" half stands alone and is judged as a success claim, so a red run can't prove it
+    claims = extract_claims(text)
+    assert all(r["verdict"] == NO_RECEIPT for r in judge(claims, [run()]))

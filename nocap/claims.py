@@ -321,8 +321,9 @@ def _tests(cl: str, low: str) -> Optional[Dict[str, Any]]:
     if ff:  # "fixed the 2 failing tests" says something about an earlier run: 🤔 unless a run proves it
         return {"kind": "tests", "passed": None, "failed": None, "total": None, "all_pass": False, "fails": False,
                 "count_only": False, "scoped": True, "fixed_failing": True}
-    if _FORMER_FAILURE_PASS_RE.search(low) and not re.search(r"\bstill\s+(?:fail|failing|broken)\b", low):
-        # (not "two failing tests now pass, three still fail": that half is a failure report, judged as one)
+    if _FORMER_FAILURE_PASS_RE.search(low):
+        if re.search(r"\bstill\s+(?:fail|error|red\b|broken)|\bstill\s+\d+\s+fail", low):
+            return None  # "two failing tests now pass, three still fail": progress, neither a pass nor a fail claim
         # "three failing tests now pass": three describes the old failures, not the current run.
         return {"kind": "tests", "passed": None, "failed": None, "total": None, "all_pass": True, "fails": False,
                 "count_only": False, "scoped": True, "formerly_failing": True}

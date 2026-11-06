@@ -37,3 +37,12 @@ def test_failure_admission_does_not_silence_unproven_success(tmp_path):
     assert engine.on_verify(session_id="s", final_response="The parser tests still fail. Pushed to main.")
     assert engine.on_verify(session_id="s", final_response="All tests pass.")
     assert engine.on_verify(session_id="s", final_response="The failing tests now pass.")
+
+
+def test_contradicted_failure_report_is_still_nudged(tmp_path, monkeypatch):
+    import nocap.engine as engine_mod
+    engine = Engine(lambda: tmp_path, lambda k, d=None: "strict" if k == "mode" else d)
+    cap = {"verdict": CAP, "kind": "tests", "claim": {"kind": "tests", "fails": True, "text": "2 tests still fail."},
+           "why": "the latest run is green", "quote": "", "text": "2 tests still fail."}
+    monkeypatch.setattr(engine_mod, "judge", lambda *a, **k: [cap])
+    assert engine.on_verify(session_id="s", final_response="2 tests still fail.")

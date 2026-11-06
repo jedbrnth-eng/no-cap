@@ -161,9 +161,19 @@ NARROW_RE = re.compile(r"(?i)\b(?:new|newly|added|relevant|affected|related|targ
                        r"regression|these|those|this|that|my|both|two|three|four|five|single|individual)\b")
 
 
+_RUNNERS = {"pytest", "py.test", "jest", "vitest", "mocha", "go", "cargo", "tox", "nox", "unittest", "rspec", "phpunit",
+            "ctest", "dotnet", "mvn", "gradle", "gradlew", "./gradlew", "swift", "xcodebuild", "deno", "bun", "playwright",
+            "cypress", "ava", "tap", "node", "npm", "pnpm", "yarn", "make"}
+_WRAPPERS = {"npm", "pnpm", "yarn", "bun", "make", "node"}
+
+
 def _runner(e) -> str:
-    """The test runner a run used (`pytest`, `go`, `jest`...): the first word of its suite."""
-    return ((e.get("suite") or "").split() or [""])[0]
+    """The test runner a run used (`pytest`, `go`, `jest`...). A wrapper (`yarn jest`) names the runner after it;
+    an unknown shape keeps the whole suite text, so only identical commands compare equal."""
+    words = (e.get("suite") or "").split()
+    known = [w for w in words if w in _RUNNERS]
+    inner = [w for w in known if w not in _WRAPPERS]
+    return (inner or known or [" ".join(words)])[0]
 
 
 def _scoped_pass(c, fresh, runs=()):
@@ -175,8 +185,8 @@ def _scoped_pass(c, fresh, runs=()):
         # run covers them; unrelated subset successes (or failures) cannot settle this claim.
         # ...and it must be the runner that showed them failing: a green `go test` says nothing about pytest failures
         runners = {_runner(e) for e in list(runs) + list(fresh) if not _green(e)}
-        if full and _green(full[-1]) and all(_green(e) for e in fresh if e["i"] > full[-1]["i"]) and (
-                not runners or runners == {_runner(full[-1])}):
+        if full and _green(full[-1]) and all(_green(e) for e in fresh if e["i"] > full[-1]["i"]) and _runner(
+                full[-1]) and (not runners or runners == {_runner(full[-1])}):
             return _r(c, NO_CAP, full[-1], quote=_run_quote(full[-1]))
         return _r(c, NO_RECEIPT, fresh[-1], why="no complete green run covers the formerly failing tests",
                   quote=_run_quote(fresh[-1]))

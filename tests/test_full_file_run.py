@@ -207,3 +207,24 @@ def test_run_inside_tests_dir_counts_when_it_is_the_only_file(tmp_path):
     (tmp_path / "tests" / "test_x.py").write_text("")
     ev = evidence(tmp_path / "tests", "pytest test_x.py")
     assert not ev["subset"] and ev["test_files"] == ["tests/test_x.py"]
+
+
+# ---- orca-flash review, round 2 ----
+def test_monorepo_package_is_not_the_whole_suite(tmp_path):
+    (tmp_path / ".git").mkdir()
+    api, web = tmp_path / "packages/api", tmp_path / "packages/web/__tests__"
+    api.mkdir(parents=True)
+    web.mkdir(parents=True)
+    (api / "package.json").write_text("{}")
+    (api / "a.test.js").write_text("")
+    (web / "x.test.js").write_text("")
+    assert evidence(api, "npx jest a.test.js")["subset"]
+
+
+def test_config_above_the_package_is_read(tmp_path):
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "pytest.ini").write_text("[pytest]\npython_files = *_spec.py\n")
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "setup.py").write_text("")
+    (tmp_path / "pkg" / "test_x.py").write_text("")
+    assert evidence(tmp_path / "pkg", "pytest test_x.py")["subset"]

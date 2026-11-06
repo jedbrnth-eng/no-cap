@@ -258,17 +258,21 @@ _COLLECT_CONFIGS = {"pytest.ini": "python_files", "tox.ini": "python_files", "se
 _COLLECT_JS_CONFIGS = ("jest.config", "vitest.config", "vite.config", "vitest.workspace")
 
 
-def _project_root(run_dir: str) -> Optional[str]:
-    """The nearest directory at or up to four levels above run_dir holding a project marker, else None."""
-    cur = run_dir
+def _project_dirs(run_dir: str) -> List[str]:
+    """run_dir and up to four parents, up to the project root: the `.git` checkout if there is one in reach
+    (a monorepo's packages are not separate suites), else the nearest marker. [] when no marker is in reach."""
+    chain, cur = [], run_dir
     for _ in range(5):
-        if any(os.path.lexists(os.path.join(cur, m)) for m in _ROOT_MARKERS):
-            return cur
+        chain.append(cur)
         parent = os.path.dirname(cur)
         if parent == cur:
             break
         cur = parent
-    return None
+    git = next((i for i, d in enumerate(chain) if os.path.lexists(os.path.join(d, ".git"))), None)
+    near = next((i for i, d in enumerate(chain) if any(os.path.lexists(os.path.join(d, m)) for m in _ROOT_MARKERS)),
+                None)
+    top = git if git is not None else near
+    return [] if top is None else chain[:top + 1]
 
 
 def _custom_collection(root: str) -> bool:
@@ -327,12 +331,13 @@ def _full_file_run(seg: str, cmd: str, workdir: str) -> List[str]:
         run_dir = os.path.abspath(workdir)
         # inventory the whole project, not just the directory the run happened to start in (`cd tests && pytest
         # test_x.py` must still see ../test_root.py). No marker: only a run outside a tests/ directory qualifies.
-        root = _project_root(run_dir)
-        if root is None:
+        dirs = _project_dirs(run_dir)
+        if not dirs:
             if os.path.basename(run_dir) in ("tests", "test", "__tests__", "spec", "specs"):
                 return []
-            root = run_dir
-        if _custom_collection(root):
+            dirs = [run_dir]
+        root = dirs[-1]
+        if any(_custom_collection(d) for d in dirs):  # a config anywhere from the run's dir up to the root
             return []
         selected = {os.path.normpath(os.path.relpath(os.path.abspath(os.path.join(run_dir, t)), root))
                     for t in targets}

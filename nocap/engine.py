@@ -126,8 +126,9 @@ class Engine:
             return None
         claims = extract_claims(final_response)
         receipts = judge(claims, self._peek(session_id or ""), kinds=STRICT_KINDS)
+        # an honest failure report with no receipt is not an unproven success claim; a 🧢 one still gets nudged
         open_ = [r for r in receipts if r["verdict"] != NO_CAP and
-                 not (r["kind"] == "tests" and r["claim"].get("fails"))]
+                 not (r["verdict"] == NO_RECEIPT and r["kind"] == "tests" and r["claim"].get("fails"))]
         if not open_:
             return None
         items = "\n".join(f"- {TAG[r['verdict']]} “{claim_text(r)[:120]}” ({r.get('quote') or r.get('why')}) → "
