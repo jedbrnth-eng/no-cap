@@ -227,6 +227,8 @@ def test_doctor_reports_the_desktop_state(tmp_path):
     ctx = make(tmp_path, hello=False)
     out = ctx.commands["nocap"]("doctor")
     assert "Desktop chips: auto" in out and "hasn't said hello" in out
+    # the path a new user actually clicks (install proof): the card's Desktop switch, not just the Plugins page
+    assert "Capabilities → Plugins → No Cap → Desktop" in out
     desktop.write_hello(ctx.state.data_dir, True)
     assert "said hello" in ctx.commands["nocap"]("doctor") and "chips on" in ctx.commands["nocap"]("doctor")
 

@@ -179,6 +179,7 @@ def test_cap_falls_back_to_prompt_when_injection_refused(tmp_path):
     msg = ctx.commands["cap"]("", session_id="s1", session_key="agent:main:discord:dm:1")
     assert "Deployed to production." in msg
     assert "paste" in msg.lower() and "allow_gateway_injection" in msg
+    assert "hermes config set plugins.entries.no-cap.allow_gateway_injection true" in msg
     assert ctx.inject_kwargs == {"session_key": "agent:main:discord:dm:1"}
     tool(ctx, "vercel --prod", "Production: https://x.vercel.app", turn="t2")
     out = reply(ctx, "Deployed to production.", turn="t2")  # user pasted the prompt: still re-scored

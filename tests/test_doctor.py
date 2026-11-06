@@ -98,3 +98,9 @@ def test_problem_count_is_returned_with_the_report(tmp_path):
     d = doctor_mod()
     text, n = d.check(tmp_path / "home", "annotate", {}, tmp_path / "data" / "receipts.jsonl", [], lambda n: None)
     assert n == 0 and "0 problems found" in text
+
+
+def test_injection_hint_gives_the_exact_command(tmp_path):
+    # Install proof (docs/media/install-run): a new user reads the hint, so it names the one command that turns it on.
+    off = run(tmp_path)
+    assert "hermes config set plugins.entries.no-cap.allow_gateway_injection true" in off
