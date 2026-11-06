@@ -88,7 +88,12 @@ class Engine:
             while len(self._turns) > MAX_OPEN_TURNS:
                 self._turns.popitem(last=False)
             index = (calls[-1]["i"] + 1) if calls else 1
-        ev = extract(tool_name, args, result, status=status, index=index, error_message=error_message)
+        try:
+            cwd = self.cwd() or ""  # where a file-scoped test run looks for the repo's other test files
+        except Exception:
+            cwd = ""
+        ev = extract(tool_name, args, result, status=status, index=index, error_message=error_message,
+                     cwd=cwd if isinstance(cwd, str) else "")
         if str(tool_name or "") in SKILL_TOOLS and ev.get("ok") and isinstance(args, dict) \
                 and isinstance(args.get("name"), str):  # a failed load (unknown skill) isn't a skill the turn used
             ev["skill"] = args["name"].strip()[:80]

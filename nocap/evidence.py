@@ -249,7 +249,43 @@ _SUBSET_FLAG_RE = re.compile(r"\s-k\s|\bpytest\b(?:(?!\bpytest\b).)*\s-m\s|::|\s
 _FULL_ARGS = {".", "./", "./...", "...", "tests", "tests/", "test", "test/", "spec", "spec/", "./tests", "./test"}
 
 
-_JS_EXT = (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs")
+_JS_EXT = (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts")
+# where a run's project starts: the nearest of these at or above the run's directory (stat only)
+_ROOT_MARKERS = (".git", "pyproject.toml", "setup.cfg", "setup.py", "pytest.ini", "tox.ini", "package.json")
+# configs that can change which files the runner collects; a pattern override there makes the inventory unknowable
+_COLLECT_CONFIGS = {"pytest.ini": "python_files", "tox.ini": "python_files", "setup.cfg": "python_files",
+                    "pyproject.toml": "python_files", "package.json": "testMatch|testRegex"}
+_COLLECT_JS_CONFIGS = ("jest.config", "vitest.config", "vite.config", "vitest.workspace")
+
+
+def _project_root(run_dir: str) -> Optional[str]:
+    """The nearest directory at or up to four levels above run_dir holding a project marker, else None."""
+    cur = run_dir
+    for _ in range(5):
+        if any(os.path.lexists(os.path.join(cur, m)) for m in _ROOT_MARKERS):
+            return cur
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            break
+        cur = parent
+    return None
+
+
+def _custom_collection(root: str) -> bool:
+    """True when a runner config at root may override the default test-file patterns (or can't be checked).
+    Reads at most 64 KB of each config file that exists; nothing is stored."""
+    names = list(_COLLECT_CONFIGS.items()) + [(f"{b}{e}", r"testMatch|testRegex|\binclude\b|projects")
+                                               for b in _COLLECT_JS_CONFIGS for e in _JS_EXT + (".json",)]
+    for name, keys in names:
+        path = os.path.join(root, name)
+        if not os.path.lexists(path):
+            continue
+        if os.path.islink(path) or not os.path.isfile(path):
+            return True
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            if re.search(keys, fh.read(65536)):
+                return True
+    return False
 
 
 def _test_file(path: str) -> bool:
@@ -265,7 +301,8 @@ def _test_file(path: str) -> bool:
 def _full_file_run(seg: str, cmd: str, workdir: str) -> List[str]:
     """Literal file targets cover a bounded, read-only inventory; uncertainty keeps subset=True.
 
-    Never follow symlinks or read file contents. Limits include all visited entries, not just tests.
+    Never follow symlinks; the only contents read are runner configs, for a test-pattern override. Limits include
+    all visited entries, not just tests.
     Only simple runner invocations are eligible: shell expansion and unknown options are ambiguous.
     """
     if len(seg) >= MAX_SEG or _SUBSET_FLAG_RE.search(" " + cmd):
@@ -285,8 +322,20 @@ def _full_file_run(seg: str, cmd: str, workdir: str) -> List[str]:
             targets.append(t)
         if not targets:
             return []
-        root = os.path.abspath(workdir or os.getcwd())
-        selected = {os.path.normpath(os.path.relpath(os.path.abspath(os.path.join(root, t)), root)) for t in targets}
+        if not workdir or not os.path.isabs(workdir):
+            return []  # a relative or missing root would resolve against the plugin process's cwd
+        run_dir = os.path.abspath(workdir)
+        # inventory the whole project, not just the directory the run happened to start in (`cd tests && pytest
+        # test_x.py` must still see ../test_root.py). No marker: only a run outside a tests/ directory qualifies.
+        root = _project_root(run_dir)
+        if root is None:
+            if os.path.basename(run_dir) in ("tests", "test", "__tests__", "spec", "specs"):
+                return []
+            root = run_dir
+        if _custom_collection(root):
+            return []
+        selected = {os.path.normpath(os.path.relpath(os.path.abspath(os.path.join(run_dir, t)), root))
+                    for t in targets}
         pending, found, count = [(root, 0)], set(), 0
         while pending:
             directory, depth = pending.pop()
@@ -802,7 +851,8 @@ def _numbers(text: str) -> List[str]:
 
 
 def extract(tool_name: str, args: Any, result: Any, status: Optional[str] = None,
-            index: int = 0, error_message: Optional[str] = None) -> Dict[str, Any]:
+            index: int = 0, error_message: Optional[str] = None, cwd: str = "") -> Dict[str, Any]:
+    """`cwd`: the session's recorded working directory (ctx.session_cwd), used only to place a file-scoped test run."""
     args = args if isinstance(args, dict) else {}
     text, exit_code, err, parsed = _decode(result)
     windowed = len(text) > HEAD + TAIL
@@ -855,11 +905,17 @@ def extract(tool_name: str, args: Any, result: Any, status: Optional[str] = None
                                   r"|;\s*echo\b", cmd))
     ev["subset"] = test_cmd and _subset(seg, cmd)
     if ev["subset"]:
-        base = args.get("workdir") or args.get("cwd") or (parsed.get("cwd") if isinstance(parsed, dict) else "") or ""
-        # the inventory root: one `cd` before the runner, or none; `-C`/`--repo` or a later `cd` make it unknown
+        # the inventory root: one `cd` before the runner, or none; `-C`/`--repo` or a later `cd` make it unknown.
+        # A result "cwd" is where the command ended (Hermes reports it only when a `cd` changed it); otherwise the
+        # call's workdir, else the session's cwd. Never the plugin process's own cwd: unknown root = abstain.
         cds = list(re.finditer(r"(?:^|&&|;)\s*cd\s", cmd))
         known = not (wm and not wm.group(1)) and len(cds) <= 1 and (not cds or cds[0].start() < cmd.find(seg))
-        directory = os.path.join(base, ev["where"]) if isinstance(base, str) and ev["where"] else base
+        ended = parsed.get("cwd") if isinstance(parsed, dict) else None
+        base = args.get("workdir") or args.get("cwd") or cwd or ""
+        if isinstance(ended, str) and ended:
+            directory = ended
+        else:
+            directory = os.path.join(base, ev["where"]) if isinstance(base, str) and ev["where"] else base
         files = _full_file_run(seg, cmd, directory) if isinstance(directory, str) and known else []
         if files:
             ev["subset"] = False

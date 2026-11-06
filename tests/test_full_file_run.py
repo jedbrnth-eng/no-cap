@@ -135,3 +135,75 @@ def test_unknown_inventory_root_abstains(tmp_path, command):
         (tmp_path / d).mkdir(parents=True, exist_ok=True)
         (tmp_path / d / "test_x.py").write_text("")
     assert evidence(tmp_path, command)["subset"]
+
+
+def test_root_is_never_the_plugin_process_cwd(tmp_path, monkeypatch):
+    (tmp_path / "test_x.py").write_text("")
+    monkeypatch.chdir(tmp_path)  # the plugin's own cwd holds only test_x.py; the session's repo is unknown
+    ev = extract("terminal", {"command": "pytest test_x.py"}, {"output": "1 passed", "exit_code": 0}, index=1)
+    assert ev["subset"]
+    assert extract("terminal", {"command": "pytest test_x.py", "workdir": "."}, {"output": "1 passed", "exit_code": 0},
+                   index=1)["subset"]
+
+
+def test_session_cwd_and_reported_cwd_place_the_run(tmp_path):
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "test_x.py").write_text("")
+    ok = {"output": "1 passed", "exit_code": 0}
+    assert not extract("terminal", {"command": "pytest test_x.py"}, ok, index=1, cwd=str(tmp_path / "sub"))["subset"]
+    # Hermes reports "cwd" only when the command changed directory: that is where the run happened
+    moved = dict(ok, cwd=str(tmp_path / "sub"))
+    assert not extract("terminal", {"command": "cd sub && pytest test_x.py", "workdir": str(tmp_path)}, moved,
+                       index=1)["subset"]
+
+
+def test_engine_passes_session_cwd(tmp_path):
+    from nocap.engine import Engine
+    (tmp_path / "test_x.py").write_text("")
+    engine = Engine(lambda: tmp_path / "store", lambda k, d=None: "strict" if k == "mode" else d,
+                    cwd=lambda: str(tmp_path))
+    engine.on_tool(tool_name="terminal", args={"command": "pytest test_x.py"},
+                   result={"output": "1 passed", "exit_code": 0}, session_id="s", turn_id="t")
+    assert engine.on_verify(session_id="s", final_response="All tests pass.") is None
+
+
+# ---- cross-family review (orca-flash) findings ----
+def test_vitest_mts_files_block_full_run(tmp_path):
+    (tmp_path / "src").mkdir()
+    for name in ("a.test.ts", "b.test.mts"):
+        (tmp_path / "src" / name).write_text("")
+    assert evidence(tmp_path, "npx vitest run src/a.test.ts")["subset"]
+
+
+@pytest.mark.parametrize("config,body", [("pytest.ini", "[pytest]\npython_files = *_tests.py\n"),
+                                         ("pyproject.toml", "[tool.pytest.ini_options]\npython_files = ['check_*.py']\n"),
+                                         ("jest.config.js", "module.exports = {testMatch: ['**/*.it.js']}\n")])
+def test_runner_pattern_override_abstains(tmp_path, config, body):
+    (tmp_path / config).write_text(body)
+    (tmp_path / ("a.test.js" if config.startswith("jest") else "test_x.py")).write_text("")
+    assert evidence(tmp_path, "npx jest a.test.js" if config.startswith("jest") else "pytest test_x.py")["subset"]
+
+
+def test_plain_runner_config_still_counts(tmp_path):
+    (tmp_path / "pyproject.toml").write_text("[tool.pytest.ini_options]\naddopts = '-q'\n")
+    (tmp_path / "test_x.py").write_text("")
+    assert not evidence(tmp_path, "pytest test_x.py")["subset"]
+
+
+@pytest.mark.parametrize("marker", [".git", "pyproject.toml", None])
+def test_run_inside_tests_dir_sees_the_rest_of_the_project(tmp_path, marker):
+    if marker:
+        (tmp_path / marker).mkdir() if marker == ".git" else (tmp_path / marker).write_text("")
+    (tmp_path / "test_root.py").write_text("")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_x.py").write_text("")
+    assert evidence(tmp_path, "cd tests && pytest test_x.py")["subset"]
+    assert evidence(tmp_path / "tests", "pytest test_x.py")["subset"]
+
+
+def test_run_inside_tests_dir_counts_when_it_is_the_only_file(tmp_path):
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_x.py").write_text("")
+    ev = evidence(tmp_path / "tests", "pytest test_x.py")
+    assert not ev["subset"] and ev["test_files"] == ["tests/test_x.py"]
