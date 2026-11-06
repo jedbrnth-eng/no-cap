@@ -476,6 +476,8 @@ Limits:
   injection unless `allow_gateway_injection` is on. With it on, once, the injected turn ran in the gateway session but
   its output never appeared in the CLI. The paste path (the default) is the one the demo shows.
 - The `pre_verify` nudge text isn't shown in the classic CLI; you see the draft reply, then the check running.
+- Strict mode can only nudge turns that edited files: Hermes fires `pre_verify` only after a file edit in the turn. A
+  turn that claims "fixed it, all tests pass" with no edit still gets its 🧢 stamp, but no nudge.
 - Hermes keeps only the first plugin's `transform_llm_output` rewrite per turn. `doctor` warns when another enabled
   plugin also rewrites replies.
 - The API server surface shows the footer but has no `/cap` or `/nocap`: Hermes passes slash commands sent there to

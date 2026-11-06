@@ -905,6 +905,8 @@ def extract(tool_name: str, args: Any, result: Any, status: Optional[str] = None
     ev["chained"] = _chained(cmd)
     wm = re.search(r"(?:^|&&|;)\s*cd\s+(\"[^\"]+\"|'[^']+'|\S+)|\s-C\s+(\S+)|\s-R\s+(\S+)|--repo[ =](\S+)", cmd)
     ev["where"] = next((g for g in wm.groups() if g), "").strip("\"'") if wm else ""
+    wd = args.get("workdir") or args.get("cwd") if isinstance(args, dict) else ""
+    ev["workdir"] = wd[:300] if isinstance(wd, str) else ""  # the tool's own working dir (another repo, maybe)
     ev["background"] = bool(args.get("background")) or bool(re.search(r"(?<!&)&\s*$|\bnohup\b", cmd))
     ev["masked"] = bool(re.search(r"\|\||\|\s*(?:tail|head|grep|tee|less|cat|sed|awk)\b|;\s*(?:true|exit 0)\b|\|\s*true\b"
                                   r"|;\s*echo\b", cmd))
@@ -1041,7 +1043,7 @@ def summary(ev: Dict[str, Any]) -> Dict[str, Any]:
 _FACT_FLAGS = ("i", "tool", "cmd", "exit", "ok", "error", "test_cmd", "deploy_cmd", "build_cmd", "background", "edit",
                "any_edit", "skip_added", "check_cmd", "where", "suite", "baseline", "chained", "masked", "subset",
                "stopped", "tail_only", "partial", "fail_text", "quiet_silent", "out_empty", "windowed", "no_tests",
-               "head_sha", "diff_files")
+               "head_sha", "diff_files", "workdir")
 _FACT_LISTS = {"paths_written": 10, "paths_edited": 20, "paths_reported": 10, "shas": 20, "test_files": 50}
 
 

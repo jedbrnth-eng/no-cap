@@ -170,14 +170,26 @@ def _mask(text: str) -> str:
     return "".join(chars)
 
 
+# Cyrillic and Greek letters that look like the Latin letters of NO CAP / NO RECEIPT.
+_CONFUSABLE = str.maketrans("АВСЕНІКМОРТХаеорсхіΑΒΕΗΙΚΜΝΟΡΤΧοι", "ABCEHIKMOPTXaeopcxiABEHIKMNOPTXoi")
+STAMP_FORGED_RE = re.compile(r"(?<!`)[🧾🧢🤔📜🎓]\W{0,6}(?:N\W{0,3}O\W{0,3}C\W{0,3}A\W{0,3}P\b|C\W{0,3}A\W{0,3}P\b|"
+                             r"N\W{0,3}O\W{0,3}RECEIPT)", re.I)
+
+
 def forged_stamps(text: str) -> int:
     """How many No Cap stamps the model wrote itself (copied or invented)."""
     if not isinstance(text, str):
         return 0
-    t = unicodedata.normalize("NFKC", text[:MAX_SCAN])
-    t = re.sub(r"[\u200b-\u200f\u2060\ufeff]", "", t).replace("*", "").replace("_", " ")
+    raw = text[:MAX_SCAN]
+    t = unicodedata.normalize("NFKC", raw)
+    # invisible format characters (zero-width, soft hyphen, bidi controls) and combining marks (N̲O̲) are dropped,
+    # and Cyrillic / Greek lookalikes of N O C A P R E I T are read as Latin, so a homoglyph stamp is still a stamp
+    t = "".join(ch for ch in t if unicodedata.category(ch) not in ("Cf", "Mn", "Me")).translate(_CONFUSABLE)
+    t = t.replace("*", "").replace("_", " ")
     t = re.sub(r"[ \t\u00a0]+", " ", t)
-    stamps = len(re.findall(r"(?<!`)[🧾🧢🤔📜🎓]\W{0,6}(?:NO ?CAP|CAP\b|NO ?RECEIPT)", t, re.I))
+    stamps = len(STAMP_FORGED_RE.findall(t))
+    if re.search(r"[\u202e\u2067]", raw):  # right-to-left override: "PAC ON" is shown as "NO CAP"
+        stamps += len(re.findall(r"(?<!`)[🧾🧢🤔📜🎓]\W{0,6}P\W{0,3}A\W{0,3}C\b", t, re.I))
     return stamps or len(re.findall(r"^[^\w\n]*Receipts[^\w\n]*$|^[^\w\n]*Receipts[ \t]*·", t, re.M))
 
 
