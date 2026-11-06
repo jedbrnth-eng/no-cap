@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/jedbrnth-eng/no-cap/actions/workflows/ci.yml"><img src="https://github.com/jedbrnth-eng/no-cap/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/tests-3119%20passing-2ea043" alt="3119 tests passing">
+  <img src="https://img.shields.io/badge/tests-3219%20passing-2ea043" alt="3219 tests passing">
   <img src="https://img.shields.io/badge/version-0.2.0-555" alt="version 0.2.0">
   <img src="https://img.shields.io/badge/Hermes-0.22.5%2B-7c3aed" alt="Hermes 0.22.5+">
   <img src="https://img.shields.io/badge/tested%20on-macOS-555" alt="Tested on macOS">
