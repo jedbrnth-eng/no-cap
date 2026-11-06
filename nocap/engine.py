@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from . import card, desktop, doctor, score
-from .coach import Coach
+from .coach import Coach, safe_skill
 from .claims import extract_claims, forged_stamps
 from .evidence import extract, ledger_fact, summary
 from .render import EMOJI, TAG, claim_text, compose, dedupe, footer, receipt_line
@@ -95,8 +95,8 @@ class Engine:
         ev = extract(tool_name, args, result, status=status, index=index, error_message=error_message,
                      cwd=cwd if isinstance(cwd, str) else "")
         if str(tool_name or "") in SKILL_TOOLS and ev.get("ok") and isinstance(args, dict) \
-                and isinstance(args.get("name"), str):  # a failed load (unknown skill) isn't a skill the turn used
-            ev["skill"] = args["name"].strip()[:80]
+                and safe_skill(args.get("name")):  # a failed load (unknown skill) isn't a skill the turn used
+            ev["skill"] = safe_skill(args.get("name"))  # an identifier: never a sentence a rule could carry
         with self._lock:
             calls.append(ev)
             if len(calls) > MAX_CALLS:  # keep the newest calls: the latest run is the one that matters
