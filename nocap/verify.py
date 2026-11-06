@@ -356,6 +356,24 @@ def _same_repo(where: str, cwd: str) -> bool:
         return False
 
 
+# A git call that may have run in another repo: a subshell or pushd cd, --git-dir / --work-tree, GIT_DIR=.
+OTHER_REPO_CMD_RE = re.compile(r"\(\s*cd\s|\bpushd\s|--git-dir\b|--work-tree\b|\bGIT_(?:DIR|WORK_TREE)=")
+# A claim that names a SHA of another repository (upstream, a fork, a vendored library, a URL, owner/repo@sha).
+OTHER_REPO_TEXT_RE = re.compile(r"(?i)\b(?:upstream|fork(?:ed|'s)?|vendor\w{0,4}|submodule\w?|third[- ]party|"
+                                r"repo(?:sitory|s)?|library|librar(?:y's|ies)|package|dependency|project)\b|"
+                                r"https?://|\b[\w.-]{1,100}/[\w.-]{1,100}@[0-9a-f]{7}")
+
+
+def _elsewhere(e: Dict[str, Any], cwd: str) -> bool:
+    """Did this call (or its git) run outside the session's repo?"""
+    cmd = str(e.get("cmd") or "")
+    if e.get("where") and re.search(r"(?:^|&&|;)\s*cd\s|\bgit\s", cmd) and not _same_repo(str(e["where"]), cwd):
+        return True
+    if e.get("workdir") and not _same_repo(str(e["workdir"]), cwd):
+        return True
+    return bool(OTHER_REPO_CMD_RE.search(cmd))
+
+
 def check_artifacts(receipts: List[Dict[str, Any]], cwd: str, session_evs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Turn 🤔 into 🧢 for a claimed SHA that isn't an object in the session's repo, or a claimed branch that no ref
     has. Only unproven receipts are looked at, only when every git call of the session ran in this repo, and never
@@ -367,8 +385,7 @@ def check_artifacts(receipts: List[Dict[str, Any]], cwd: str, session_evs: List[
         or (r["kind"] == "pushed" and (r.get("claim") or {}).get("branch")))]
     if not todo or not cwd:
         return receipts
-    if any(e.get("where") and re.search(r"(?:^|&&|;)\s*cd\s|\bgit\s", str(e.get("cmd") or ""))
-           and not _same_repo(str(e["where"]), cwd) for e in session_evs or []):
+    if any(_elsewhere(e, cwd) for e in session_evs or []):
         return receipts  # the session worked in another repo too: the artifact may live there
     if _repo_state(cwd) != "ok":
         return receipts
@@ -384,6 +401,9 @@ def check_artifacts(receipts: List[Dict[str, Any]], cwd: str, session_evs: List[
         text = r.get("text") or ""
         if r["kind"] in ("sha", "committed"):
             sha = str(c.get("sha") or "").lower()
+            if OTHER_REPO_TEXT_RE.search(text):  # "upstream commit …", "psf/requests@…": a SHA of another repo
+                out.append(r)
+                continue
             if not (7 <= len(sha) <= 12 or len(sha) == 40) or any(x and (x.startswith(sha) or sha.startswith(x))
                                                                     for x in seen_shas if len(x) >= 7):
                 out.append(r)

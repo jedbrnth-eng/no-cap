@@ -123,6 +123,131 @@ def test_stale_red_run_in_an_earlier_turn_does_not_cap_a_claim_about_this_turn(t
     assert CAP not in verdicts(rs, "tests")
 
 
+# ---- 2. fabricated-artifact detector -------------------------------------------------------------------------------
+def git(cwd, *args):
+    env = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+    return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "init.defaultBranch=main",
+                           "-c", "commit.gpgsign=false", *args], cwd=cwd, env=env, check=True, capture_output=True,
+                          text=True, timeout=30).stdout.strip()
+
+
+def make_repo(path):
+    path.mkdir(parents=True)
+    git(path, "init", "-q")
+    (path / "a.txt").write_text("a\n")
+    git(path, "add", "a.txt")
+    git(path, "commit", "-q", "-m", "first")
+    return path
+
+
+@pytest.fixture
+def two_repos(tmp_path):
+    main = make_repo(tmp_path / "app")
+    lib = make_repo(tmp_path / "lib")
+    (lib / "b.txt").write_text("b\n")
+    git(lib, "add", "b.txt")
+    git(lib, "commit", "-q", "-m", "lib change")
+    return main, lib, git(lib, "rev-parse", "HEAD")
+
+
+def test_malicious_repo_config_runs_nothing(tmp_path):
+    repo = make_repo(tmp_path / "evil")
+    pwn = tmp_path / "PWNED"
+    hook = tmp_path / "hook.sh"
+    hook.write_text(f"#!/bin/sh\ntouch {pwn}\n")
+    hook.chmod(0o755)
+    inc = tmp_path / "inc.cfg"
+    inc.write_text(f"[core]\n\tfsmonitor = {hook}\n\tpager = {hook}\n\tsshCommand = {hook}\n"
+                   f"[diff]\n\texternal = {hook}\n[core]\n\talternateRefsCommand = {hook}\n")
+    git(repo, "config", "include.path", str(inc))
+    git(repo, "config", "core.fsmonitor", str(hook))
+    git(repo, "config", "core.hooksPath", str(tmp_path))
+    for name in ("post-checkout", "pre-commit", "reference-transaction", "post-index-change"):
+        (tmp_path / name).write_text(f"#!/bin/sh\ntouch {pwn}\n")
+        (tmp_path / name).chmod(0o755)
+    e = engine(tmp_path / "d", repo)
+    t = time.monotonic()
+    say(e, "s", "t1", "Committed the fix as 9f8e7d6c and pushed it to feat/ghost.")
+    assert not pwn.exists()
+    assert time.monotonic() - t < 10
+
+
+def test_a_git_dir_that_is_a_fifo_cannot_hang_the_reply(tmp_path):
+    d = tmp_path / "wt"
+    d.mkdir()
+    os.mkfifo(d / ".git")
+    e = engine(tmp_path / "d", d)
+    t = time.monotonic()
+    out, rs = say(e, "s", "t1", "Committed as 9f8e7d6c.")
+    assert time.monotonic() - t < 10 and CAP not in verdicts(rs)
+
+
+def test_sha_committed_in_another_repo_via_workdir_is_not_capped(tmp_path, two_repos):
+    main, lib, sha = two_repos
+    e = engine(tmp_path / "d", main)
+    term(e, "s", "t1", "git commit -q -am 'lib change'", "", 0, workdir=str(lib))
+    _, rs = say(e, "s", "t1", f"Committed the lib change as {sha[:8]}.")
+    assert CAP not in verdicts(rs)
+
+
+@pytest.mark.parametrize("cmd", ["(cd {lib} && git commit -q -am x)", "pushd {lib} && git commit -q -am x",
+                                 "git --git-dir={lib}/.git --work-tree={lib} commit -q -am x",
+                                 "GIT_DIR={lib}/.git git commit -q -am x"])
+def test_sha_committed_in_another_repo_via_shell_is_not_capped(tmp_path, two_repos, cmd):
+    main, lib, sha = two_repos
+    e = engine(tmp_path / "d", main)
+    term(e, "s", "t1", cmd.format(lib=lib), "", 0)
+    _, rs = say(e, "s", "t1", f"Committed the lib change as {sha[:8]}.")
+    assert CAP not in verdicts(rs)
+
+
+@pytest.mark.parametrize("text", [
+    "This was fixed upstream in requests commit 3f2a9c1e, so we only bump the pin.",
+    "The regression came from commit 3f2a9c1e in the numpy repo.",
+    "See https://github.com/psf/requests/commit/3f2a9c1e for the upstream fix.",
+    "psf/requests@3f2a9c1e is the upstream commit we cherry-picked from.",
+    "The vendored library's commit 3f2a9c1e introduced it.",
+    "Our fork's commit 3f2a9c1e has the patch.",
+])
+def test_a_sha_that_names_another_repository_is_never_capped(tmp_path, two_repos, text):
+    main, _, _ = two_repos
+    _, rs = say(engine(tmp_path / "d", main), "s", "t1", text)
+    assert CAP not in verdicts(rs)
+
+
+def _write_loose_blob(repo, data: bytes) -> str:
+    raw = b"blob %d\0" % len(data) + data
+    sha = hashlib.sha1(raw, usedforsecurity=False).hexdigest()
+    p = repo / ".git" / "objects" / sha[:2] / sha[2:]
+    p.parent.mkdir(exist_ok=True)
+    p.write_bytes(zlib.compress(raw))
+    return sha
+
+
+def test_an_ambiguous_short_sha_counts_as_existing(tmp_path):
+    repo = make_repo(tmp_path / "app")
+    seen = {}
+    i = 0
+    while True:  # birthday search for two blobs sharing a 7-hex prefix (~16k hashes)
+        data = b"x%d\n" % i
+        sha = hashlib.sha1(b"blob %d\0" % len(data) + data, usedforsecurity=False).hexdigest()
+        if sha[:7] in seen:
+            _write_loose_blob(repo, seen[sha[:7]])
+            _write_loose_blob(repo, data)
+            prefix = sha[:7]
+            break
+        seen[sha[:7]] = data
+        i += 1
+    _, rs = say(engine(tmp_path / "d", repo), "s", "t1", f"Committed as {prefix}.")
+    assert CAP not in verdicts(rs)
+
+
+def test_a_fabricated_sha_in_the_sessions_own_repo_is_still_capped(tmp_path, two_repos):
+    main, _, _ = two_repos  # the detector keeps working: the control case
+    _, rs = say(engine(tmp_path / "d", main), "s", "t1", "Committed the fix as 9f8e7d6c.")
+    assert CAP in verdicts(rs)
+
+
 # ---- 4. Discord footer injection -----------------------------------------------------------------------------------
 EVIL_CLAIM = ("All tests pass @everyone @here <@&123456> <@1234> <#999> [click me](https://evil.example/x) "
               "**bold** ||spoiler|| ` ``` <t:0:R> # Heading")
@@ -205,3 +330,21 @@ def test_svg_card_escapes_a_model_name_with_markup(tmp_path):
     assert svg
     text = Path(svg[0]).read_text(encoding="utf-8")
     assert "<script" not in text and 'onload="' not in text and "<img" not in text
+
+
+# ---- 9. artifact detector: an earlier turn in another repo, and the workdir stays redacted -------------------------
+def test_an_earlier_turn_in_another_repo_keeps_the_sha_uncapped(tmp_path, two_repos):
+    main, lib, sha = two_repos
+    e = engine(tmp_path / "d", main)
+    term(e, "s", "t1", "git commit -q -am x", "", 0, workdir=str(lib))
+    say(e, "s", "t1", "ok")
+    _, rs = say(e, "s", "t2", f"I committed that earlier as {sha[:8]}.")
+    assert CAP not in verdicts(rs)
+
+
+def test_a_secret_in_a_workdir_never_reaches_the_ledger(tmp_path):
+    e = engine(tmp_path)
+    token = "".join(["gh", "p_", "a1B2c3D4e5F6", "g7H8i9J0k1L2", "m3N4o5P6q7R8"])  # built at run time: no literal
+    term(e, "s", "t1", "pytest -q", PY_OK, 0, workdir="/srv/app?token=" + token)
+    say(e, "s", "t1", "All tests pass.")
+    assert "a1B2c3D4e5F6" not in e.ledger.path.read_text()
