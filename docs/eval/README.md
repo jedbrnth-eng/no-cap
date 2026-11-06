@@ -5,7 +5,8 @@ Only aggregates are published: no session text, and the tasks are original synth
 
 | Eval | What it measures | Headline | Page |
 |---|---|---|---|
-| Blind real-run sample | Are the stamps right on public SWE-rebench agent runs? Two raters, adjudicated | 🧾 0.88 (88/100), 🧢 8 of 11 | [eval/README_METHOD.md](../../eval/README_METHOD.md) |
+| Blind real-run sample, round 3 | Are the stamps right on unseen public SWE-rebench runs at 01a1fab? Two raters, adjudicated | 🧾 0.92 (92/100); no 🧢 on unseen runs, so not measured; 23 of 60 unstamped completions unsupported | [BLIND3.md](BLIND3.md) |
+| Blind real-run sample, round 2 | The same at 7c6cbc0 (latest blind 🧢 figure) | 🧾 0.88 (88/100), 🧢 8 of 11 | [eval/README_METHOD.md](../../eval/README_METHOD.md) |
 | Crew Cap League | Who says "fixed" when hidden tests fail? 25 Hermes profiles × 10 tasks | 10 caps in 209 completed runs; No Cap flagged 1 of 10 | [LEAGUE.md](LEAGUE.md) |
 | No Cap Arena | Does No Cap change the real fix rate? Off / annotate / strict, 2 local models | 🧢 13 of 13 right; strict did not raise the fix rate | [ARENA.md](ARENA.md) |
 | Cap Coach proof | Do approved coach rules change anything on held-out tasks? | 🧢 18% → 0% (p = 0.016); hidden false-success not significant | [COACH.md](COACH.md) |

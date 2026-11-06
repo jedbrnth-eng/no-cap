@@ -45,9 +45,12 @@
 
 Every number below links to its method. All evals are summarised in [docs/eval/](docs/eval/).
 
-**On real agent runs, blind.** On a fresh blind sample of public SWE-rebench runs, two raters (Claude, Gemini;
-kappa 0.77), adjudicated: **🧾 precision 0.88 (88/100, 95% CI 0.80–0.93)** and **🧢 right 8 of 11**.
-Method: [eval/README_METHOD.md](eval/README_METHOD.md).
+**On real agent runs, blind.** Round 3: **🧾 precision 0.92 (92/100, 95% CI 0.85–0.96)** on a fresh blind sample of
+public SWE-rebench runs at 01a1fab, two raters (Claude, Gemini 3.8 Flash; kappa 0.66), adjudicated. No 🧢 appeared on
+unseen runs in round 3, so 🧢 wasn't measured; the latest blind 🧢 figure is round 2's **8 of 11** at 7c6cbc0 (where
+🧾 was 0.88, 88/100). Misses: 23 of 60 unstamped completion replies (0.38) carried an unsupported claim; the largest
+class (9 of 23) is an unscoped “all tests pass” after a subset run.
+Method: [docs/eval/BLIND3.md](docs/eval/BLIND3.md) (round 3), [eval/README_METHOD.md](eval/README_METHOD.md) (round 2).
 
 **Crew Cap League: who says “fixed” when it isn't?** 25 Hermes profiles, the same 10 synthetic bug-fix tasks, 227
 runs, **209 completed**. Agents claimed success in 208 of 209. **10 of the 209 were caps** (claimed success, hidden
@@ -337,7 +340,9 @@ Chart and numbers: [What it caught](#what-it-caught); method: [docs/eval/COACH.m
 
 The headline evals are in [What it caught](#what-it-caught) and [docs/eval/](docs/eval/). The blind sample in full:
 
-🧾 precision 0.88 (88/100, 95% CI 0.80-0.93) and 🧢 8 of 11 on a fresh blind sample of public SWE-rebench runs at 7c6cbc0, two raters (Claude, Gemini; kappa 0.77), adjudicated; about 1 in 4 unstamped completion replies carried an unsupported claim.
+🧾 precision 0.92 (92/100, 95% CI 0.85–0.96) on a fresh blind sample of public SWE-rebench runs at 01a1fab, two raters (Claude, Gemini 3.8 Flash; kappa 0.66), adjudicated (round 3). No 🧢 appeared on unseen runs in round 3, so 🧢 wasn't measured. 23 of 60 unstamped completion replies (0.38, 95% CI 0.27–0.51) carried an unsupported claim; the largest class (9 of 23) is an unscoped “all tests pass” after a subset run, and 1 of the 60 hid a contradiction. Method and aggregates: [docs/eval/BLIND3.md](docs/eval/BLIND3.md).
+
+Round 2, the latest blind 🧢 figure: 🧾 precision 0.88 (88/100, 95% CI 0.80-0.93) and 🧢 8 of 11 on a fresh blind sample of public SWE-rebench runs at 7c6cbc0, two raters (Claude, Gemini; kappa 0.77), adjudicated; about 1 in 4 unstamped completion replies carried an unsupported claim.
 
 The current release fixes the error classes that sample found. Re-scored on the same labelled sample (tuned, not
 blind): 🧢 8 of 8 visible stamps correct (the 3 wrong ones are gone, all 8 right ones kept), 🧾 86/96 = 0.90
@@ -351,7 +356,10 @@ above are the ones to quote.
 
 Limits:
 
-- 🧢 is rare on real runs: 11 in the blind sample, so its precision is a small-sample number.
+- 🧢 is rare on real runs: 11 in the round 2 blind sample and none on unseen runs in round 3, so its precision is a
+  small-sample number from 7c6cbc0.
+- Round 3's 🧾 rise (0.88 → 0.92) is within overlapping intervals, so it is not a demonstrated improvement, and its
+  miss rate (0.38) is higher than round 2's (0.23), also with overlapping intervals.
 - A missing stamp is not proof. By default only 🧾 and 🧢 are stamped; `/nocap all` and `/cap` still see the
   unsure claims.
 
