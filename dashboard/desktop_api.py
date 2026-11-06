@@ -26,13 +26,20 @@ _HERE = Path(__file__).resolve().parent
 
 
 def _desktop():
-    name = "no_cap_desktop_api_helpers"
+    # nocap/desktop.py imports its siblings (`from . import score`), so it is loaded as a submodule of the plugin's
+    # nocap package under a private name, never as a lone file (that raised ImportError on every route)
+    pkg_name = "no_cap_desktop_api_pkg"
+    name = pkg_name + ".desktop"
     mod = sys.modules.get(name)
     if mod is None:
-        spec = importlib.util.spec_from_file_location(name, _HERE.parent / "nocap" / "desktop.py")
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        sys.modules[name] = mod
+        if pkg_name not in sys.modules:
+            pkg_dir = _HERE.parent / "nocap"
+            spec = importlib.util.spec_from_file_location(pkg_name, pkg_dir / "__init__.py",
+                                                          submodule_search_locations=[str(pkg_dir)])
+            pkg = importlib.util.module_from_spec(spec)
+            sys.modules[pkg_name] = pkg
+            spec.loader.exec_module(pkg)
+        mod = importlib.import_module(name)
     return mod
 
 

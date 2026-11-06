@@ -197,6 +197,24 @@ PATTERNS: List[Dict[str, Any]] = [
      "why": "the number wasn't in any output"},
 ]
 BY_ID = {p["id"]: p for p in PATTERNS}
+PROPOSAL_ID_RE = re.compile(r"^cc-[0-9a-f]{6}$")
+_SKILL_JUNK = re.compile(r"[^\w.:@/+-]")
+
+
+def safe_skill(name: Any) -> str:
+    """A skill name as an identifier, or "" for anything else: a name with spaces, newlines or markup is dropped
+    (not cleaned up), so a skill name can't carry an instruction into a coach rule, a handoff or the Cap Board."""
+    name = name.strip() if isinstance(name, str) else ""
+    return name[:80] if name and not _SKILL_JUNK.search(name) else ""
+
+
+def trusted_rule(prop: Dict[str, Any]) -> Optional[str]:
+    """The rule text a proposal may inject: always the library's own text for its pattern, never the text stored in
+    coach.json (a file the agent can write). None for an unknown pattern or a malformed id."""
+    p = BY_ID.get(str(prop.get("pattern") or ""))
+    if p is None or not PROPOSAL_ID_RE.match(str(prop.get("id") or "")):
+        return None
+    return p["rule"]
 
 
 def classify(r: Dict[str, Any]) -> Optional[str]:
@@ -489,7 +507,9 @@ class Coach:
         """post_tool_call: remember the skills this session loaded, so a skill-scoped rule is injected next turn."""
         if tool_name != "skill_view" or not isinstance(args, dict) or not isinstance(args.get("name"), str):
             return
-        name = args["name"].strip()[:80]
+        name = safe_skill(args["name"].strip())
+        if not name:
+            return
         with self._lock:
             names = self._skills.setdefault(session_id or "", [])
             self._skills.move_to_end(session_id or "")
@@ -605,7 +625,15 @@ class Coach:
 
     def _handoff(self, prop: Dict[str, Any], variant: str, session_key: str, apply: bool, revert: bool) -> List[str]:
         """A skill patch or memory note: show it, and (only when asked) ask the agent to apply it with its own tools."""
-        v = prop["variants"][variant]
+        v = dict(prop["variants"][variant])
+        rule = trusted_rule(prop)
+        if rule is None:
+            return ["This proposal doesn't match a No Cap pattern (coach.json was edited by hand), so No Cap won't "
+                    "pass it to the agent."]
+        # the text handed to the agent is rebuilt from the library, never taken from coach.json
+        v["skill"] = safe_skill(v.get("skill")) or "?"
+        v["section"] = skill_section(prop["id"], rule, BY_ID[prop["pattern"]]["why"])
+        v["text"] = f"{rule} {marker(prop['id'])}"
         if variant == "skill":
             where = v.get("path") or f"skill '{v['skill']}'"
             text = v.get("diff") or v["section"]
@@ -673,7 +701,7 @@ class Coach:
         skills = set(skills or ())
         out = []
         for prop in self.store.load()["proposals"].values():
-            if prop.get("status") != "approved" or prop.get("variant", "rule") != "rule":
+            if prop.get("status") != "approved" or prop.get("variant", "rule") != "rule" or not trusted_rule(prop):
                 continue
             sc = prop.get("scope") or {}
             if sc.get("agent", "default") not in (ANY, self.agent()):
@@ -692,7 +720,7 @@ class Coach:
             return None, []
         lines = ["[No Cap coach: rules the user approved for this agent. They come from this agent's own past "
                  "unproven claims. /cap coach rules lists them.]"]
-        lines += [f"- {p['rule']} ({p['id']})" for p in rules]
+        lines += [f"- {trusted_rule(p)} ({p['id']})" for p in rules]
         return "\n".join(lines), [p["id"] for p in rules]
 
     # -- auto-suggest --
