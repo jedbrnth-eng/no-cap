@@ -389,6 +389,31 @@ def test_a_skill_name_with_instructions_never_reaches_the_coach_handoff(tmp_path
     assert e.coach.session_skills("s") == []
 
 
+# ---- 6. export: CSV formula injection ------------------------------------------------------------------------------
+FORMULAS = ["=HYPERLINK(\"https://evil.example\",\"x\")", "+cmd|' /C calc'!A0", "-2+3+cmd|' /C calc'!A0",
+            "@SUM(1+1)*cmd|' /C calc'!A0", "\t=1+1", "\r=1+1", "  =1+1", "\n=1+1", "＝1+1", "%0A=1+1",
+            "\u200b=1+1", "\ufeff=1+1", "\u00a0=1+1"]
+
+
+@pytest.mark.parametrize("payload", FORMULAS)
+def test_csv_export_never_starts_a_cell_with_a_formula(payload):
+    rec = {"type": "reply", "ts": 1.0, "session_id": payload, "turn_id": payload, "model": payload,
+           "platform": payload, "mode": payload, "profile": payload,
+           "receipts": [{"kind": payload, "verdict": "CAP", "text": payload, "cmd": payload, "tool": payload,
+                         "quote": payload, "claim": {"kind": "tests"}}]}
+    rows = list(csv.reader(io.StringIO(export.to_csv([rec]))))
+    for cell in rows[1]:
+        stripped = cell.lstrip(" \t\r\n\u200b\ufeff\u00a0\u3000")
+        assert stripped[:1] not in ("=", "+", "-", "@", "＝", "＋", "－", "＠"), (payload, cell)
+
+
+def test_prometheus_metrics_labels_cannot_inject_a_series():
+    rec = {"type": "reply", "ts": 1.0, "model": 'm"} 1\nnocap_cap_rate{model="x"} 0\n#',
+           "receipts": [{"kind": "tests", "verdict": "CAP", "text": "x", "claim": {"kind": "tests"}}]}
+    text = export.metrics([rec])
+    assert not re.search(r'^nocap_cap_rate\{model="x"\}', text, re.M)
+
+
 # ---- 7. Board / Desktop XSS ----------------------------------------------------------------------------------------
 JS = [ROOT / "dashboard" / "dist" / "index.js", ROOT / "desktop" / "plugin.js"]
 

@@ -62,9 +62,13 @@ def to_json(records: Iterable[Dict[str, Any]]) -> str:
                       indent=1) + "\n"
 
 
+_INVISIBLE = " \t\r\n\u00a0\u200b\u200c\u200d\u2060\ufeff\u3000"
+_FORMULA = ("=", "+", "-", "@", "\uff1d", "\uff0b", "\uff0d", "\uff20")  # and their fullwidth forms
+
+
 def _cell(v: Any) -> Any:
-    if isinstance(v, str) and v[:1] in ("=", "+", "-", "@", "\t", "\r"):
-        return "'" + v  # spreadsheet formula injection guard
+    if isinstance(v, str) and (v[:1] in ("\t", "\r") or v.lstrip(_INVISIBLE)[:1] in _FORMULA):
+        return "'" + v  # spreadsheet formula injection guard (also behind a BOM, zero-width or fullwidth sign)
     return "" if v is None else v
 
 
