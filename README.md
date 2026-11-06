@@ -10,7 +10,9 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-2152%20passing-2ea043" alt="2152 tests passing">
+  <a href="https://github.com/jedbrnth-eng/no-cap/actions/workflows/ci.yml"><img src="https://github.com/jedbrnth-eng/no-cap/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/tests-3219%20passing-2ea043" alt="3219 tests passing">
+  <img src="https://img.shields.io/badge/version-0.2.0-555" alt="version 0.2.0">
   <img src="https://img.shields.io/badge/Hermes-0.22.5%2B-7c3aed" alt="Hermes 0.22.5+">
   <img src="https://img.shields.io/badge/tested%20on-macOS-555" alt="Tested on macOS">
   <img src="https://img.shields.io/badge/network-none-2ea043" alt="No network">
@@ -20,14 +22,67 @@
 
 <p align="center">
   <a href="#install">Install</a> ·
+  <a href="#what-it-caught">What it caught</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#more-than-a-prompt">More than a prompt</a> ·
   <a href="#commands-and-settings">Commands</a> ·
   <a href="#cap-coach">Cap Coach</a> ·
-  <a href="#how-good-is-it">Eval</a> ·
   <a href="#disclosure">Disclosure</a> ·
   <a href="#known-limits-and-what-is-not-tested">Limits</a>
 </p>
+
+<p align="center">
+  <img src="docs/media/ladder-run/ladder-10s.gif" alt="The Lie Ladder in 10 seconds: a real Hermes CLI session where a scripted model says 'All tests pass' after pytest exits 1 (🧢 CAP, citing '3 failed, 41 passed'), 'Pushed to main' after pushing feat/login (🧢 CAP), cites a commit SHA that doesn't exist (🧢 CAP), and claims a deploy and a merge with nothing run (🤔 NO RECEIPT); then the courtroom verdict card: 0 of 5 claims proven, capped on 3 counts" width="760"><br>
+  <sub>The Lie Ladder: five frames from one real <code>hermes nocap demo --ladder</code> run, then its verdict card. Hermes, the
+  shell, pytest, git and every stamp are real; the model is scripted (<a href="demo/stub_model.py"><code>demo/stub_model.py</code></a>) so the lies repeat on cue.
+  Full 60-second run: <a href="docs/media/ladder-run/ladder.gif">ladder.gif</a>; frames rebuilt by
+  <a href="docs/media/ladder-run/make_hero_gif.py"><code>make_hero_gif.py</code></a>.</sub>
+</p>
+
+> **Status: 0.2.0** ([CHANGELOG](CHANGELOG.md)). Submitted to the Hermes plugin catalog. Tested on macOS with Hermes 0.22.5 only.
+
+## What it caught
+
+Every number below links to its method. All evals are summarised in [docs/eval/](docs/eval/).
+
+**On real agent runs, blind.** Round 3: **🧾 precision 0.92 (92/100, 95% CI 0.85–0.96)** on a fresh blind sample of
+public SWE-rebench runs at 01a1fab, two raters (Claude, Gemini 3.8 Flash; kappa 0.66), adjudicated. No 🧢 appeared on
+unseen runs in round 3, so 🧢 wasn't measured; the latest blind 🧢 figure is round 2's **8 of 11** at 7c6cbc0 (where
+🧾 was 0.88, 88/100). Misses: 23 of 60 unstamped completion replies (0.38) carried an unsupported claim; the largest
+class (9 of 23) is an unscoped “all tests pass” after a subset run.
+Method: [docs/eval/BLIND3.md](docs/eval/BLIND3.md) (round 3), [eval/README_METHOD.md](eval/README_METHOD.md) (round 2).
+
+**Crew Cap League: who says “fixed” when it isn't?** 25 Hermes profiles, the same 10 synthetic bug-fix tasks, 227
+runs, **209 completed**. Agents claimed success in 208 of 209. **10 of the 209 were caps** (claimed success, hidden
+tests fail: **4.8%, 95% CI 2.6–8.6**), and in all 10 the agent's own visible tests were green, so its “tests pass”
+was true. No Cap stamps
+🧢 only on a contradiction in the turn's own output, so it gave 0 🧢 here and flagged 1 of the 10 (a 🤔).
+Method: [docs/eval/LEAGUE.md](docs/eval/LEAGUE.md).
+
+<p align="center"><img src="docs/eval/crew_leaderboard.png" width="760" alt="Crew Cap League chart: cap rate per Hermes profile with 95% Wilson intervals, 19 profiles with at least 8 completed runs; north-mini and omni 2/10, six profiles 1/10, eleven profiles 0/10; 10 caps in 190 completed runs"></p>
+
+**No Cap Arena: does it change the real fix rate?** 30 synthetic tasks, two local Qwen3 models, No Cap off (A) /
+annotate (B) / strict (C), hidden tests as the judge. **Every 🧢 was right: 13 of 13**, and on each one the hidden
+tests failed too. **Strict mode did not raise the fix rate**: qwen3-4b 10/30 off vs 7/30 strict (McNemar p = 0.375),
+qwen3-30b-a3b 11/16 vs 10/16 (p = 1.0), pooled p = 0.22. The point estimates are lower under strict, and none of the
+differences is significant. Method: [docs/eval/ARENA.md](docs/eval/ARENA.md).
+
+<p align="center"><img src="docs/eval/arena_fix_rate.png" width="640" alt="No Cap Arena chart: hidden-test pass rate per condition. qwen3-4b: off 10/30, annotate 8/30, strict 7/30. qwen3-30b-a3b: off 11/16, annotate 11/16, strict 10/16. Exact McNemar C vs A: p=0.38 and p=1.00"></p>
+
+**Cap Coach: do approved rules help on unseen tasks?** Qwen3-4B, 39 matched held-out pairs: replies with a 🧢 went
+**from 18% to 0%** (7/39 → 0/39, McNemar p = 0.016). The independent outcome, a reply that says it works while hidden
+tests fail, went from 49% to 38% (p = 0.34): **not significant**. Method: [docs/eval/COACH.md](docs/eval/COACH.md).
+
+<p align="center"><img src="docs/media/coach-proof/cap-coach-before-after.png" width="760" alt="Cap Coach before/after chart on Qwen3-4B: CAP stamped 9/30 mining, 7/39 held-out no rules, 0/39 held-out coach rules; says it works but hidden tests fail 18/30, 19/39, 15/39; task solved 6/30, 10/39, 12/39"></p>
+
+> **What 🧾 does and doesn't prove**
+>
+> | 🧾 proves | 🧾 does not prove |
+> |---|---|
+> | The agent's own run in this turn said what the agent claims (the cited command, its exit code, its summary line). In the Arena, the visible suite really passed for 50 of 50 🧾 on “tests pass”. | That the fix is right. On those same 50 🧾, the hidden tests passed only 33 times (66%). |
+> | A 🧢 means the turn's own output says the opposite (13 of 13 right in the Arena). | That no 🧢 means no problem. In the League, 9 of 10 false “fixed” claims got only 🧾 stamps. |
+>
+> No Cap checks receipts, not correctness. If your tests are thin, a 🧾 is only as good as they are.
 
 ## Why
 
@@ -51,8 +106,6 @@
   agent so the lie repeats on cue. Reproduce it with <code>sh demo/run_demo.sh</code>; every capture from that run is in
   <a href="docs/media/demo-run/">docs/media/demo-run/</a>.</sub>
 </p>
-
-> **Status: 0.1.** Submitted to the Hermes plugin catalog. Tested on macOS with Hermes 0.22.5 only.
 
 ## Install
 
@@ -279,11 +332,17 @@ Settings (`plugins.entries.no-cap.settings.coach.*`):
 | `min_sample` | `10` | replies needed on each side before a before/after rate is shown |
 | `max_rules` | `5` | most rules injected into one turn |
 
-**Proof on a real local model** (PROOF_PLACEHOLDER)
+**Proof on a real local model.** On Qwen3-4B, 39 matched pairs of held-out tasks, approved rules took replies with a
+🧢 from 18% to 0% (McNemar p = 0.016); the hidden-test outcome did not move significantly (49% → 38%, p = 0.34).
+Chart and numbers: [What it caught](#what-it-caught); method: [docs/eval/COACH.md](docs/eval/COACH.md).
 
 ## How good is it
 
-🧾 precision 0.88 (88/100, 95% CI 0.80-0.93) and 🧢 8 of 11 on a fresh blind sample of public SWE-rebench runs at 7c6cbc0, two raters (Claude, Gemini; kappa 0.77), adjudicated; about 1 in 4 unstamped completion replies carried an unsupported claim.
+The headline evals are in [What it caught](#what-it-caught) and [docs/eval/](docs/eval/). The blind sample in full:
+
+🧾 precision 0.92 (92/100, 95% CI 0.85–0.96) on a fresh blind sample of public SWE-rebench runs at 01a1fab, two raters (Claude, Gemini 3.8 Flash; kappa 0.66), adjudicated (round 3). No 🧢 appeared on unseen runs in round 3, so 🧢 wasn't measured. 23 of 60 unstamped completion replies (0.38, 95% CI 0.27–0.51) carried an unsupported claim; the largest class (9 of 23) is an unscoped “all tests pass” after a subset run, and 1 of the 60 hid a contradiction. Method and aggregates: [docs/eval/BLIND3.md](docs/eval/BLIND3.md).
+
+Round 2, the latest blind 🧢 figure: 🧾 precision 0.88 (88/100, 95% CI 0.80-0.93) and 🧢 8 of 11 on a fresh blind sample of public SWE-rebench runs at 7c6cbc0, two raters (Claude, Gemini; kappa 0.77), adjudicated; about 1 in 4 unstamped completion replies carried an unsupported claim.
 
 The current release fixes the error classes that sample found. Re-scored on the same labelled sample (tuned, not
 blind): 🧢 8 of 8 visible stamps correct (the 3 wrong ones are gone, all 8 right ones kept), 🧾 86/96 = 0.90
@@ -297,7 +356,10 @@ above are the ones to quote.
 
 Limits:
 
-- 🧢 is rare on real runs: 11 in the blind sample, so its precision is a small-sample number.
+- 🧢 is rare on real runs: 11 in the round 2 blind sample and none on unseen runs in round 3, so its precision is a
+  small-sample number from 7c6cbc0.
+- Round 3's 🧾 rise (0.88 → 0.92) is within overlapping intervals, so it is not a demonstrated improvement, and its
+  miss rate (0.38) is higher than round 2's (0.23), also with overlapping intervals.
 - A missing stamp is not proof. By default only 🧾 and 🧢 are stamped; `/nocap all` and `/cap` still see the
   unsure claims.
 
@@ -438,8 +500,9 @@ Limits:
 - Discord: tested with Hermes's real Discord adapter (send path, splitter, plugin wiring, hook dispatch) and real
   discord.py objects over a fake connection (`tests/test_discord_hermes.py`), not yet on a live Discord server.
   Telegram gets the generic footer: a Telegram bot never sees its own replies, so there is nothing to attach buttons to.
-- Not tested: Discord and Telegram sessions end to end on a live server; real models other than one local Qwen3-4B (three
-  runs); Linux and Windows; the catalog install path; a real conflict with another enabled reply-rewriting plugin
+- Not tested: Discord and Telegram sessions end to end on a live server; the plugin installed live with real models
+  other than local Qwen3-4B and Qwen3-30B-A3B (the League's 25 profiles were scored by replaying their sessions
+  through the engine offline, with the plugin not installed); Linux and Windows; the catalog install path; a real conflict with another enabled reply-rewriting plugin
   (unit-tested only).
 
 ## Contributing
