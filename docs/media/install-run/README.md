@@ -26,6 +26,7 @@ What was run (v0.2.0, `main` at 6e6df8e; Hermes Agent and Hermes Desktop v0.23.0
 | 05-call-cap-rescored.png | after `hermes config set plugins.entries.no-cap.allow_gateway_injection true` (no restart), **Call /cap** again: the agent re-runs pytest, fixes auth.py, 44 passed, retracts "pushed to main" and the deploy; 🔁 re-score lines and four 🧾 chips |
 | 06-receipts-popover.png | the status-bar Receipts list for this chat: 🧾 4 · 🧢 2, both turns |
 | 10-board-empty.png | the Cap Board on the fresh install, before any reply (captured before the "none yet" store line was added) |
+| 10b-board-empty-fixed.png | the same empty board on this branch (installed with `file://` from the committed clone): "none yet · the first checked reply creates this profile's store" |
 | 11-board-after-1-turn.png | one `hermes chat` turn later: 4 claims, 2 🧢 in the Hall of Cap |
 | 12-board-after-5-turns.png | after the Lie Ladder's rungs 1-4: 5 replies, 5 🧢, including the made-up SHA |
 | 14-board-models.png | Models view after one `stub/careful-1` turn: its first 🧾, ranked separately; both rows greyed (n < 10) |

@@ -152,6 +152,8 @@ installed Hermes Desktop app (v0.23.0) and `hermes dashboard` against that home.
 | 10 · fresh install, no replies yet (captured before this PR's "none yet" store line) | 11 · one `hermes chat` turn later, without a reload: 2 🧢 in the Hall of Cap |
 | ![Cap Board after five turns](docs/media/install-run/12-board-after-5-turns.png) | ![Cap Board, Models view, two models](docs/media/install-run/14-board-models.png) |
 | 12 · five turns (the Lie Ladder's first four rungs added) | 14 · Models view after a `stub/careful-1` turn: its first 🧾 |
+| ![Empty Cap Board with this PR's store line](docs/media/install-run/10b-board-empty-fixed.png) | |
+| 10b · the same empty board on this branch: "Stores (read-only): none yet · the first checked reply creates this profile's store" | |
 
 </details>
 
