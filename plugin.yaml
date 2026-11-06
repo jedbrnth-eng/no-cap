@@ -11,6 +11,7 @@ provides_hooks:
   - post_tool_call
   - transform_llm_output
   - pre_verify
+  - pre_llm_call
 config_schema:
   mode:
     type: str
@@ -60,3 +61,7 @@ config_schema:
     type: str
     default: auto
     description: "Hermes Desktop receipt chips (clickable 🧾/🧢/🤔 that open the cited command, exit code and output line). auto (default): only while No Cap's desktop half is enabled in Desktop and has checked in through the plugin's own local route, so a disabled half never leaves a raw ::nocap line. on: always on Desktop. off: Desktop gets the text footer. Never emitted on any other surface."
+  coach:
+    type: dict
+    default: {mode: suggest, min_evidence: 5, auto_after_caps: 0, window_days: 14, min_sample: 10, max_rules: 5}
+    description: "Cap Coach. mode: off (no mining, no injection) | suggest (default: /cap coach scan drafts fixes) | auto-suggest-after-N-caps (also a one-line footer when a pattern reaches N caps; N from auto_after_caps, default min_evidence). min_evidence: caps of one pattern before a fix is drafted. window_days: baseline window frozen at approval. min_sample: replies needed on each side before a before/after rate is shown. max_rules: most rules injected per turn. Nothing applies without /cap coach approve <id>; approved coach rules reach the model only through pre_llm_call, labelled, and /cap coach revert <id> stops them."

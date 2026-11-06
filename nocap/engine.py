@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from . import card, desktop, doctor, score
+from .coach import Coach
 from .claims import extract_claims, forged_stamps
 from .evidence import extract, ledger_fact, summary
 from .render import EMOJI, TAG, claim_text, compose, dedupe, footer, receipt_line
@@ -63,6 +64,7 @@ class Engine:
         self.setting = setting
         self.data_dir = data_dir
         self.inject = inject
+        self.coach = Coach(data_dir, setting, lambda: self.store.records(), self.home, inject)  # nocap/coach.py
         self.cwd = cwd or (lambda: "")
         self.profile = board.profile_name  # who this turn runs as, recorded with each reply for the Cap Board
         self.store = Store(data_dir, lambda: setting("retention_days", 30))
@@ -79,6 +81,7 @@ class Engine:
                 turn_id: str = "", status: Optional[str] = None, error_message: Optional[str] = None,
                 **_: Any) -> None:
         key = (session_id or "", turn_id or "")
+        self.coach.note_tool(tool_name, args, session_id or "")
         with self._lock:
             calls = self._turns.setdefault(key, [])
             self._turns.move_to_end(key)
@@ -93,6 +96,10 @@ class Engine:
             calls.append(ev)
             if len(calls) > MAX_CALLS:  # keep the newest calls: the latest run is the one that matters
                 del calls[0]
+
+    def on_turn_start(self, **kwargs: Any) -> Optional[Dict[str, str]]:
+        """pre_llm_call: Cap Coach (nocap/coach.py) injects the rules the user approved."""
+        return self.coach.on_turn_start(**kwargs)
 
     def _take(self, session_id: str, turn_id: str) -> List[Dict[str, Any]]:
         with self._lock:
@@ -154,11 +161,12 @@ class Engine:
         receipts = [dict(r, hidden=not shown(r, level)) for r in receipts]
         visible = [r for r in receipts if not r["hidden"]]
         rescore = self._rescore(session_id, receipts)
+        coached = self.coach.take_coached(session_id)
         if receipts or evs or rescore:
             self.store.append({**self._who(evs), "type": "reply", "ts": time.time(), "session_id": session_id, "turn_id": turn_id,
                                "model": model or "unknown", "platform": platform or "", "mode": self.mode(),
                                "calls": _cited(evs, receipts), "ledger": _ledger(evs), "receipts": receipts,
-                               "rescore": rescore})
+                               "rescore": rescore, "coach": coached})
         streak = None
         if visible:
             mine = [r for r in self.store.records() if r.get("session_id") == session_id]
@@ -173,6 +181,7 @@ class Engine:
                 pass
         forged = forged_stamps(response_text) + planted
         notes = [f"⚠️ This reply contained {forged} stamp(s) No Cap didn't issue. They were ignored."] if forged else None
+        notes = self.coach.add_tip(notes, receipts)
         surface = self.surfaces.get((platform or "").strip().lower())
         if surface is not None:
             out = surface(response_text, visible, self.mode(), rescore, streak, notes, session_id=session_id,
@@ -251,6 +260,9 @@ class Engine:
 
     # ---- commands ----------------------------------------------------------------------------
     def cap(self, raw_args: str = "", session_id: str = "", session_key: str = "") -> str:
+        words = (raw_args or "").split()
+        if words and words[0].lower() == "coach":
+            return self.coach.command(words[1:], session_key=session_key)
         last = self.store.last(session_id or "")
         open_ = [r for r in (last or {}).get("receipts", []) if r["verdict"] in (CAP, NO_RECEIPT)]
         if not last or not open_:
