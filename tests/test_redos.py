@@ -34,6 +34,7 @@ PARSERS = {
 }
 INPUTS = inputs()
 INPUTS["former_failure_prefixes"] = "failing " * 12_500 + "tests now pass"
+INPUTS["former_failure_still"] = "failing tests now pass " + "still " * 16_000 + "fai"
 INPUTS["former_failure_whitespace"] = "failing tests " + " " * 100_000 + "now pause"
 
 

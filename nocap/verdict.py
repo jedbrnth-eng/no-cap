@@ -161,14 +161,22 @@ NARROW_RE = re.compile(r"(?i)\b(?:new|newly|added|relevant|affected|related|targ
                        r"regression|these|those|this|that|my|both|two|three|four|five|single|individual)\b")
 
 
-def _scoped_pass(c, fresh):
+def _runner(e) -> str:
+    """The test runner a run used (`pytest`, `go`, `jest`...): the first word of its suite."""
+    return ((e.get("suite") or "").split() or [""])[0]
+
+
+def _scoped_pass(c, fresh, runs=()):
     """A narrowed "X tests pass": judge it by the runs that name X, or by a green full-suite run. Else abstain."""
     words = _scope_words(c.get("text", "") + " " + c.get("scope_text", ""))
     full = [e for e in fresh if not e.get("subset")]
     if c.get("formerly_failing"):
         # A count of former failures does not identify them in a mixed run. Only a later complete green
         # run covers them; unrelated subset successes (or failures) cannot settle this claim.
-        if full and _green(full[-1]) and all(_green(e) for e in fresh if e["i"] > full[-1]["i"]):
+        # ...and it must be the runner that showed them failing: a green `go test` says nothing about pytest failures
+        runners = {_runner(e) for e in list(runs) + list(fresh) if not _green(e)}
+        if full and _green(full[-1]) and all(_green(e) for e in fresh if e["i"] > full[-1]["i"]) and (
+                not runners or runners == {_runner(full[-1])}):
             return _r(c, NO_CAP, full[-1], quote=_run_quote(full[-1]))
         return _r(c, NO_RECEIPT, fresh[-1], why="no complete green run covers the formerly failing tests",
                   quote=_run_quote(fresh[-1]))
@@ -310,7 +318,7 @@ def _tests(c, evs):
             return _r(c, NO_RECEIPT, e, why=CUT_WHY, quote=_run_quote(e))
         return _r(c, NO_CAP, e, quote=_run_quote(e))
     if c.get("scoped") and not c.get("table"):
-        return _scoped_pass(c, fresh)
+        return _scoped_pass(c, fresh, runs)
     full = [e for e in fresh if not e.get("subset")]
     if not full:
         e = fresh[-1]

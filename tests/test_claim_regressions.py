@@ -44,3 +44,17 @@ def test_edit_after_green_does_not_prove_former_failures():
     edit = extract("write_file", {"path": "app.py", "content": "x = 1"}, {"success": True}, index=3)
     claim = extract_claims("The 3 failing tests now pass.")[0]
     assert judge([claim], [run(), run("7 passed", 0, 2), edit])[0]["verdict"] == NO_RECEIPT
+
+
+# ---- cross-family review (orca-flash) findings ----
+def test_green_run_of_another_runner_does_not_prove_former_failures():
+    claim = extract_claims("The 3 failing tests now pass.")[0]
+    go = run("ok  example.com/x  0.002s", 0, 2, "go test ./...")
+    assert judge([claim], [run(), go])[0]["verdict"] == NO_RECEIPT
+    assert judge([claim], [run(command="pytest -q tests/test_a.py"), go])[0]["verdict"] == NO_RECEIPT
+
+
+def test_mixed_progress_report_is_not_a_formerly_failing_pass():
+    claims = extract_claims("Two failing tests now pass, three still fail.")
+    assert not any(c.get("formerly_failing") for c in claims)
+    assert all(r["verdict"] != NO_CAP for r in judge(claims, [run("7 passed in 0.1s", 0)]))
