@@ -27,6 +27,9 @@ PARSERS = {
     "forged_stamps": lambda s: forged_stamps(s),
     "strip_model_directives": lambda s: strip_model_directives(s),
     "extract(gh pr view)": lambda s: extract("terminal", {"command": "gh pr view 42"}, {"output": s, "exit_code": 1}),
+    # a file-scoped run: the inventory-root check (one `cd` before the runner) scans the whole command
+    "extract(file run)": lambda s: extract("terminal", {"command": "cd /nonexistent-nocap && pytest test_a.py && " + s,
+                                                        "workdir": "/nonexistent-nocap"}, {"output": "", "exit_code": 0}),
     "foreign_claims": lambda s: foreign_claims(s),  # Chinese / Thai / Spanish (CJK and Thai shapes in redos_inputs)
 }
 INPUTS = inputs()

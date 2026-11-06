@@ -8,7 +8,7 @@ from __future__ import annotations
 import posixpath
 import re
 
-from .evidence import redact
+from .evidence import _test_file, redact
 from typing import Any, Dict, List, Optional
 
 NO_CAP, CAP, NO_RECEIPT = "NO_CAP", "CAP", "NO_RECEIPT"
@@ -200,10 +200,20 @@ def _scoped_pass(c, fresh):
               quote=_run_quote(bad[-1]))
 
 
+def _ledger_subset(e, evs) -> bool:
+    """A file-only inventory cannot erase other test files already observed in this workdir."""
+    files = e.get("test_files")
+    return bool(files) and any(
+        _test_file(p) and not any(_path_match(f, p) for f in files)
+        for seen in evs if not (seen.get("where") and e.get("where") and seen["where"] != e["where"])
+        for key in ("paths_seen", "paths_read", "paths_edited", "paths_written") for p in seen.get(key, []))
+
+
 def _tests(c, evs):
     """Pick the run the claim is about, then compare. Only real test-runner commands count as runs:
     an echo/cat of a summary, a git-stash baseline and a background start are not evidence."""
-    runs = [e for e in evs if e["test_cmd"] and not e.get("background") and not e.get("baseline")]
+    runs = [dict(e, subset=True) if _ledger_subset(e, evs) else e for e in evs
+            if e["test_cmd"] and not e.get("background") and not e.get("baseline")]
     if c.get("cites_log"):  # "the log shows 44 passed": a read of that log is the receipt
         hits = [e for e in evs if _summary(e) and _summary(e)["passed"] == c.get("passed")]
         if hits:
