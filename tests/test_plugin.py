@@ -132,7 +132,8 @@ def test_strict_mode_rewrites_and_keeps_visible(tmp_path):
     tool(ctx, "pytest -q", "3 failed, 41 passed in 0.52s", 1)
     out = reply(ctx, "Fixed the bug. All tests pass.")
     assert out.startswith("Fixed the bug. All tests pass.\n\n")  # append-only: CLI never reprints
-    assert "Unverified: All tests pass." in out
+    assert "Unverified:\n- All tests pass." in out
+    assert out.count("Unverified") == 1  # the header says it once, not every line
     assert "🧢 CAP" in out
 
 

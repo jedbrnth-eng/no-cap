@@ -302,6 +302,10 @@ def _narrow(m) -> bool:
                          r"entire|full|suite|test|run|build|ci)\b)[\w`./-]", m.group(3)))
 
 
+_FORMER_FAILURE_PASS_RE = re.compile(
+    r"\b(?:failing|failed)\s+tests?\s+(?:now\s+pass(?:es|ed)?|pass(?:es|ed)?\s+now)\b", re.I)
+
+
 def _tests(cl: str, low: str) -> Optional[Dict[str, Any]]:
     if re.search(r"\bcompil(?:e|es|ed|ing|ation)\b", low):
         return None  # "test sources compile" / "test compilation passed" are build claims, not test runs
@@ -317,6 +321,12 @@ def _tests(cl: str, low: str) -> Optional[Dict[str, Any]]:
     if ff:  # "fixed the 2 failing tests" says something about an earlier run: 🤔 unless a run proves it
         return {"kind": "tests", "passed": None, "failed": None, "total": None, "all_pass": False, "fails": False,
                 "count_only": False, "scoped": True, "fixed_failing": True}
+    if _FORMER_FAILURE_PASS_RE.search(low):
+        if re.search(r"\bstill\s+(?:fail|error|red\b|broken)|\bstill\s+\d+\s+fail", low):
+            return None  # "two failing tests now pass, three still fail": progress, neither a pass nor a fail claim
+        # "three failing tests now pass": three describes the old failures, not the current run.
+        return {"kind": "tests", "passed": None, "failed": None, "total": None, "all_pass": True, "fails": False,
+                "count_only": False, "scoped": True, "formerly_failing": True}
     if re.search(r"\b(?:tests?|specs?)\s+(?:that\s+)?(?:were|was|had been)\s+(?:previously\s+)?failing\s+(?:now\s+)?pass|"
                  r"\bpreviously[- ]failing\s+tests?\s+(?:now\s+)?pass", low):
         return {"kind": "tests", "passed": None, "failed": None, "total": None, "all_pass": True, "fails": False,

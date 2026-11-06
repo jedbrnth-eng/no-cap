@@ -88,7 +88,12 @@ class Engine:
             while len(self._turns) > MAX_OPEN_TURNS:
                 self._turns.popitem(last=False)
             index = (calls[-1]["i"] + 1) if calls else 1
-        ev = extract(tool_name, args, result, status=status, index=index, error_message=error_message)
+        try:
+            cwd = self.cwd() or ""  # where a file-scoped test run looks for the repo's other test files
+        except Exception:
+            cwd = ""
+        ev = extract(tool_name, args, result, status=status, index=index, error_message=error_message,
+                     cwd=cwd if isinstance(cwd, str) else "")
         if str(tool_name or "") in SKILL_TOOLS and ev.get("ok") and isinstance(args, dict) \
                 and isinstance(args.get("name"), str):  # a failed load (unknown skill) isn't a skill the turn used
             ev["skill"] = args["name"].strip()[:80]
@@ -121,7 +126,9 @@ class Engine:
             return None
         claims = extract_claims(final_response)
         receipts = judge(claims, self._peek(session_id or ""), kinds=STRICT_KINDS)
-        open_ = [r for r in receipts if r["verdict"] != NO_CAP]
+        # an honest failure report with no receipt is not an unproven success claim; a 🧢 one still gets nudged
+        open_ = [r for r in receipts if r["verdict"] != NO_CAP and
+                 not (r["verdict"] == NO_RECEIPT and r["kind"] == "tests" and r["claim"].get("fails"))]
         if not open_:
             return None
         items = "\n".join(f"- {TAG[r['verdict']]} “{claim_text(r)[:120]}” ({r.get('quote') or r.get('why')}) → "

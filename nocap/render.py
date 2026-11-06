@@ -97,7 +97,7 @@ def unverified_block(receipts: List[Dict[str, Any]]) -> str:
     caps = [r for r in receipts if r["verdict"] == CAP]
     if not caps:
         return ""
-    return "\n".join(["🧢 **Unverified:**"] + [f"Unverified: {_short(claim_text(r), 120)}" for r in caps])
+    return "\n".join(["🧢 **Unverified:**"] + [f"- {_short(claim_text(r), 120)}" for r in caps])
 
 
 def compose(text: str, receipts: List[Dict[str, Any]], mode: str, rescore: Optional[List[str]] = None,

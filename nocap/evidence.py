@@ -1,12 +1,14 @@
 """Turn one tool call into an evidence record: the facts a reply's claims can be checked against.
 
-Pure function, stdlib only. Raw output is scanned here and never stored; only the extracted
-facts leave this module.
+Stdlib only. Raw output is scanned here and never stored; only the extracted
+facts leave this module. File-scoped test runs may inventory local test filenames (bounded, read-only).
 """
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
+import os
 import re
 import shlex
 from typing import Any, Dict, List, Optional
@@ -245,6 +247,121 @@ _SUBSET_FLAG_RE = re.compile(r"\s-k\s|\bpytest\b(?:(?!\bpytest\b).)*\s-m\s|::|\s
                              r"\s--tests?\s|\s--tests?=|\s--package\s|\bcargo\b(?:(?!\bcargo\b).)*\s(?:-p|--package|--test|"
                              r"--lib|--bin|--doc|--example)\b|--grep\b|\s-g\s|--filter\b|--only\b|:\w[\w-]*:test\b")
 _FULL_ARGS = {".", "./", "./...", "...", "tests", "tests/", "test", "test/", "spec", "spec/", "./tests", "./test"}
+
+
+_JS_EXT = (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts")
+# where a run's project starts: the nearest of these at or above the run's directory (stat only)
+_ROOT_MARKERS = (".git", "pyproject.toml", "setup.cfg", "setup.py", "pytest.ini", "tox.ini", "package.json")
+# configs that can change which files the runner collects; a pattern override there makes the inventory unknowable
+_COLLECT_CONFIGS = {"pytest.ini": "python_files", "tox.ini": "python_files", "setup.cfg": "python_files",
+                    "pyproject.toml": "python_files", "package.json": "testMatch|testRegex"}
+_COLLECT_JS_CONFIGS = ("jest.config", "vitest.config", "vite.config", "vitest.workspace")
+
+
+def _project_dirs(run_dir: str) -> List[str]:
+    """run_dir and up to four parents, up to the project root: the `.git` checkout if there is one in reach
+    (a monorepo's packages are not separate suites), else the nearest marker. [] when no marker is in reach."""
+    chain, cur = [], run_dir
+    for _ in range(5):
+        chain.append(cur)
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            break
+        cur = parent
+    git = next((i for i, d in enumerate(chain) if os.path.lexists(os.path.join(d, ".git"))), None)
+    near = next((i for i, d in enumerate(chain) if any(os.path.lexists(os.path.join(d, m)) for m in _ROOT_MARKERS)),
+                None)
+    top = git if git is not None else near
+    return [] if top is None else chain[:top + 1]
+
+
+def _custom_collection(root: str) -> bool:
+    """True when a runner config at root may override the default test-file patterns (or can't be checked).
+    Reads at most 64 KB of each config file that exists; nothing is stored."""
+    names = list(_COLLECT_CONFIGS.items()) + [(f"{b}{e}", r"testMatch|testRegex|\binclude\b|projects")
+                                               for b in _COLLECT_JS_CONFIGS for e in _JS_EXT + (".json",)]
+    for name, keys in names:
+        path = os.path.join(root, name)
+        if not os.path.lexists(path):
+            continue
+        if os.path.islink(path) or not os.path.isfile(path):
+            return True
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            if re.search(keys, fh.read(65536)):
+                return True
+    return False
+
+
+def _test_file(path: str) -> bool:
+    """Files a default pytest or jest/vitest run would collect. Wider than the brief's three shapes on purpose:
+    any of these that the run didn't target means the run was not the full suite (precision first)."""
+    name = os.path.basename(path)
+    if fnmatch.fnmatchcase(name, "test_*.py") or fnmatch.fnmatchcase(name, "*_test.py"):
+        return True
+    stem, ext = os.path.splitext(name)
+    return ext in _JS_EXT and (stem.endswith((".test", ".spec")) or "__tests__" in path.replace("\\", "/").split("/"))
+
+
+def _full_file_run(seg: str, cmd: str, workdir: str) -> List[str]:
+    """Literal file targets cover a bounded, read-only inventory; uncertainty keeps subset=True.
+
+    Never follow symlinks; the only contents read are runner configs, for a test-pattern override. Limits include
+    all visited entries, not just tests.
+    Only simple runner invocations are eligible: shell expansion and unknown options are ambiguous.
+    """
+    if len(seg) >= MAX_SEG or _SUBSET_FLAG_RE.search(" " + cmd):
+        return []
+    try:
+        tokens = shlex.split(seg)
+        # not mocha: its default spec is every file under test/, whatever the name, so an inventory can't bound it
+        start = next((i + 1 for i, t in enumerate(tokens) if t in ("pytest", "py.test", "jest", "vitest")), None)
+        if start is None:
+            return []
+        targets = []
+        for t in tokens[start:]:
+            if t in ("-q", "-v", "-vv", "--quiet", "--verbose", "run", "--"):
+                continue
+            if not _test_file(t) or any(c in t for c in "*?[]$`|;&<>\n") or t.startswith("-"):
+                return []
+            targets.append(t)
+        if not targets:
+            return []
+        if not workdir or not os.path.isabs(workdir):
+            return []  # a relative or missing root would resolve against the plugin process's cwd
+        run_dir = os.path.abspath(workdir)
+        # inventory the whole project, not just the directory the run happened to start in (`cd tests && pytest
+        # test_x.py` must still see ../test_root.py). No marker: only a run outside a tests/ directory qualifies.
+        dirs = _project_dirs(run_dir)
+        if not dirs:
+            if os.path.basename(run_dir) in ("tests", "test", "__tests__", "spec", "specs"):
+                return []
+            dirs = [run_dir]
+        root = dirs[-1]
+        if any(_custom_collection(d) for d in dirs):  # a config anywhere from the run's dir up to the root
+            return []
+        selected = {os.path.normpath(os.path.relpath(os.path.abspath(os.path.join(run_dir, t)), root))
+                    for t in targets}
+        pending, found, count = [(root, 0)], set(), 0
+        while pending:
+            directory, depth = pending.pop()
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    count += 1
+                    if count > 2000:
+                        return []
+                    if entry.name in (".git", ".venv", "venv", "node_modules", "__pycache__"):
+                        continue
+                    if entry.is_symlink():
+                        return []
+                    if entry.is_dir(follow_symlinks=False):
+                        if depth >= 4:
+                            return []
+                        pending.append((entry.path, depth + 1))
+                    elif entry.is_file(follow_symlinks=False) and _test_file(os.path.relpath(entry.path, root)):
+                        found.add(os.path.relpath(entry.path, root))
+        return sorted(selected) if found and found == selected else []
+    except (OSError, ValueError):
+        return []
 
 
 def _subset(seg: str, cmd: str) -> bool:
@@ -739,7 +856,8 @@ def _numbers(text: str) -> List[str]:
 
 
 def extract(tool_name: str, args: Any, result: Any, status: Optional[str] = None,
-            index: int = 0, error_message: Optional[str] = None) -> Dict[str, Any]:
+            index: int = 0, error_message: Optional[str] = None, cwd: str = "") -> Dict[str, Any]:
+    """`cwd`: the session's recorded working directory (ctx.session_cwd), used only to place a file-scoped test run."""
     args = args if isinstance(args, dict) else {}
     text, exit_code, err, parsed = _decode(result)
     windowed = len(text) > HEAD + TAIL
@@ -791,6 +909,22 @@ def extract(tool_name: str, args: Any, result: Any, status: Optional[str] = None
     ev["masked"] = bool(re.search(r"\|\||\|\s*(?:tail|head|grep|tee|less|cat|sed|awk)\b|;\s*(?:true|exit 0)\b|\|\s*true\b"
                                   r"|;\s*echo\b", cmd))
     ev["subset"] = test_cmd and _subset(seg, cmd)
+    if ev["subset"]:
+        # the inventory root: one `cd` before the runner, or none; `-C`/`--repo` or a later `cd` make it unknown.
+        # A result "cwd" is where the command ended (Hermes reports it only when a `cd` changed it); otherwise the
+        # call's workdir, else the session's cwd. Never the plugin process's own cwd: unknown root = abstain.
+        cds = list(re.finditer(r"(?:^|&&|;)\s*cd\s", cmd))
+        known = not (wm and not wm.group(1)) and len(cds) <= 1 and (not cds or cds[0].start() < cmd.find(seg))
+        ended = parsed.get("cwd") if isinstance(parsed, dict) else None
+        base = args.get("workdir") or args.get("cwd") or cwd or ""
+        if isinstance(ended, str) and ended:
+            directory = ended
+        else:
+            directory = os.path.join(base, ev["where"]) if isinstance(base, str) and ev["where"] else base
+        files = _full_file_run(seg, cmd, directory) if isinstance(directory, str) and known else []
+        if files:
+            ev["subset"] = False
+            ev["test_files"] = [redact(p) for p in files]
     # a quiet run piped only into tail: the end of the output is shown, so failures would be too
     ev["tail_only"] = ev["masked"] and not re.search(r"\|\||\|\s*(?:head|grep|tee|less|cat|sed|awk)\b|;\s*(?:true|exit 0)\b|"
                                                      r"\|\s*true\b|;\s*echo\b", cmd) and bool(re.search(r"\|\s*tail\b", cmd))
@@ -908,7 +1042,7 @@ _FACT_FLAGS = ("i", "tool", "cmd", "exit", "ok", "error", "test_cmd", "deploy_cm
                "any_edit", "skip_added", "check_cmd", "where", "suite", "baseline", "chained", "masked", "subset",
                "stopped", "tail_only", "partial", "fail_text", "quiet_silent", "out_empty", "windowed", "no_tests",
                "head_sha", "diff_files")
-_FACT_LISTS = {"paths_written": 10, "paths_edited": 20, "paths_reported": 10, "shas": 20}
+_FACT_LISTS = {"paths_written": 10, "paths_edited": 20, "paths_reported": 10, "shas": 20, "test_files": 50}
 
 
 def ledger_fact(ev: Dict[str, Any]) -> Dict[str, Any]:

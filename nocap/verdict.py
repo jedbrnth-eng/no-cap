@@ -8,7 +8,7 @@ from __future__ import annotations
 import posixpath
 import re
 
-from .evidence import redact
+from .evidence import _test_file, redact
 from typing import Any, Dict, List, Optional
 
 NO_CAP, CAP, NO_RECEIPT = "NO_CAP", "CAP", "NO_RECEIPT"
@@ -161,10 +161,35 @@ NARROW_RE = re.compile(r"(?i)\b(?:new|newly|added|relevant|affected|related|targ
                        r"regression|these|those|this|that|my|both|two|three|four|five|single|individual)\b")
 
 
-def _scoped_pass(c, fresh):
+_RUNNERS = {"pytest", "py.test", "jest", "vitest", "mocha", "go", "cargo", "tox", "nox", "unittest", "rspec", "phpunit",
+            "ctest", "dotnet", "mvn", "gradle", "gradlew", "./gradlew", "swift", "xcodebuild", "deno", "bun", "playwright",
+            "cypress", "ava", "tap", "node", "npm", "pnpm", "yarn", "make"}
+_WRAPPERS = {"npm", "pnpm", "yarn", "bun", "make", "node"}
+
+
+def _runner(e) -> str:
+    """The test runner a run used (`pytest`, `go`, `jest`...). A wrapper (`yarn jest`) names the runner after it;
+    an unknown shape keeps the whole suite text, so only identical commands compare equal."""
+    words = (e.get("suite") or "").split()
+    known = [w for w in words if w in _RUNNERS]
+    inner = [w for w in known if w not in _WRAPPERS]
+    return (inner or known or [" ".join(words)])[0]
+
+
+def _scoped_pass(c, fresh, runs=()):
     """A narrowed "X tests pass": judge it by the runs that name X, or by a green full-suite run. Else abstain."""
     words = _scope_words(c.get("text", "") + " " + c.get("scope_text", ""))
     full = [e for e in fresh if not e.get("subset")]
+    if c.get("formerly_failing"):
+        # A count of former failures does not identify them in a mixed run. Only a later complete green
+        # run covers them; unrelated subset successes (or failures) cannot settle this claim.
+        # ...and it must be the runner that showed them failing: a green `go test` says nothing about pytest failures
+        runners = {_runner(e) for e in list(runs) + list(fresh) if not _green(e)}
+        if full and _green(full[-1]) and all(_green(e) for e in fresh if e["i"] > full[-1]["i"]) and _runner(
+                full[-1]) and (not runners or runners == {_runner(full[-1])}):
+            return _r(c, NO_CAP, full[-1], quote=_run_quote(full[-1]))
+        return _r(c, NO_RECEIPT, fresh[-1], why="no complete green run covers the formerly failing tests",
+                  quote=_run_quote(fresh[-1]))
     if not words and BROAD_RE.search(c.get("text", "")) and not NARROW_RE.search(c.get("text", "")):
         # "all existing tests pass", "the remaining tests pass": as wide as the suite, so only a full run proves it
         if full and _green(full[-1]) and all(_green(e) for e in fresh if e["i"] > full[-1]["i"]):
@@ -193,10 +218,20 @@ def _scoped_pass(c, fresh):
               quote=_run_quote(bad[-1]))
 
 
+def _ledger_subset(e, evs) -> bool:
+    """A file-only inventory cannot erase other test files already observed in this workdir."""
+    files = e.get("test_files")
+    return bool(files) and any(
+        _test_file(p) and not any(_path_match(f, p) for f in files)
+        for seen in evs if not (seen.get("where") and e.get("where") and seen["where"] != e["where"])
+        for key in ("paths_seen", "paths_read", "paths_edited", "paths_written") for p in seen.get(key, []))
+
+
 def _tests(c, evs):
     """Pick the run the claim is about, then compare. Only real test-runner commands count as runs:
     an echo/cat of a summary, a git-stash baseline and a background start are not evidence."""
-    runs = [e for e in evs if e["test_cmd"] and not e.get("background") and not e.get("baseline")]
+    runs = [dict(e, subset=True) if _ledger_subset(e, evs) else e for e in evs
+            if e["test_cmd"] and not e.get("background") and not e.get("baseline")]
     if c.get("cites_log"):  # "the log shows 44 passed": a read of that log is the receipt
         hits = [e for e in evs if _summary(e) and _summary(e)["passed"] == c.get("passed")]
         if hits:
@@ -293,7 +328,7 @@ def _tests(c, evs):
             return _r(c, NO_RECEIPT, e, why=CUT_WHY, quote=_run_quote(e))
         return _r(c, NO_CAP, e, quote=_run_quote(e))
     if c.get("scoped") and not c.get("table"):
-        return _scoped_pass(c, fresh)
+        return _scoped_pass(c, fresh, runs)
     full = [e for e in fresh if not e.get("subset")]
     if not full:
         e = fresh[-1]

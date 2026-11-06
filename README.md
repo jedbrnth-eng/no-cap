@@ -320,6 +320,17 @@ Limits:
   PR numbers and states, SHAs seen, paths written, and flags such as "edited code"). Never raw output, numbers or URLs.
   The same secret masker runs on every field. At most 100 turns and 400 calls per session are kept (the newest), the
   same `retention_days` applies, and `/nocap purge` deletes it.
+- **Test-file inventory:** a file-scoped run can count as the full suite only when its literal targets cover
+  every observed test file. Only plain `pytest` / `jest` / `vitest` runs qualify (not mocha, and no flag but
+  `-q`/`-v`). No Cap finds the run's project (the `.git` checkout at most four levels up, else the nearest
+  `pyproject.toml`, `setup.cfg`, `setup.py`, `pytest.ini`, `tox.ini` or `package.json`) and lists it read-only, matching `test_*.py`,
+  `*_test.py`, JS/TS `*.test.*` / `*.spec.*` and JS/TS files under `__tests__/`, at most four directory levels and
+  2,000 visited entries. It skips `.git`, `.venv`, `venv`, `node_modules` and `__pycache__` and never follows
+  symlinks. The only file contents it reads are the first 64 KB of those runner configs (and `jest`/`vitest`/`vite`
+  configs) between the run's directory and the project root, to abstain when they override the test-file patterns; nothing read is stored. It abstains on errors,
+  limits, an unknown working directory (never the plugin process's own), `-C`/`--repo`, or a `cd` it can't place.
+  Proven full-file runs keep their redacted target filenames (at most 50) in the session ledger. The inventory adds
+  no network requests, subprocesses or file writes.
 - **Network:** none by default. With `self_verify_http: true`, `/cap` may send one HTTP HEAD request to a URL the
   agent claimed is live, and only to a public address: the host is resolved first and refused if any address is
   loopback, link-local (cloud metadata such as 169.254.169.254), private, carrier-grade NAT, unique-local, multicast or
