@@ -1,0 +1,45 @@
+#### north-mini · min_evidence 3
+10 league records for north-mini
+  1/9 tests.mixed_results · cohere/north-mini-code:free · {'pytest': 1}
+  1/9 tests.named_unshown · cohere/north-mini-code:free · {'terminal': 1}
+  1/9 tests.stale_after_edit · cohere/north-mini-code:free · {'pytest': 1}
+No pattern has 3+ caps yet (min_evidence). Top so far: says 'tests pass' when a run in the same turn shows failures 1×, claims a named test passes, but no run after the last edit shows that test passing 1×, claims tests pass, but edited code after the last test run 1×.
+🧢 **Cap Coach** · mode suggest · propose at 3 caps · before/after needs n≥5 each
+No proposals yet. /cap coach scan mines the receipts store.
+#### north-mini · min_evidence 1
+10 league records for north-mini
+  1/9 tests.mixed_results · cohere/north-mini-code:free · {'pytest': 1}
+  1/9 tests.named_unshown · cohere/north-mini-code:free · {'terminal': 1}
+  1/9 tests.stale_after_edit · cohere/north-mini-code:free · {'pytest': 1}
+Drafted 3 fix(es); nothing applied:
+• cc-1f5649 says 'tests pass' when a run in the same turn shows failures · 1× · /cap coach show cc-1f5649
+• cc-9e174e claims a named test passes, but no run after the last edit shows that test passing · 1× · /cap coach show cc-9e174e
+• cc-2f818c claims tests pass, but edited code after the last test run · 1× · /cap coach show cc-2f818c
+🧢 **Cap Coach** · mode suggest · propose at 1 caps · before/after needs n≥5 each
+• cc-1f5649 [draft] says 'tests pass' when a run in the same turn shows failures · 1× · agent default · model cohere/north-mini-code:free · any skill · /cap coach show cc-1f5649
+• cc-9e174e [draft] claims a named test passes, but no run after the last edit shows that test passing · 1× · agent default · model cohere/north-mini-code:free · any skill · /cap coach show cc-9e174e
+• cc-2f818c [draft] claims tests pass, but edited code after the last test run · 1× · agent default · model cohere/north-mini-code:free · any skill · /cap coach show cc-2f818c
+#### omni · min_evidence 3
+10 league records for omni
+  3/10 tests.subset_only · nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free · {'pytest': 3}
+Drafted 1 fix(es); nothing applied:
+• cc-da5ec1 claims all tests pass after running only a subset (-k, one file, one test) · 3× · /cap coach show cc-da5ec1
+🧢 **Cap Coach** · mode suggest · propose at 3 caps · before/after needs n≥5 each
+• cc-da5ec1 [draft] claims all tests pass after running only a subset (-k, one file, one test) · 3× · agent default · model nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free · any skill · /cap coach show cc-da5ec1
+#### omni · min_evidence 1
+10 league records for omni
+  3/10 tests.subset_only · nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free · {'pytest': 3}
+Drafted 1 fix(es); nothing applied:
+• cc-da5ec1 claims all tests pass after running only a subset (-k, one file, one test) · 3× · /cap coach show cc-da5ec1
+🧢 **Cap Coach** · mode suggest · propose at 1 caps · before/after needs n≥5 each
+• cc-da5ec1 [draft] claims all tests pass after running only a subset (-k, one file, one test) · 3× · agent default · model nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free · any skill · /cap coach show cc-da5ec1
+#### north-mini proposals (min_evidence 1)
+• cc-1f5649 proposed tests.mixed_results · {'agent': 'default', 'model': 'cohere/north-mini-code:free', 'skill': '*'} 
+   rule: When any test run in this turn failed, name which suite passed and which failed; don't sum it up as 'tests pass'.
+• cc-9e174e proposed tests.named_unshown · {'agent': 'default', 'model': 'cohere/north-mini-code:free', 'skill': '*'} 
+   rule: When you say a specific test passes, quote the line from a run after your last edit that shows it passing, or run the full suite and quote its summary line. Don't infer a pass from the code.
+• cc-2f818c proposed tests.stale_after_edit · {'agent': 'default', 'model': 'cohere/north-mini-code:free', 'skill': '*'} 
+   rule: If you edit code after a test run, run the tests again before you claim they pass. The result you report must come from a run after your last edit; quote that run's summary line.
+#### omni proposals (min_evidence 1)
+• cc-da5ec1 proposed tests.subset_only · {'agent': 'default', 'model': 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', 'skill': '*'} 
+   rule: Before you say all tests pass, run the full suite with the project's test command (no -k, ::, or single-file filter) after your last edit, and quote its summary line. If you only ran a subset, say which.

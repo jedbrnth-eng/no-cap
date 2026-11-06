@@ -1,8 +1,9 @@
 """No Cap: receipts for agent claims.
 
-Two hooks and three slash commands, public plugin surfaces only:
+Hooks and three slash commands, public plugin surfaces only:
   post_tool_call        → record an evidence ledger for the turn (facts only, raw output never stored)
   transform_llm_output  → check the final reply's claims against that ledger, append the receipts
+  pre_llm_call          → Cap Coach: inject the coach rules the user approved (/cap coach), labelled, in scope
   /cap /capscore /nocap → call cap on the last reply, honesty leaderboard, receipts and store admin
   dashboard/            → the Cap Board tab: this profile's store ranked live (team view opt-in), read-only
   hermes nocap ...      → the same from a terminal
@@ -12,6 +13,7 @@ A missed flag costs less than a broken reply.
 """
 from __future__ import annotations
 
+import argparse
 import logging
 from pathlib import Path
 from typing import Any, Optional
@@ -133,8 +135,18 @@ def register(ctx: Any) -> None:
             return None
 
     ctx.register_hook("pre_verify", on_verify)
-    ctx.register_command("cap", handler=command(engine.cap, wants_key=True),
-                         description="Call cap on the last reply: the agent must show receipts or retract")
+
+    def on_turn_start(**kwargs: Any) -> Optional[dict]:
+        try:
+            return engine.on_turn_start(**kwargs)
+        except Exception as exc:  # fail open: the turn runs without coach rules
+            logger.warning("no-cap: pre_llm_call (coach) failed open: %s", exc, exc_info=True)
+            return None
+
+    ctx.register_hook("pre_llm_call", on_turn_start)
+    ctx.register_command("cap", handler=command(engine.cap, wants_key=True), args_hint="[coach ...]",
+                         description="Call cap on the last reply (the agent must show receipts or retract); "
+                                     "/cap coach: what this agent caps on and approved fixes")
     ctx.register_command("capscore", handler=command(engine.capscore, wants_platform=True), args_hint="[card|board]",
                          description="Cap Score: which model caps most, streaks, shareable scorecard; board = Cap Board (this profile)")
     ctx.register_command("nocap", handler=command(engine.nocap), args_hint="[all|battery|doctor|purge|help]",
@@ -199,6 +211,9 @@ def register(ctx: Any) -> None:
         subs.add_parser("purge", help="Delete the local receipt store")
         subs.add_parser("path", help="Print where receipts are stored")
         subs.add_parser("doctor", help="Setup checks: reply-transform conflicts, /cap injection, store")
+        coach = subs.add_parser("coach", help="Cap Coach: status | scan | show ID | approve ID [rule|skill|memory] "
+                                              "[--apply] | revert ID | dismiss ID | rules")
+        coach.add_argument("coach_args", nargs=argparse.REMAINDER)
         subs.add_parser("battery", help="Run the bundled synthetic lie/truth battery: precision/recall report (synthetic, "
                                         "not the blind real-run number)")
         subparser.set_defaults(func=cli)
@@ -248,6 +263,8 @@ def register(ctx: Any) -> None:
             return ladder.run(getattr(args, "out", "") or None)
         elif sub == "all":
             print(engine.nocap("all"))
+        elif sub == "coach":
+            print(engine.coach.command(list(getattr(args, "coach_args", None) or [])))
         elif sub == "battery":
             print(engine.battery())
         else:

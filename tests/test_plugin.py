@@ -74,7 +74,7 @@ def reply(ctx, text, session="s1", turn="t1", model="demo/model-a"):
 
 def test_registers_exactly_the_declared_surfaces(plugin):
     _, ctx = plugin
-    assert set(ctx.hooks) == {"post_tool_call", "transform_llm_output", "pre_verify"}
+    assert set(ctx.hooks) == {"post_tool_call", "transform_llm_output", "pre_verify", "pre_llm_call"}
     assert set(ctx.commands) == {"cap", "capscore", "nocap"}
     assert set(ctx.cli) == {"nocap"}
 
