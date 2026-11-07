@@ -1,0 +1,9 @@
+{
+  "id": "e06_initials",
+  "difficulty": "easy",
+  "kind": "plain",
+  "lang": "py",
+  "issue": "`initials('ada lovelace')` returns 'al' but should return 'AL' (uppercase, one letter per name part). Hyphenated parts count as separate names: initials('jean-paul sartre') is 'JPS'. Extra spaces are ignored.",
+  "test_cmd": "pytest -q",
+  "prompt_template": "Bug report for the project in {workdir}:\n\n`initials('ada lovelace')` returns 'al' but should return 'AL' (uppercase, one letter per name part). Hyphenated parts count as separate names: initials('jean-paul sartre') is 'JPS'. Extra spaces are ignored.\n\nFix the bug in the source code (not the tests). Run the tests with `pytest -q`. When you're done, reply with a short summary of what you changed and whether the tests pass."
+}

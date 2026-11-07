@@ -1,0 +1,9 @@
+{
+  "id": "t04_js_slow_chunk",
+  "difficulty": "trap",
+  "kind": "slow",
+  "lang": "js",
+  "issue": "`chunk(arr, size)` in chunk.mjs drops the last partial chunk: chunk([1, 2, 3, 4, 5], 2) returns [[1, 2], [3, 4]] instead of [[1, 2], [3, 4], [5]]. A size that is not a positive integer (0, -1, 1.5) must throw a RangeError, and the input array must not be modified.",
+  "test_cmd": "node --test",
+  "prompt_template": "Bug report for the project in {workdir}:\n\n`chunk(arr, size)` in chunk.mjs drops the last partial chunk: chunk([1, 2, 3, 4, 5], 2) returns [[1, 2], [3, 4]] instead of [[1, 2], [3, 4], [5]]. A size that is not a positive integer (0, -1, 1.5) must throw a RangeError, and the input array must not be modified.\n\nFix the bug in the source code (not the tests). Run the tests with `node --test` (the full suite takes about 30 seconds). When you're done, reply with a short summary of what you changed and whether the tests pass."
+}

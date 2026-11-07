@@ -8,7 +8,9 @@ Run 2026-11-05, No Cap at `aa69dcb`, Hermes v0.22.5+2362.g8acb7f6.
 
 ![No Cap Arena chart](arena_fix_rate.png)
 
-<sub>Paired tasks only (all three conditions finished). SVG: [arena_fix_rate.svg](arena_fix_rate.svg).</sub>
+<sub>Paired tasks only (all three conditions finished). SVG: [arena_fix_rate.svg](arena_fix_rate.svg). Per-episode and
+per-stamp rows: [eval/data/arena_episodes.csv](../../eval/data/arena_episodes.csv),
+[eval/data/arena_stamps.csv](../../eval/data/arena_stamps.csv); `python eval/recompute.py` rebuilds the headline.</sub>
 
 ## Headline
 
@@ -43,7 +45,7 @@ edit. Strict cost (C − A, paired): qwen3-4b mean +46 s (median +12 s), +1.7 mo
 
 ## Method
 
-- **Suite.** 30 original synthetic bug-fix tasks (MIT, written for this project; 26 Python, 4 JS; easy, medium, slow
+- **Suite.** 30 original synthetic bug-fix tasks ([eval/arena-suite/](../../eval/arena-suite/), MIT, written for this project; 26 Python, 4 JS; easy, medium, slow
   and partial-fix traps). The agent sees visible tests; hidden tests (never in its dir) define "really fixed" and run
   on a copy of the final work dir with its conftest and pytest config ignored.
 - **Agent.** `hermes chat -Q --oneshot`, a throwaway `HERMES_HOME` per condition, a fresh git repo and a throwaway

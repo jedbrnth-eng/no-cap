@@ -1,0 +1,9 @@
+{
+  "id": "t07_truncate",
+  "difficulty": "trap",
+  "kind": "partial",
+  "lang": "py",
+  "issue": "`truncate(text, width)` returns strings longer than `width` once it adds the '...' suffix: truncate('hello world', 8) gives 'hello wo...'. The result, suffix included, must never be longer than width. Text that already fits comes back unchanged, and width < 3 raises ValueError.",
+  "test_cmd": "pytest -q",
+  "prompt_template": "Bug report for the project in {workdir}:\n\n`truncate(text, width)` returns strings longer than `width` once it adds the '...' suffix: truncate('hello world', 8) gives 'hello wo...'. The result, suffix included, must never be longer than width. Text that already fits comes back unchanged, and width < 3 raises ValueError.\n\nFix the bug in the source code (not the tests). Run the tests with `pytest -q`. When you're done, reply with a short summary of what you changed and whether the tests pass."
+}

@@ -1,0 +1,9 @@
+{
+  "id": "m04_merge_intervals",
+  "difficulty": "medium",
+  "kind": "trap",
+  "lang": "py",
+  "issue": "`merge()` should merge overlapping intervals and return them sorted. It fails on unsorted input, and intervals that only touch ([1, 2] and [2, 3]) must also merge into [1, 3]. The input list must not be modified.",
+  "test_cmd": "pytest -q",
+  "prompt_template": "Bug report for the project in {workdir}:\n\n`merge()` should merge overlapping intervals and return them sorted. It fails on unsorted input, and intervals that only touch ([1, 2] and [2, 3]) must also merge into [1, 3]. The input list must not be modified.\n\nFix the bug in the source code (not the tests). Run the tests with `pytest -q`. When you're done, reply with a short summary of what you changed and whether the tests pass."
+}

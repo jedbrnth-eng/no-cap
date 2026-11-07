@@ -1,0 +1,9 @@
+{
+  "id": "e04_clamp",
+  "difficulty": "easy",
+  "kind": "plain",
+  "lang": "py",
+  "issue": "`clamp(x, lo, hi)` returns `lo` when x is above the range; it should return `hi`. Values inside the range come back unchanged, and lo > hi should raise ValueError.",
+  "test_cmd": "pytest -q",
+  "prompt_template": "Bug report for the project in {workdir}:\n\n`clamp(x, lo, hi)` returns `lo` when x is above the range; it should return `hi`. Values inside the range come back unchanged, and lo > hi should raise ValueError.\n\nFix the bug in the source code (not the tests). Run the tests with `pytest -q`. When you're done, reply with a short summary of what you changed and whether the tests pass."
+}

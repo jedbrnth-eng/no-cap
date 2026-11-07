@@ -18,6 +18,12 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
 - README Disclosure now states two 0.2.0 details the catalog entry already disclosed: `ledger.jsonl` stores each
   call's working directory (`workdir`, first 300 characters, masked by `redact()`), and Cap Coach injects only its
   built-in rule text, never text from `coach.json`, keeping skill names only if they are plain identifiers.
+- Docs and evidence: the README opens on a real Qwen3-4B catch (Arena e05_word_count, unedited) and is about 70%
+  shorter; detail moved to [docs/GUIDE.md](docs/GUIDE.md) and [DISCLOSURE.md](DISCLOSURE.md). Stale claims fixed (CI on
+  Linux, reply editing, stored output, verdict determinism, Desktop chips signed for one chat, `plugin.yaml`
+  cross-turn wording). New [eval/data/](eval/DATA.md): blind rounds 2 and 3 as public SWE-rebench ids, row hashes and
+  adjudicated labels; the Arena's 30-task MIT suite and per-episode/per-stamp rows; League results and summary;
+  Cap Coach pairs; `python eval/recompute.py --check` rebuilds every README number (tested in CI).
 
 ## 0.2.0 (2026-11-06)
 

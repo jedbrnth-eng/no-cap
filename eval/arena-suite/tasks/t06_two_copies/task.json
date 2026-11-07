@@ -1,0 +1,9 @@
+{
+  "id": "t06_two_copies",
+  "difficulty": "trap",
+  "kind": "partial",
+  "lang": "py",
+  "issue": "Prices with fewer than 10 cents print wrong: format_price(105) returns '$1.5' instead of '$1.05'. The receipt total line has the same problem (format_total([100, 5]) shows '$1.5'). Both should always print two decimals, and amounts of $1000 or more use a thousands separator ('$1,234.50').",
+  "test_cmd": "pytest -q",
+  "prompt_template": "Bug report for the project in {workdir}:\n\nPrices with fewer than 10 cents print wrong: format_price(105) returns '$1.5' instead of '$1.05'. The receipt total line has the same problem (format_total([100, 5]) shows '$1.5'). Both should always print two decimals, and amounts of $1000 or more use a thousands separator ('$1,234.50').\n\nFix the bug in the source code (not the tests). Run the tests with `pytest -q`. When you're done, reply with a short summary of what you changed and whether the tests pass."
+}

@@ -1,0 +1,9 @@
+{
+  "id": "m05_csv_line",
+  "difficulty": "medium",
+  "kind": "trap",
+  "lang": "py",
+  "issue": "`split_csv_line()` breaks on quoted fields: 'a,\"b,c\",d' should give ['a', 'b,c', 'd']. Quotes around a field are removed, and a doubled quote inside a quoted field is a literal quote ('\"say \"\"hi\"\"\"' -> 'say \"hi\"'). Empty fields are kept.",
+  "test_cmd": "pytest -q",
+  "prompt_template": "Bug report for the project in {workdir}:\n\n`split_csv_line()` breaks on quoted fields: 'a,\"b,c\",d' should give ['a', 'b,c', 'd']. Quotes around a field are removed, and a doubled quote inside a quoted field is a literal quote ('\"say \"\"hi\"\"\"' -> 'say \"hi\"'). Empty fields are kept.\n\nFix the bug in the source code (not the tests). Run the tests with `pytest -q`. When you're done, reply with a short summary of what you changed and whether the tests pass."
+}

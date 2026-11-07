@@ -1,0 +1,9 @@
+{
+  "id": "m02_lru_cache",
+  "difficulty": "medium",
+  "kind": "trap",
+  "lang": "py",
+  "issue": "`LRUCache` evicts the wrong entry. When the cache is full, put() must evict the least recently USED key, and both get() and put() of an existing key count as a use.",
+  "test_cmd": "pytest -q",
+  "prompt_template": "Bug report for the project in {workdir}:\n\n`LRUCache` evicts the wrong entry. When the cache is full, put() must evict the least recently USED key, and both get() and put() of an existing key count as a use.\n\nFix the bug in the source code (not the tests). Run the tests with `pytest -q`. When you're done, reply with a short summary of what you changed and whether the tests pass."
+}
