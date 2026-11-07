@@ -4,6 +4,12 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
 [jedbrnth-eng/no-cap](https://github.com/jedbrnth-eng/no-cap/pulls?q=is%3Apr+is%3Amerged), by PR number
 (`gh pr list -R jedbrnth-eng/no-cap --state merged`).
 
+## Unreleased
+
+- README Disclosure now states two 0.2.0 details the catalog entry already disclosed: `ledger.jsonl` stores each
+  call's working directory (`workdir`, first 300 characters, masked by `redact()`), and Cap Coach injects only its
+  built-in rule text, never text from `coach.json`, keeping skill names only if they are plain identifiers.
+
 ## 0.2.0 (2026-11-06)
 
 Engine and receipts

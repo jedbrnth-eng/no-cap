@@ -418,8 +418,9 @@ Limits:
 - **Session ledger** (`cross_turn`, on by default): `ledger.jsonl` in the same folder (`0600`, folder `0700`), one line
   per checked turn: session id, turn id, turn number, and per tool call of that turn the parsed facts (tool name,
   command up to 160 characters, exit code, error line, test summary lines, git facts such as push refs, commit SHA and
-  PR numbers and states, SHAs seen, paths written, and flags such as "edited code"). Never raw output, numbers or URLs.
-  The same secret masker runs on every field. At most 100 turns and 400 calls per session are kept (the newest), the
+  PR numbers and states, SHAs seen, paths written, and flags such as "edited code"), including the tool's own working
+  directory (`workdir`, first 300 characters), so a claim about another repo isn't judged against this one. Never raw
+  output, numbers or URLs. The same secret masker (`redact()`) runs on every field, `workdir` included. At most 100 turns and 400 calls per session are kept (the newest), the
   same `retention_days` applies, and `/nocap purge` deletes it.
 - **Test-file inventory:** a file-scoped run can count as the full suite only when its literal targets cover
   every observed test file. Only plain `pytest` / `jest` / `vitest` runs qualify (not mocha, and no flag but
@@ -471,7 +472,10 @@ Limits:
   profile's receipts, never a key.
 - **Cap Coach:** drafts and approved rules live in `coach.json` in the same folder (`0600`): pattern id, scope
   (agent profile, model, skill), counts, up to 3 redacted, truncated example claims per pattern, the rule text, and
-  the frozen baseline. Reply records also store the ids of coach rules injected that turn (coach scope reuses the
+  the frozen baseline. The rule text it injects is always No Cap's built-in text for that pattern, from its own
+  library, never text read back from `coach.json` (a file the agent can write); a proposal whose pattern isn't in the
+  library is never injected. Skill names are kept only if they are plain identifiers: a name with spaces, newlines or
+  markup is dropped, not cleaned up, so it can't carry an instruction into a rule. Reply records also store the ids of coach rules injected that turn (coach scope reuses the
   per-turn skill names the Cap Board already records; the session's loaded skills are kept in memory only). Approved coach rules reach the model through `pre_llm_call` as
   labelled context, only in scope, never as a system-prompt edit. No Cap never writes skills, memory or config; with
   `--apply` it sends one message asking the agent to make the approved skill or memory edit with its own tools.
