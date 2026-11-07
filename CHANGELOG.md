@@ -10,7 +10,7 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
   a legend, "a 🧢 CAP stamp") no longer triggers the "didn't issue" warning; a stamp in receipt position still does.
   New `footer_hint` (default `auto`): one labelled `pre_llm_call` line, only when the history holds a No Cap footer,
   so models stop copying the footer Hermes replays to them. Discord footer: a claim's markdown backticks and bold are
-  dropped instead of shown as `ˋ`; a command's lone backtick stays real inside a two-backtick span. "…is 1a2b3c4
+  dropped instead of shown as `ˋ` (a command's backtick, which is content, keeps the inert `ˋ`). "…is 1a2b3c4
   (…, run in /path)." is read as a SHA claim. `/nocap doctor` shows the turns the reply hook saw and why a profile can
   have none. README limits: profiles with no completed turn, the host's `tools.override` log line.
 - Security (catalog review): every git child now gets a minimal environment (`PATH`, `HOME`, `LANG`, `LC_ALL`,

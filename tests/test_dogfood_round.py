@@ -149,13 +149,8 @@ def test_discord_claim_drops_markdown_bold_markers():
 
 @pytest.mark.parametrize("cmd", ["echo `date`", "x `` y", "`", "a`b`c``d"])
 def test_discord_command_with_backticks_stays_one_closed_span(cmd):
-    span = dsurf.code(cmd, 80)
-    assert "ˋ" not in span or "``" in cmd  # a lone backtick stays a backtick; only a run of two is defused
-    if span.startswith("`` "):
-        inner = span[3:-3]
-        assert span.endswith(" ``") and "``" not in inner
-    else:
-        assert span.startswith("`") and span.endswith("`") and "`" not in span[1:-1]
+    span = dsurf.code(cmd, 80)  # a command's backtick is content: the inert ˋ keeps the span closed
+    assert span.startswith("`") and span.endswith("`") and "`" not in span[1:-1]
 
 
 # ---- 4. "..., run in /path" is a location note, not an imperative ----------------------------------------------------

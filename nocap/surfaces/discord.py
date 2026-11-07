@@ -67,16 +67,11 @@ def _short(s: str, n: int) -> str:
 
 
 def code(s: Any, n: int) -> str:
-    """One inline code span; it can't be closed early, newlines are folded, secrets masked. A lone backtick inside
-    (a command's `date`) stays a real backtick: the span is then fenced with two backticks and padded, as Discord
-    markdown allows. Only a run of two or more, which could close that span, becomes the lookalike ˋ."""
-    s = _short(redact(str(s or "")), n)
-    if not s.strip():
-        return ""
-    if "`" not in s:
-        return f"`{s}`"
-    s = re.sub(r"`{2,}", lambda m: "ˋ" * len(m.group(0)), s)
-    return f"`` {s} ``"
+    """One inline code span. Backticks can't close it early (they become the lookalike ˋ), newlines are folded,
+    secrets masked. Only a command or tool output can still hold one: a claim's own backticks are markdown and are
+    dropped first (claim_code)."""
+    s = _short(redact(str(s or "")), n).replace("`", "ˋ")
+    return f"`{s}`" if s.strip() else ""
 
 
 _MD_EMPHASIS = re.compile(r"`+|\*\*|__")
