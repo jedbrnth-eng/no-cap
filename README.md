@@ -164,7 +164,7 @@ installed Hermes Desktop app (v0.23.0) and `hermes dashboard` against that home.
 | `post_tool_call` hook | Records each tool result into a per-turn ledger in memory: exit code, parsed test summary (pytest, jest, vitest, go, cargo, Gradle/Maven…), push refs, PR state, HTTP status, paths written. Raw output is never stored. |
 | `transform_llm_output` hook | Finds the claims in the final reply (tests, CI, build, pushed, merged, committed, PR opened, deployed, URL live, file written, SHAs, counts), judges each against that turn's ledger, and **appends** the receipt footer. The reply text is never edited, so the classic CLI doesn't reprint it. |
 | `pre_verify` hook | Strict mode only: when a coding turn is about to end with an unproven claim, the agent is told to run the check or drop the claim. At most 2 nudges per turn. |
-| `pre_llm_call` hook | Cap Coach only: adds the coach rules **you approved** to the turn as labelled context, only for the agent, model and loaded skill they were approved for. With no approved rule it returns nothing. |
+| `pre_llm_call` hook | Two things, both labelled, API-time context only (never a system-prompt edit, never stored in the transcript): **Cap Coach** adds the coach rules **you approved**, only for the agent, model and loaded skill they were approved for; the **footer hint** (`footer_hint: auto`, default) adds one fixed line, *only* when an earlier assistant reply in the history ends with a No Cap footer, telling the model the footer is added by the plugin and not to write it. Hermes replays the rewritten reply as the model's own words, and on a real install models often copied the footer into their own Discord replies. `footer_hint: off` stops it. With neither, it returns nothing. |
 | `/cap` | Re-checks what it can locally (read-only `git rev-parse` / `cat-file`, a file's existence for "created X"), then asks the agent to prove or retract the rest. The next reply is re-scored (🔁 lines). It never overrules a 🧢 from the turn's own output. |
 | `/capscore [card]` | Per-model honesty board from the local store; `card` writes a share card (SVG, plus PNG when Pillow is there). |
 | Dashboard **Cap Board** tab · `/capscore board` | The leaderboard: this profile's store by default; with the `board.team_profiles` opt-in, a team view of other Hermes profiles on this machine (found the way Hermes finds profiles, read-only, CLI and dashboard only). Ranked by cap rate per agent, model and skill, with receipt rate, streak, 7-day trend, top cap type and a Hall of Cap of the latest 🧢 with their (redacted) evidence. The tab polls every 4 s. Rates need ≥10 claims; below that the row shows n, greyed and unranked. See [docs/CAP_BOARD.md](docs/CAP_BOARD.md). |
@@ -478,7 +478,8 @@ Limits:
   library is never injected. Skill names are kept only if they are plain identifiers: a name with spaces, newlines or
   markup is dropped, not cleaned up, so it can't carry an instruction into a rule. Reply records also store the ids of coach rules injected that turn (coach scope reuses the
   per-turn skill names the Cap Board already records; the session's loaded skills are kept in memory only). Approved coach rules reach the model through `pre_llm_call` as
-  labelled context, only in scope, never as a system-prompt edit. No Cap never writes skills, memory or config; with
+  labelled context, only in scope, never as a system-prompt edit. The only other text No Cap adds there is the fixed
+  footer hint (one line, built in, no user or tool text in it; `footer_hint: off` stops it). No Cap never writes skills, memory or config; with
   `--apply` it sends one message asking the agent to make the approved skill or memory edit with its own tools.
 - **Discord:** every Discord reply gets the compact Discord footer (text only). With `discord_buttons: on`, a listener
   on Hermes's discord.py client (handed over by `ctx.register_platform_handler("discord", …)`) edits **the bot's own
@@ -502,6 +503,18 @@ Limits:
 
 ## Known limits and what is not tested
 
+- No Cap only sees a model turn that ends with a reply. A profile whose only activity is no-agent cron scripts,
+  gateway reconnects or plugin reloads, or whose turns failed before any reply (an HTTP 429 from the provider, an auth
+  error), has no `receipts.jsonl` and no `ledger.jsonl`, and that is expected: on a real multi-profile install, the profiles
+  with no store had no completed model turn since the install. `/nocap doctor` shows how many turns the reply hook saw.
+  A turn with neither claims nor tool calls is counted in `ledger.jsonl` only.
+- Hermes logs `capability_check plugin=no-cap capability=tools.override decision=deny` each time it loads the plugin.
+  That is the host checking every non-bundled plugin's tool-override consent at load (every user plugin gets the same
+  line); No Cap registers no tools, overrides none, and doesn't need or ask for that capability.
+- A stamp the reply explains or quotes (in a code span or block, a blockquote, quotation marks, a legend like
+  "🧾 NO CAP / 🧢 CAP", or as a noun: "a 🧢 CAP stamp") gets no warning. A stamp in receipt position (a line start, a
+  copied footer, after a finished sentence) gets "⚠️ … stamp(s) No Cap didn't issue". Either way a stamp in the
+  reply is never trusted: the claims are judged on the tool calls.
 - Claims are read in English, plus Chinese, Thai and Spanish for tests, push, merge and deploy (with negation, future,
   conditional and question near-misses per language). Other claim kinds in those languages, and completion phrases in
   a few other languages ("完了しました", "готово", "erledigt"), are recorded as a hidden 🤔 for `/nocap all`, never

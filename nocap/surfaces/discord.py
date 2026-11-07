@@ -67,9 +67,25 @@ def _short(s: str, n: int) -> str:
 
 
 def code(s: Any, n: int) -> str:
-    """One inline code span. Backticks can't close it early (they become ˋ), newlines are folded, secrets masked."""
-    s = _short(redact(str(s or "")), n).replace("`", "ˋ")
-    return f"`{s}`" if s.strip() else ""
+    """One inline code span; it can't be closed early, newlines are folded, secrets masked. A lone backtick inside
+    (a command's `date`) stays a real backtick: the span is then fenced with two backticks and padded, as Discord
+    markdown allows. Only a run of two or more, which could close that span, becomes the lookalike ˋ."""
+    s = _short(redact(str(s or "")), n)
+    if not s.strip():
+        return ""
+    if "`" not in s:
+        return f"`{s}`"
+    s = re.sub(r"`{2,}", lambda m: "ˋ" * len(m.group(0)), s)
+    return f"`` {s} ``"
+
+
+_MD_EMPHASIS = re.compile(r"`+|\*\*|__")
+
+
+def claim_code(s: Any, n: int) -> str:
+    """The agent's own words in a code span. Its markdown (`code`, **bold**) is formatting, not content: dropped, so
+    the footer reads `passed on abc1234`, not `passed on ˋabc1234ˋ`."""
+    return code(" ".join(_MD_EMPHASIS.sub("", str(s or "")).split()), n)
 
 
 def plain(s: Any, n: int = 200) -> str:
@@ -86,7 +102,7 @@ def _prose(line: str, n: int = 180) -> str:
     out, pos = [], 0
     for m in _QUOTED.finditer(line):
         out.append(plain(line[pos:m.start()], n))
-        out.append(code(m.group(1), 60))
+        out.append(claim_code(m.group(1), 60))
         pos = m.end()
     out.append(plain(line[pos:], n))
     return "".join(out)
@@ -97,7 +113,7 @@ def receipt_line(r: Dict[str, Any], strict: bool = False, wide: bool = False) ->
     v = r["verdict"]
     n = 2 if wide else 1
     head = EMOJI[v] + (" Unverified" if strict and v == CAP else "")
-    parts = [head + " " + (code(claim_text(r), 70 * n) or "`(claim)`")]
+    parts = [head + " " + (claim_code(claim_text(r), 70 * n) or "`(claim)`")]
     if r.get("cite") is not None:
         where = f" · call {plain(r['cite'], 8)}"
         what = r.get("cmd") or r.get("tool")

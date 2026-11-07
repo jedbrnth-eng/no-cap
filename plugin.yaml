@@ -61,6 +61,10 @@ config_schema:
     type: str
     default: auto
     description: "Hermes Desktop receipt chips (clickable 🧾/🧢/🤔 that open the cited command, exit code and output line). auto (default): only while No Cap's desktop half is enabled in Desktop and has checked in through the plugin's own local route, so a disabled half never leaves a raw ::nocap line. on: always on Desktop. off: Desktop gets the text footer. Never emitted on any other surface."
+  footer_hint:
+    type: str
+    default: auto
+    description: "auto (default): when an earlier assistant reply in the history ends with a No Cap footer, pre_llm_call adds one fixed, labelled line telling the model the footer is added by the plugin, so it doesn't copy it (Hermes replays the rewritten reply as the model's own words). API-time context only, never stored. off: never."
   coach:
     type: dict
     default: {mode: suggest, min_evidence: 5, auto_after_caps: 0, window_days: 14, min_sample: 10, max_rules: 5}

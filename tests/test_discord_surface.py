@@ -64,16 +64,31 @@ def test_code_spans_cannot_be_broken_out_of():
     r = R(CAP, "done `rm -rf` @everyone <@123> **bold**\nsecond line", cite=1, cmd="echo `x`", quote="a`b")
     line = dsurf.receipt_line(r)
     assert "\n" not in line
-    assert line.count("`") % 2 == 0  # every span closes
-    for span in line.split("`")[1::2]:
-        assert "`" not in span
-    assert "@everyone" in line.split("`")[1]  # inside a code span: Discord renders it inert
+    spans = _spans(line)  # every span closes on its own delimiter (one or two backticks, Discord markdown)
+    assert "@everyone" in spans[0]  # inside a code span: Discord renders it inert
+    assert "echo `x`" in spans[1]  # a lone backtick in a command stays a real one, inside a two-backtick span
+    assert "ˋ" not in line
+
+
+def _spans(line):
+    """Inline code spans the way Discord reads them: a run of N backticks opens, the next run of exactly N closes.
+    Fails when a span never closes."""
+    import re
+    out, pos = [], 0
+    while True:
+        m = re.compile(r"`+").search(line, pos)
+        if not m:
+            return out
+        close = re.compile(r"(?<!`)" + "`" * len(m.group(0)) + r"(?!`)").search(line, m.end())
+        assert close, f"unclosed span in {line!r}"
+        out.append(line[m.end():close.start()])
+        pos = close.end()
 
 
 def test_text_outside_code_spans_is_escaped():
     out = dsurf.footer([], rescore=["🔁 /cap re-score: 🧢 → 🫡 retracted “**x** @here” (tests)"])
-    assert "`**x** @here`" in out  # the agent's words go in a code span
-    assert "@here" not in out.replace("`**x** @here`", "")
+    assert "`x @here`" in out  # the agent's words go in a code span (their markdown bold dropped)
+    assert "@here" not in out.replace("`x @here`", "")
 
 
 def test_secrets_in_evidence_are_redacted():
