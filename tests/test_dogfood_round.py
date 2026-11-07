@@ -41,12 +41,15 @@ def T(cmd, out, code=0, i=1):
 NOTE = "No Cap didn't issue"
 
 # ---- 1. explaining or quoting a stamp is not forging one -------------------------------------------------------------
+# Judge review S1 (2026-11-07): three cases that used to sit here were RECEIPT-SHAPED (a stamp, a quoted claim and a
+# `call N`): a blockquoted footer line and two fenced footer examples. Exempting them let a reply paint a complete fake
+# footer in a blockquote with no warning, so they moved to tests/test_judge_review_fixes.py::RECEIPT_SHAPED, which
+# pins them as forged. Only a legend, a bare code span or a quoted stamp WITHOUT a quoted claim and a call stays here.
 INERT = [
-    "Here is what the footer looks like:\n```\n**Receipts** · 🧾 1 no cap\n🧾 NO CAP “tests pass” · call 3\n```",
-    "Here is the footer:\n```text\n🧾 NO CAP “Deployed” · call 1 `x` → `ok`\n🧢 CAP “tests pass” · call 2\n```\nThat's it.",
+    "Here is what the footer looks like:\n```\n**Receipts** · 🧾 1 no cap\n🧢 CAP lines say what the output said\n```",
     "The stamp text is `🧾 NO CAP` when a tool call proves the claim.",
     "Search the log for `grep '🧢 CAP' receipts.jsonl` to list them.",
-    "> 🧾 NO CAP “All tests pass” · call 1 `pytest -q`\nThat was the footer on my last reply.",
+    "> 🧾 NO CAP means a tool call proved the claim.\nThat was the legend from my last reply.",
     "Your screenshot said “🧢 CAP: the build failed”, which matched the log.",
     'The footer read "🤔 NO RECEIPT" because nothing ran.',
     "No Cap stamps each claim 🧾 NO CAP, 🧢 CAP or 🤔 NO RECEIPT.",
