@@ -368,7 +368,8 @@ def test_end_to_end_mine_approve_inject_measure(tmp_path):
     assert "Drafted 1" in out
     pid = out.split("• ")[1].split()[0]
     assert "only a subset" in ctx.commands["cap"](raw_args=f"coach show {pid}", session_id="s0")
-    assert "Approved" in ctx.commands["cap"](raw_args=f"coach approve {pid}", session_id="s0")
+    assert "Approved" in ctx.commands["cap"](raw_args=f"coach approve {pid}", session_id="s0",
+                                             platform="cli")  # approve is local-only (judge review S12)
     assert ctx.hooks["pre_llm_call"](session_id="new", model="demo/model-a") is None  # skill not loaded there
     ctx.hooks["post_tool_call"](tool_name="skill_view", args={"name": "tdd"}, result="{}", session_id="s9",
                                 turn_id="t", status="ok")

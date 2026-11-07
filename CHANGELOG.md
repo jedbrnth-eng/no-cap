@@ -6,6 +6,17 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
 
 ## Unreleased
 
+- Security (judge review S1, S2, S3, S11, S12). S1: a RECEIPT-SHAPED line (a stamp, a quoted claim, then `call N`,
+  `turn N` or `→`) counts as forged wherever it sits (blockquote, quotation marks, list, code span, fence), closing
+  the blockquote hole from the dogfood round; only a legend or a stamp without a quoted claim stays exempt. A reply
+  that holds any stamp-like text while No Cap issued none ends with "No Cap issued no stamps for this reply". S2: on a
+  non-local platform (a gateway chat, or an empty platform) `/nocap` and `/nocap verdict` show only this chat's
+  receipts (no fallback to another session), print no store path, and the `/capscore board` Hall of Cap lists only
+  this chat's caps. S3: the `/cap` steer and the strict `pre_verify` message give parsed counts ("3 failed, 41 passed
+  (exit 1)"), never the matched output line, and quote the agent's claim as labelled data (capped, with `[ ] < >`,
+  quotes, backticks and newlines removed). S11: a reply ending inside an open fence, `<!--` or `<details>` gets it
+  closed before the footer. S12: `/nocap purge` and `/cap coach approve|revert|--apply` are refused from non-local
+  platforms. Tests: `tests/test_judge_review_fixes.py`.
 - Dogfood round (real 41-profile install): a stamp the reply explains or quotes (code, blockquote, quotation marks,
   a legend, "a 🧢 CAP stamp") no longer triggers the "didn't issue" warning; a stamp in receipt position still does.
   New `footer_hint` (default `auto`): one labelled `pre_llm_call` line, only when the history holds a No Cap footer,
