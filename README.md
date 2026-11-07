@@ -444,8 +444,9 @@ Limits:
   reply, 3 s each): `git rev-parse --is-inside-work-tree --is-shallow-repository`, `git config --get-regexp` (partial
   clone check), `git cat-file -e <sha>` and `git for-each-ref refs/heads/ refs/remotes/ refs/tags/`. Every git call
   is hardened against an untrusted repo: `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`, `-c
-  core.hooksPath=/dev/null -c core.fsmonitor=false -c protocol.allow=never`, no pager, no lazy fetch, and inherited
-  `GIT_*` variables dropped (`tests/test_artifacts.py` runs it against a malicious `.git/config`). It never re-runs
+  core.hooksPath=/dev/null -c core.fsmonitor=false -c protocol.allow=never`, no pager, no lazy fetch, and a minimal
+  environment: the git child inherits only `PATH`, `HOME`, `LANG`, `LC_ALL` and `SYSTEMROOT`, so provider keys and
+  tokens never reach it (`tests/test_git_env.py`; `tests/test_artifacts.py` runs it against a malicious `.git/config`). It never re-runs
   tests or builds.
 - **Cap Board reads:** the dashboard tab and `/capscore board` read the current profile's own store. Only with the
   `board.team_profiles` opt-in, and only in the CLI or the dashboard, they also read other profiles' stores
