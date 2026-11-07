@@ -373,6 +373,7 @@ def _slim(rec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     profile = rec.get("profile")
     return {
         "ts": ts, "model": str(rec.get("model") or "unknown")[:120],
+        "session_id": str(rec.get("session_id") or "")[:200],  # internal: scopes the Hall of Cap in a chat
         "profile": profile if isinstance(profile, str) else "",
         "skills": skills, "n": len(receipts), "cap": len(caps), "proven": proven, "unsure": unsure,
         "clean": score.all_proven({"receipts": receipts}),  # every shown receipt is 🧾: counts toward the streak
@@ -573,7 +574,10 @@ def signature(sources: Sequence[Source]) -> str:
 
 
 def build_board(sources: Sequence[Source], agent: str = "", model: str = "", skill: str = "",
-                min_claims: int = MIN_CLAIMS, now: Optional[float] = None, hall_size: int = HALL_SIZE) -> Dict[str, Any]:
+                min_claims: int = MIN_CLAIMS, now: Optional[float] = None, hall_size: int = HALL_SIZE,
+                hall_session: Optional[str] = None) -> Dict[str, Any]:
+    """``hall_session``: when not None, the Hall of Cap (claim text and evidence) holds only that session's caps (a
+    gateway chat; an empty id gives an empty hall). The counts and rankings are unaffected."""
     now = time.time() if now is None else now
     min_claims = max(1, int(min_claims or MIN_CLAIMS))
     pairs = list(_pairs(sources))
@@ -599,6 +603,8 @@ def build_board(sources: Sequence[Source], agent: str = "", model: str = "", ski
         t_cap += rec["cap"]
         t_proven += rec["proven"]
         t_unsure += rec["unsure"]
+        if hall_session is not None and (not hall_session or rec.get("session_id") != hall_session):
+            continue
         for r in rec["caps"]:
             hall.append((rec["ts"], who, rec, r))
     hall = heapq.nlargest(max(0, hall_size), hall, key=lambda x: x[0])
@@ -675,7 +681,8 @@ def board_text(b: Dict[str, Any], limit: int = 8, hall: int = 5) -> str:
         if len(rows) > limit:
             lines.append(f"  … {len(rows) - limit} more")
     if b["hall"]:
-        lines.append("**Hall of Cap** (latest 🧢)")
+        chat = (b.get("scope") or {}).get("hall") == "chat"
+        lines.append("**Hall of Cap** (latest 🧢" + (" in this chat)" if chat else ")"))
         for h in b["hall"][:hall]:
             when = time.strftime("%m-%d %H:%M", time.localtime(h["ts"])) if h["ts"] else "?"
             skills = f" [{', '.join(h['skills'])}]" if h["skills"] else ""

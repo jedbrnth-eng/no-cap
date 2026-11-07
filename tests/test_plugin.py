@@ -225,7 +225,7 @@ def test_nocap_command_shows_last_receipts(plugin):
 def test_purge(plugin):
     _, ctx = plugin
     reply(ctx, "All tests pass.")
-    out = ctx.commands["nocap"]("purge", session_id="s1")
+    out = ctx.commands["nocap"]("purge", session_id="s1", platform="cli")  # local-only (judge review S12)
     assert "removed" in out.lower()
     assert not (ctx.state.data_dir / "receipts.jsonl").exists()
 
