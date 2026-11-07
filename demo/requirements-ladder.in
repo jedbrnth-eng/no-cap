@@ -1,0 +1,5 @@
+# Lie Ladder demo recorder (demo/run_ladder.sh): the test runner and the terminal renderer.
+# Regenerate: uv pip compile --generate-hashes --python-version 3.12 --universal demo/requirements-ladder.in -o demo/requirements-ladder.txt
+pytest==9.2.0
+pyte==0.8.2
+pillow==12.1.0

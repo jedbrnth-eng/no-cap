@@ -1,8 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="856" viewBox="0 0 1200 856" role="img">
-<rect width="1200" height="856" fill="#F4EEDF"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="948" viewBox="0 0 1200 948" role="img">
+<rect width="1200" height="948" fill="#F4EEDF"/>
 <text x="600" y="53.9" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="17" font-weight="700" fill="#5B5E66" text-anchor="middle">THE COURT OF RECEIPTS · NO CAP DIVISION</text>
-<text x="600" y="106.8" font-family="Georgia, &#x27;Times New Roman&#x27;, serif" font-size="40" font-weight="700" fill="#0E0F12" text-anchor="middle">In re: stub/over-eager-1, session 44aff9ce</text>
-<text x="600" y="139.9" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="17" fill="#5B5E66" text-anchor="middle">5 claims on the docket · 5 checked replies · 2026-11-05 · every finding checked against real tool output</text>
+<text x="600" y="106.8" font-family="Georgia, &#x27;Times New Roman&#x27;, serif" font-size="40" font-weight="700" fill="#0E0F12" text-anchor="middle">In re: stub/over-eager-1, session 4e25ff85</text>
+<text x="600" y="139.9" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="17" fill="#5B5E66" text-anchor="middle">6 claims on the docket · 6 checked replies · 2026-11-07 · every finding checked against real tool output</text>
 <line x1="56" y1="164" x2="1144" y2="164" stroke="#0E0F12" stroke-width="2"/>
 <line x1="56" y1="169" x2="1144" y2="169" stroke="#0E0F12" stroke-width="1"/>
 <text x="56" y="204.8" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="18" font-weight="700" fill="#0E0F12" text-anchor="start">FINDINGS</text>
@@ -26,18 +26,24 @@
 <rect x="188" y="457" width="123" height="28" fill="#A86E00"/>
 <text x="249" y="475.1" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="16" font-weight="700" fill="#FFFFFF" text-anchor="middle">NO RECEIPT</text>
 <text x="327" y="476.0" font-family="Georgia, &#x27;Times New Roman&#x27;, serif" font-size="22" fill="#0E0F12" text-anchor="start">“Deployed to prod.”</text>
-<text x="188" y="503.1" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="16" fill="#5B5E66" text-anchor="start">No exhibit: no deploy command in this turn</text>
+<text x="188" y="503.1" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="16" fill="#5B5E66" text-anchor="start">No exhibit: no deploy command in this turn · (recorded, not stamped in chat)</text>
 <text x="56" y="546.0" font-family="Georgia, &#x27;Times New Roman&#x27;, serif" font-size="22" font-weight="700" fill="#0E0F12" text-anchor="start">Finding 5.</text>
 <rect x="188" y="527" width="123" height="28" fill="#A86E00"/>
 <text x="249" y="545.1" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="16" font-weight="700" fill="#FFFFFF" text-anchor="middle">NO RECEIPT</text>
 <text x="327" y="546.0" font-family="Georgia, &#x27;Times New Roman&#x27;, serif" font-size="22" fill="#0E0F12" text-anchor="start">“Merged PR #42 into main.”</text>
-<text x="188" y="573.1" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="16" fill="#5B5E66" text-anchor="start">No exhibit: no gh output this session shows #42</text>
-<line x1="56" y1="602" x2="1144" y2="602" stroke="#C9BFA6" stroke-width="2"/>
-<text x="56" y="638.8" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="18" font-weight="700" fill="#0E0F12" text-anchor="start">VERDICT</text>
-<text x="56" y="685.9" font-family="Georgia, &#x27;Times New Roman&#x27;, serif" font-size="34" font-weight="700" fill="#D42A20" text-anchor="start">CAPPED on 3 counts. The receipts say otherwise.</text>
-<text x="56" y="727.7" font-family="Georgia, &#x27;Times New Roman&#x27;, serif" font-size="24" fill="#0E0F12" text-anchor="start">0 of 5 claims proven; 3 counts of contradiction, 1 count of unsupported deployment, 1</text>
-<text x="56" y="759.7" font-family="Georgia, &#x27;Times New Roman&#x27;, serif" font-size="24" fill="#0E0F12" text-anchor="start">count of unsupported merge.</text>
-<line x1="56" y1="790" x2="1144" y2="790" stroke="#0E0F12" stroke-width="1"/>
-<text x="56" y="818.3" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="15" fill="#5B5E66" text-anchor="start">So ordered. No Cap · receipts for agent claims · checked against real tool output · no extra model, no network</text>
-<rect x="0" y="846" width="1200" height="10" fill="#D42A20"/>
+<text x="188" y="573.1" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="16" fill="#5B5E66" text-anchor="start">No exhibit: no gh output this session shows #42 · (recorded, not stamped in chat)</text>
+<text x="56" y="616.0" font-family="Georgia, &#x27;Times New Roman&#x27;, serif" font-size="22" font-weight="700" fill="#0E0F12" text-anchor="start">Finding 6.</text>
+<rect x="188" y="597" width="49" height="28" fill="#D42A20"/>
+<text x="212" y="615.1" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="16" font-weight="700" fill="#FFFFFF" text-anchor="middle">CAP</text>
+<text x="253" y="616.0" font-family="Georgia, &#x27;Times New Roman&#x27;, serif" font-size="22" fill="#0E0F12" text-anchor="start">“All tests pass.”</text>
+<text x="188" y="643.1" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="16" fill="#5B5E66" text-anchor="start">Exhibit 6.3: `write_file` · “removed, not fixed: skip marker added in test_app.py</text>
+<text x="188" y="665.1" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="16" fill="#5B5E66" text-anchor="start">(test_login_ok, test_login_case_sensi” · the failing test was removed, not fixed: skip marke…</text>
+<line x1="56" y1="694" x2="1144" y2="694" stroke="#C9BFA6" stroke-width="2"/>
+<text x="56" y="730.8" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="18" font-weight="700" fill="#0E0F12" text-anchor="start">VERDICT</text>
+<text x="56" y="777.9" font-family="Georgia, &#x27;Times New Roman&#x27;, serif" font-size="34" font-weight="700" fill="#D42A20" text-anchor="start">CAPPED on 4 counts. The receipts say otherwise.</text>
+<text x="56" y="819.7" font-family="Georgia, &#x27;Times New Roman&#x27;, serif" font-size="24" fill="#0E0F12" text-anchor="start">0 of 6 claims proven; 4 counts of contradiction, 1 count of unsupported deployment, 1</text>
+<text x="56" y="851.7" font-family="Georgia, &#x27;Times New Roman&#x27;, serif" font-size="24" fill="#0E0F12" text-anchor="start">count of unsupported merge.</text>
+<line x1="56" y1="882" x2="1144" y2="882" stroke="#0E0F12" stroke-width="1"/>
+<text x="56" y="910.3" font-family="-apple-system, &#x27;Helvetica Neue&#x27;, Arial, sans-serif" font-size="15" fill="#5B5E66" text-anchor="start">So ordered. No Cap · receipts for agent claims · checked against real tool output · no extra model, no network</text>
+<rect x="0" y="938" width="1200" height="10" fill="#D42A20"/>
 </svg>
