@@ -419,7 +419,10 @@ def _subset(seg: str, cmd: str) -> bool:
 # token is matched from its first character only (lookbehinds), so a long run can't be rescanned from every offset.
 _SECRET_NAME_RE = re.compile(r"(?i)token|secret|passw|pwd|api[_-]?key|apikey|auth|bearer|credential|private[_-]?key|"
                              r"(?:^|[_-])key(?:s|[_-]|$)|^key$|dsn$|cookie|session[_-]?id")
-_ASSIGN_RE = re.compile(r"(?<![\w.-])([\w.-]+)(['\"]?[ \t]*(?:=|:(?!:))[ \t]*)((?:(?i:bearer|basic|token)[ \t]+)?['\"]?)([^\s'\",;}]+)")
+# the lookahead skips names with no secret word before the Python callback runs (a long "a:b a:b ..." run was ~1 µs
+# per pair in _assign); _assign still checks the exact rule (_SECRET_NAME_RE)
+_ASSIGN_RE = re.compile(r"(?<![\w.-])(?=[\w.-]*?(?i:token|secret|passw|pwd|key|auth|bearer|credential|dsn|cookie|session))"
+                        r"([\w.-]+)(['\"]?[ \t]*(?:=|:(?!:))[ \t]*)((?:(?i:bearer|basic|token)[ \t]+)?['\"]?)([^\s'\",;}]+)")
 _KEYWORD_SPACE_RE = re.compile(r"(?i)(?<![A-Za-z0-9])(authorization|bearer|token|api[_-]?key|secret|password|passwd|pwd)"
                                r"\b([ \t]+)((?:bearer[ \t]+)?['\"]?)([^\s'\"]+)")
 _USERINFO_RE = re.compile(r"(?i)(?<![a-z0-9+.-])([a-z][a-z0-9+.-]{0,30}://[^\s/:@'\"]{1,200}:)([^\s@/'\"]{1,500})@")
@@ -505,7 +508,6 @@ def redact(text: str) -> str:
     if not text:
         return text
     out = _USERINFO_RE.sub(lambda m: m.group(1) + REDACTED + "@", text)
-    out = _cli_passwords(out)
     out = _ASSIGN_RE.sub(_assign, out)
     out = _KEYWORD_SPACE_RE.sub(lambda m: m.group(1) + m.group(2) + m.group(3) + REDACTED
                                 if m.group(4) != REDACTED else m.group(0), out)
@@ -513,7 +515,7 @@ def redact(text: str) -> str:
     out = _AWS_SECRET_RE.sub(_aws_secret, out)
     for rx in SECRET_RES:
         out = rx.sub(REDACTED, out)
-    return out
+    return _cli_passwords(out)  # last: each mask lengthens the text, so the rules above scan the shorter original
 
 
 def scan_window(text: str) -> str:
