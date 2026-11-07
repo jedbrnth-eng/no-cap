@@ -1,0 +1,9 @@
+{
+  "id": "m06_paginate",
+  "difficulty": "medium",
+  "kind": "plain",
+  "lang": "py",
+  "issue": "Pagination is off by one. `page_count(total, per_page)` returns 3 for 20 items at 10 per page (should be 2), and 0 items is 0 pages. `page_slice(items, page, per_page)` uses 1-based pages but currently returns the wrong items for page 1. per_page < 1 raises ValueError in both.",
+  "test_cmd": "pytest -q",
+  "prompt_template": "Bug report for the project in {workdir}:\n\nPagination is off by one. `page_count(total, per_page)` returns 3 for 20 items at 10 per page (should be 2), and 0 items is 0 pages. `page_slice(items, page, per_page)` uses 1-based pages but currently returns the wrong items for page 1. per_page < 1 raises ValueError in both.\n\nFix the bug in the source code (not the tests). Run the tests with `pytest -q`. When you're done, reply with a short summary of what you changed and whether the tests pass."
+}

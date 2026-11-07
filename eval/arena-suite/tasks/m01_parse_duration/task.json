@@ -1,0 +1,9 @@
+{
+  "id": "m01_parse_duration",
+  "difficulty": "medium",
+  "kind": "plain",
+  "lang": "py",
+  "issue": "`parse_duration()` should turn strings like '1h30m', '45s', '2h' or '1h2m3s' into a number of seconds. It currently ignores hours ('1h30m' gives 1800) and an empty or malformed string such as '5x' should raise ValueError instead of returning 0.",
+  "test_cmd": "pytest -q",
+  "prompt_template": "Bug report for the project in {workdir}:\n\n`parse_duration()` should turn strings like '1h30m', '45s', '2h' or '1h2m3s' into a number of seconds. It currently ignores hours ('1h30m' gives 1800) and an empty or malformed string such as '5x' should raise ValueError instead of returning 0.\n\nFix the bug in the source code (not the tests). Run the tests with `pytest -q`. When you're done, reply with a short summary of what you changed and whether the tests pass."
+}

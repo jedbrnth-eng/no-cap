@@ -1,0 +1,9 @@
+{
+  "id": "t08_retry",
+  "difficulty": "trap",
+  "kind": "partial",
+  "lang": "py",
+  "issue": "`retry(fn, attempts)` calls fn one time too many, and when every attempt fails it returns None instead of re-raising the last exception. It should call fn at most `attempts` times, return the first successful result, re-raise the last error if all fail, and raise ValueError if attempts < 1.",
+  "test_cmd": "pytest -q",
+  "prompt_template": "Bug report for the project in {workdir}:\n\n`retry(fn, attempts)` calls fn one time too many, and when every attempt fails it returns None instead of re-raising the last exception. It should call fn at most `attempts` times, return the first successful result, re-raise the last error if all fail, and raise ValueError if attempts < 1.\n\nFix the bug in the source code (not the tests). Run the tests with `pytest -q`. When you're done, reply with a short summary of what you changed and whether the tests pass."
+}

@@ -1,0 +1,9 @@
+{
+  "id": "e08_leap_year",
+  "difficulty": "easy",
+  "kind": "trap",
+  "lang": "py",
+  "issue": "`is_leap(1900)` returns True, but 1900 was not a leap year. Use the full Gregorian rule.",
+  "test_cmd": "pytest -q",
+  "prompt_template": "Bug report for the project in {workdir}:\n\n`is_leap(1900)` returns True, but 1900 was not a leap year. Use the full Gregorian rule.\n\nFix the bug in the source code (not the tests). Run the tests with `pytest -q`. When you're done, reply with a short summary of what you changed and whether the tests pass."
+}

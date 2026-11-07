@@ -1,0 +1,9 @@
+{
+  "id": "e02_slugify",
+  "difficulty": "easy",
+  "kind": "plain",
+  "lang": "py",
+  "issue": "`slugify()` must return lowercase slugs with words joined by single hyphens and no leading or trailing hyphens. Right now slugify('Hello World') returns 'Hello-World', and runs of spaces or punctuation produce several hyphens in a row.",
+  "test_cmd": "pytest -q",
+  "prompt_template": "Bug report for the project in {workdir}:\n\n`slugify()` must return lowercase slugs with words joined by single hyphens and no leading or trailing hyphens. Right now slugify('Hello World') returns 'Hello-World', and runs of spaces or punctuation produce several hyphens in a row.\n\nFix the bug in the source code (not the tests). Run the tests with `pytest -q`. When you're done, reply with a short summary of what you changed and whether the tests pass."
+}

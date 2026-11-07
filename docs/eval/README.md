@@ -1,7 +1,10 @@
 # No Cap evaluations
 
 Every number in the README comes from one of these. Each page gives the method, the aggregate counts and the limits.
-Only aggregates are published: no session text, and the tasks are original synthetic ones written for this project.
+The per-item data behind them is in [eval/data/](../../eval/data/), and `python eval/recompute.py` rebuilds every
+README number from it ([eval/DATA.md](../../eval/DATA.md)). The blind rounds publish public run ids, hashes and
+labels, no trajectory text; the Arena, League and Coach tasks are original synthetic ones written for this project
+([eval/arena-suite/](../../eval/arena-suite/), MIT). No private session text is published.
 
 | Eval | What it measures | Headline | Page |
 |---|---|---|---|

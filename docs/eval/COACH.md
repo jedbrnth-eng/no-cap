@@ -7,7 +7,7 @@ approved rules change anything on tasks the miner never saw.
 
 <sub>Raw tables: [SUMMARY.md](../media/coach-proof/SUMMARY.md) (39 matched pairs) and
 [SUMMARY-keep-errors.md](../media/coach-proof/SUMMARY-keep-errors.md) (42 pairs, errored episodes kept);
-[summary.json](../media/coach-proof/summary.json). Merged in
+[summary.json](../media/coach-proof/summary.json); per-pair rows: [eval/data/coach_pairs.csv](../../eval/data/coach_pairs.csv). Merged in
 [#8](https://github.com/jedbrnth-eng/no-cap/pull/8).</sub>
 
 ## Headline (one model, Qwen3-4B, 39 matched held-out pairs)
