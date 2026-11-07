@@ -6,6 +6,8 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
 
 ## Unreleased
 
+- Security (catalog review): every git child now gets a minimal environment (`PATH`, `HOME`, `LANG`, `LC_ALL`,
+  `SYSTEMROOT` plus the `GIT_*` hardening), never the agent's provider keys or tokens. Test: `tests/test_git_env.py`.
 - README Disclosure now states two 0.2.0 details the catalog entry already disclosed: `ledger.jsonl` stores each
   call's working directory (`workdir`, first 300 characters, masked by `redact()`), and Cap Coach injects only its
   built-in rule text, never text from `coach.json`, keeping skill names only if they are plain identifiers.

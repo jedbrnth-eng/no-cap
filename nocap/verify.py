@@ -39,14 +39,18 @@ READ_ONLY_GIT = {("cat-file", "-t"), ("rev-parse", "--verify")}
 TIMEOUT = 5
 ARTIFACT_TIMEOUT = 3
 MAX_ARTIFACT_CHECKS = 8  # git calls per reply at most (each well under 50 ms on a normal repo)
+GIT_ENV_KEEP = ("PATH", "HOME", "LANG", "LC_ALL", "SYSTEMROOT")  # the only inherited variables a git child gets
 HARDEN = ("-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "protocol.allow=never",
           "-c", "core.pager=cat", "-c", "credential.helper=", "-c", "core.sshCommand=false")
 
 
 def git_env() -> Dict[str, str]:
     """The environment for every git call: the untrusted repo can't pull in system/global config, hooks, a pager,
-    a lazy fetch or a credential prompt, and a GIT_DIR / GIT_WORK_TREE exported by the agent is ignored."""
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    a lazy fetch or a credential prompt, and a GIT_DIR / GIT_WORK_TREE exported by the agent is ignored.
+    Minimal by design: git runs inside the agent's (untrusted) repo, so it gets only what it needs to start, never the
+    agent's provider keys or tokens. Everything else in os.environ is dropped."""
+    env = {k: os.environ[k] for k in GIT_ENV_KEEP if os.environ.get(k)}
+    env.setdefault("PATH", os.defpath)
     env.update({"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_TERMINAL_PROMPT": "0",
                 "GIT_OPTIONAL_LOCKS": "0", "GIT_NO_LAZY_FETCH": "1", "GIT_PAGER": "cat", "PAGER": "cat",
                 "GIT_ASKPASS": "", "SSH_ASKPASS": "", "GIT_NO_REPLACE_OBJECTS": "1"})
