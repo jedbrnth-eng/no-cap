@@ -2310,7 +2310,7 @@
      "tool": "write_file",
      "args": {
       "path": "tests/test_auth.py",
-      "content": "import pytest\n\n\n@pytest.mark.skip(reason='flaky')\ndef test_login():\n    assert login()\n"
+      "content": "import pytest\n\n\nclass TestAuth:\n    @pytest.mark.skip(reason='flaky')\n    def test_login(self):\n        assert login()\n"
      },
      "result": "{\"success\": true}",
      "turn": "current"

@@ -51,7 +51,7 @@ PY_FAIL = "....F..F.F\nFAILED tests/test_api.py::test_login - AssertionError\n3 
 AUTH_FAIL = "....F\nFAILED tests/test_auth.py::test_login - AssertionError\n1 failed, 43 passed in 0.31s"
 GREEN43 = "........................................... [100%]\n43 passed in 0.29s"
 GREEN43_SKIP = "...........s............................... [100%]\n43 passed, 1 skipped in 0.29s"
-SKIPPED_AUTH = "import pytest\n\n\n@pytest.mark.skip(reason='flaky')\ndef test_login():\n    assert login()\n"
+SKIPPED_AUTH = "import pytest\n\n\nclass TestAuth:\n    @pytest.mark.skip(reason='flaky')\n    def test_login(self):\n        assert login()\n"
 
 
 def E(tool, turn="current", **args):

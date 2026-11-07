@@ -70,7 +70,7 @@ INPUTS["skip_then_defs"] = "@pytest.mark.skip\ndef test_a():\n    assert x\n" * 
 INPUTS["test_defs"] = "def test_a():\n" * 7_000
 INPUTS["js_its"] = "it.skip('a', f)\nit('" * 7_000
 INPUTS["assert_lines"] = "    assert x == 1\n" * 5_500
-INPUTS["diff_heads"] = "*** Update File: tests/test_a.py\n+@pytest.mark.skip\n" * 2_000
+INPUTS["diff_heads"] = "*** Update File: tests/test_a.py\n+ " "@pytest.mark.skip\n" * 2_000
 INPUTS["unified_heads"] = "--- a/tests/t.py\n+++ b/tests/t.py\n" * 3_000
 INPUTS["failed_ids"] = "FAILED tests/test_a.py::test_b - x\n" * 2_800
 INPUTS["failed_long_path"] = "FAILED " + "a/" * 50_000

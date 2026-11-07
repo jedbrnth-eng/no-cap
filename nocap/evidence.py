@@ -192,12 +192,16 @@ _COMMENT_LINE_RE = re.compile(r"^\s*(?:#(?!\[|!|(?:include|define|if|ifdef|ifnde
                               r"error|line|region|endregion)\b)|//|/\*|\*/|\*(?!\*)|--\s|<!--|;;|\"\"\"\s*$)")
 
 
+_TRAILING_COMMENT_RE = re.compile(r"(?<=\s)(?:#|//)\s")  # linear: one fixed-width lookbehind, no \s+ to rescan
+
+
 def _code_lines(s: str) -> List[str]:
     out = []
     for ln in s.splitlines():
         if _COMMENT_LINE_RE.match(ln):
             continue
-        ln = re.sub(r"\s+(?:#|//)\s.*$", "", ln).strip()  # trailing comment (needs a space before and after)
+        m = _TRAILING_COMMENT_RE.search(ln)  # trailing comment (needs a space before and after)
+        ln = (ln[:m.start()] if m else ln).strip()
         if ln:
             out.append(ln)
     return out
@@ -430,30 +434,27 @@ REDACTED = "[redacted]"
 # Passwords passed as command-line flags (S9). Each masks only its capture group, so the command stays readable.
 # The curl and mysql shapes only run when that tool is named, so `docker run -u 1000:1000` and `pytest -p no:x` stay.
 _CURL_RE = re.compile(r"\bcurl\b")
-_CURL_USER_RE = re.compile(r"(?<![\w-])(?:-u|--user)(?:[ \t]+|=)[^\s:'\"@/]{1,100}:([^\s'\"]{1,300})")
+_CURL_USER_RE = re.compile(r"((?<![\w-])(?:-u|--user)(?:[ \t]+|=)[^\s:'\"@/]{1,100}:)[^\s'\"]{1,300}")
 _MYSQL_RE = re.compile(r"\b(?:mysql\w{0,10}|mariadb\w{0,10})\b")
-_MYSQL_PW_RE = re.compile(r"(?<![\w-])-p([^\s'\"\[-][^\s'\"]{0,300})")
+_MYSQL_PW_RE = re.compile(r"((?<![\w-])-p)[^\s'\"\[-][^\s'\"]{0,300}")
+_REDIS_RE = re.compile(r"\bredis-cli\b")
+_REDIS_PW_RE = re.compile(r"((?<![\w-])-a[ \t]+)[^\s'\"\[][^\s'\"]{0,300}")
 _FLAG_PW_RES = [
-    re.compile(r"\bsshpass[ \t]+(?:-[a-zA-Z][ \t]+)?-p[ \t]*([^\s'\"\[][^\s'\"]{0,300})"),
-    re.compile(r"(?<![\w-])--pass(?:word|wd|phrase)?(?:[ \t]+|=)([^\s'\"\[][^\s'\"]{0,300})"),
-    re.compile(r"\bredis-cli\b[^\n|;&]{0,200}?[ \t]-a[ \t]+([^\s'\"\[][^\s'\"]{0,300})"),
+    re.compile(r"(\bsshpass[ \t]+(?:-[a-zA-Z][ \t]+)?-p[ \t]*)[^\s'\"\[][^\s'\"]{0,300}"),
+    re.compile(r"((?<![\w-])--pass(?:word|wd|phrase)?(?:[ \t]+|=))[^\s'\"\[][^\s'\"]{0,300}"),
 ]
-
-
-def _mask_group(rx: "re.Pattern", text: str) -> str:
-    def sub(m: "re.Match") -> str:
-        a, b = m.start(1) - m.start(0), m.end(1) - m.start(0)
-        return m.group(0)[:a] + REDACTED + m.group(0)[b:]
-    return rx.sub(sub, text)
+_MASK = "\\g<1>" + REDACTED  # group 1 is everything before the secret: a template, no Python callback per match
 
 
 def _cli_passwords(text: str) -> str:
     if _CURL_RE.search(text):
-        text = _mask_group(_CURL_USER_RE, text)
+        text = _CURL_USER_RE.sub(_MASK, text)
     if _MYSQL_RE.search(text):
-        text = _mask_group(_MYSQL_PW_RE, text)
+        text = _MYSQL_PW_RE.sub(_MASK, text)
+    if _REDIS_RE.search(text):
+        text = _REDIS_PW_RE.sub(_MASK, text)
     for rx in _FLAG_PW_RES:
-        text = _mask_group(rx, text)
+        text = rx.sub(_MASK, text)
     return text
 
 
@@ -1005,7 +1006,7 @@ def _edit_texts(args: Dict[str, Any]) -> List[tuple]:
         new = args.get(new_k)
         if isinstance(new, str):
             old = args.get(old_k)
-            return [(None, old if isinstance(old, str) else "", new[:MAX_CMD], False)]
+            return [(None, old[:MAX_CMD] if isinstance(old, str) else "", new[:MAX_CMD], False)]
     for k in ("content", "file_text", "text", "contents"):
         if isinstance(args.get(k), str):
             return [(None, "", args[k][:MAX_CMD], True)]
