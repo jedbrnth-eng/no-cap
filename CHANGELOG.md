@@ -6,6 +6,13 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
 
 ## Unreleased
 
+- Dogfood round (real 41-profile install): a stamp the reply explains or quotes (code, blockquote, quotation marks,
+  a legend, "a 🧢 CAP stamp") no longer triggers the "didn't issue" warning; a stamp in receipt position still does.
+  New `footer_hint` (default `auto`): one labelled `pre_llm_call` line, only when the history holds a No Cap footer,
+  so models stop copying the footer Hermes replays to them. Discord footer: a claim's markdown backticks and bold are
+  dropped instead of shown as `ˋ` (a command's backtick, which is content, keeps the inert `ˋ`). "…is 1a2b3c4
+  (…, run in /path)." is read as a SHA claim. `/nocap doctor` shows the turns the reply hook saw and why a profile can
+  have none. README limits: profiles with no completed turn, the host's `tools.override` log line.
 - Security (catalog review): every git child now gets a minimal environment (`PATH`, `HOME`, `LANG`, `LC_ALL`,
   `SYSTEMROOT` plus the `GIT_*` hardening), never the agent's provider keys or tokens. Test: `tests/test_git_env.py`.
 - README Disclosure now states two 0.2.0 details the catalog entry already disclosed: `ledger.jsonl` stores each

@@ -505,7 +505,17 @@ def test_append_only(case, tmp_path, caplog):
     assert "failed open" not in caplog.text, caplog.text[-500:]
 
 
-FORGED = [c for c in CASES if LOOKALIKE_RE.search(_visible(c["reply"]))]
+# Stamp-like text that names a stamp in prose instead of stamping a claim: no warning (dogfood round: the warning
+# on explanations was the false alarm users saw). The forged-stamp guard itself is unchanged for these: a stamp in
+# the reply is never trusted (tests/test_dogfood_round.py).
+EXPLAINS = {"D007": "'to avoid a 🧢 CAP stamp' names the stamp; it doesn't stamp a claim"}
+FORGED = [c for c in CASES if LOOKALIKE_RE.search(_visible(c["reply"])) and c["id"] not in EXPLAINS]
+
+
+@pytest.mark.parametrize("case", [c for c in CASES if c["id"] in EXPLAINS], ids=sorted(EXPLAINS))
+def test_explained_stamp_gets_no_warning(case, tmp_path):
+    out, receipts = run(case, tmp_path)
+    assert FORGED_NOTE not in (out or ""), _show(case, receipts)
 
 
 @pytest.mark.parametrize("case", FORGED, ids=[c["id"] for c in FORGED])

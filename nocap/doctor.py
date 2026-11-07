@@ -47,6 +47,21 @@ def store_writable(store_path: Path) -> Optional[str]:
         return str(exc)
 
 
+def ledger_turns(path: Path, limit: int = 50 * 1024 * 1024) -> int:
+    """Turns the reply hook recorded (ledger.jsonl "turn" lines). Read-only; 0 when there is no ledger."""
+    try:
+        if not Path(path).is_file() or Path(path).stat().st_size > limit:
+            return 0
+        n = 0
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if '"type": "turn"' in line or '"type":"turn"' in line:
+                    n += 1
+        return n
+    except OSError:
+        return 0
+
+
 def run(home: Path, mode: str, entry: Dict[str, Any], store_path: Path, records: List[Dict[str, Any]],
         enabled: Callable[[str], Any], show_uncertain: str = "off") -> str:
     return check(home, mode, entry, store_path, records, enabled, show_uncertain)[0]
@@ -86,9 +101,16 @@ def check(home: Path, mode: str, entry: Dict[str, Any], store_path: Path, record
         lines.append(f"✅ Store writable: {store_path}")
     replies = [r for r in records if r.get("type", "reply") == "reply"]
     platforms = sorted({str(r.get("platform") or "?") for r in replies})
-    lines.append(f"ℹ️ {len(replies)} checked replies" + (f", platforms seen: {', '.join(platforms)}" if platforms else ""))
-    if not replies:
-        lines.append("ℹ️ No replies checked yet. Hooks load at session start: restart running sessions after install.")
+    turns = ledger_turns(Path(store_path).parent / "ledger.jsonl")
+    lines.append(f"ℹ️ Reply hook saw {turns} turn{'s' if turns != 1 else ''} (ledger) · {len(replies)} checked "
+                 f"repl{'ies' if len(replies) != 1 else 'y'} stored"
+                 + (f", platforms seen: {', '.join(platforms)}" if platforms else ""))
+    if not replies and not turns:
+        lines.append("ℹ️ Nothing recorded yet. No Cap only sees a model turn that ends with a reply: a profile whose "
+                     "only activity is no-agent cron scripts, gateway reconnects or turns that failed before a reply "
+                     "(HTTP 429, auth) records nothing, and that is expected. A turn with neither claims nor tool calls "
+                     "is counted in the ledger only. Hooks load at session start: restart sessions that were already "
+                     "running at install.")
     if desktop_line:
         lines.append(desktop_line)
     lines.append("✅ Network: none" + (" (except /cap HEAD checks: self_verify_http is on)"

@@ -68,12 +68,13 @@ def test_code_spans_cannot_be_broken_out_of():
     for span in line.split("`")[1::2]:
         assert "`" not in span
     assert "@everyone" in line.split("`")[1]  # inside a code span: Discord renders it inert
+    assert "rm -rf" in line.split("`")[1]  # the claim's own backticks are markdown: dropped, not shown as ˋ
 
 
 def test_text_outside_code_spans_is_escaped():
     out = dsurf.footer([], rescore=["🔁 /cap re-score: 🧢 → 🫡 retracted “**x** @here” (tests)"])
-    assert "`**x** @here`" in out  # the agent's words go in a code span
-    assert "@here" not in out.replace("`**x** @here`", "")
+    assert "`x @here`" in out  # the agent's words go in a code span (their markdown bold dropped)
+    assert "@here" not in out.replace("`x @here`", "")
 
 
 def test_secrets_in_evidence_are_redacted():

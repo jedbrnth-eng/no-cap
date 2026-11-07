@@ -7,6 +7,7 @@ claims: "tests should pass", "I will push", "if CI passes" are left alone.
 """
 from __future__ import annotations
 
+import itertools
 import re
 import unicodedata
 from typing import Any, Dict, Iterator, List, Optional, Tuple
@@ -22,7 +23,8 @@ STAMP_RE = re.compile(r"🧾\s*NO CAP|🧢\s*CAP|🤔\s*NO RECEIPT|🫡\s*retrac
 IMPERATIVE_RE = re.compile(r"^(?:run|try|use|check|make|ensure|verify|open|install|set|add|please|consider|remember|"
                            r"don't|do not|click|type|paste|see|read|rerun|re-run|approve|pick|choose|decide|reply|tell|"
                            r"ask|say|send|keep|wait)\b", re.I)
-IMPERATIVE_ANY_RE = re.compile(r"^to \w+\b|(?:^|[,:;]\s*|\b(?:then|and|please|so)\s+)(?:run|confirm|verify|check(?:\s+that)?|"
+IMPERATIVE_ANY_RE = re.compile(r"^to \w+\b|(?:^|[,:;]\s*|\b(?:then|and|please|so)\s+)(?:run(?!\s+in\s+"
+                               r"[`'\"]?[~./][^\s]{0,200}\s*$)|confirm|verify|check(?:\s+that)?|"
                                r"make sure|ensure|merge|push|deploy|install|re-?run|open|approve)\b(?![-\w])", re.I)
 ACK_RE = re.compile(r"\b(?:fail(?:s|ed|ing|ure|ures)?|errors?|except|pre-?existing|unrelated|flak(?:y|e|es)|skipped|"
                     r"broken|known issues?|xfail\w*)\b|失败|错误|跳过|未通过|ล้มเหลว|ไม่ผ่าน|"
@@ -176,18 +178,63 @@ STAMP_FORGED_RE = re.compile(r"(?<!`)[🧾🧢🤔📜🎓]\W{0,6}(?:N\W{0,3}O\W
                              r"N\W{0,3}O\W{0,3}RECEIPT)", re.I)
 
 
+# A stamp the reply talks ABOUT, not one it stamps with. Inert places: a fenced block, an inline code span, a blockquote
+# line, a quoted phrase. Inert uses: a legend ("🧾 NO CAP / 🧢 CAP or 🤔 NO RECEIPT"), the stamp as a noun ("a 🧢 CAP
+# stamp", "the 🧾 NO CAP footer", "🧢 CAP is only for ..."). The stamps themselves are never trusted either way
+# (_mask blanks them before claims are read); this only decides whether the reply gets the "didn't issue" warning.
+_INERT_SPANS_RE = re.compile(r"```.*?(?:```|\Z)|~~~.*?(?:~~~|\Z)|`[^`\n]{1,300}`|“[^”\n]{0,300}”|\"[^\"\n]{0,300}\"|"
+                             r"(?m:^[ \t]*>[^\n]*)", re.S)
+_LEGEND_SEP_RE = re.compile(r"\s{0,3}(?:/|,|\||&|\bor\b|\band\b)\s{0,3}(?:or\s|and\s)?\s{0,2}$", re.I)
+_NOUN_BEFORE_RE = re.compile(r"(?:\b(?:a|an|the|each|every|its|their|your|our|one|any|this|that|same|no cap's)|"
+                             r"\b(?:see|says?|said|shows?|showed|read|reads|gets?|got|gives?|labels?)\s{1,3}"
+                             r"(?:a|an|the)?)\s{0,3}$", re.I)
+_NOUN_AFTER_RE = re.compile(r"\W{0,3}(?:stamps?|footers?|labels?|badges?|verdicts?|tags?|lines?|marks?|buttons?|"
+                            r"means|meant|stands for|is|are|was|were|when|if|vs|versus)\b|\W{0,3}=",
+                            re.I)
+
+
+def _inert(raw: str) -> str:
+    """The reply with code, blockquotes and quoted phrases blanked (same length, newlines kept)."""
+    chars = list(raw)
+    for m in _INERT_SPANS_RE.finditer(raw):
+        chars[m.start():m.end()] = _NOT_NL_RE.sub(" ", m.group(0))
+    return "".join(chars)
+
+
+MAX_FORGED = 200  # stamps looked at per reply; a reply with more is a spoof either way, and the cap keeps it linear-cheap
+
+
+def _in_prose(t: str, m: "re.Match[str]", spans: List[Tuple[int, int]], k: int) -> bool:
+    """A stamp written into a sentence about stamps: part of a legend, or used as a noun. Every look is a short
+    window (≤60 characters around the stamp), so a reply full of stamps stays linear (tests/test_redos.py)."""
+    lo = max(0, m.start() - 60)
+    before = t[lo:m.start()]
+    before = before[before.rfind("\n") + 1:]
+    if _NOUN_BEFORE_RE.search(before) or _NOUN_AFTER_RE.match(t[m.end():m.end() + 60]):
+        return True
+    for a, b in ((spans[k - 1][1], m.start()) if k > 0 else (0, -1),
+                 (m.end(), spans[k + 1][0]) if k + 1 < len(spans) else (0, -1)):
+        gap = t[a:b] if 0 <= b - a <= 20 else ""
+        if gap and "\n" not in gap and _LEGEND_SEP_RE.fullmatch(gap):
+            return True
+    return False
+
+
 def forged_stamps(text: str) -> int:
-    """How many No Cap stamps the model wrote itself (copied or invented)."""
+    """How many No Cap stamps the model wrote itself (copied or invented), in receipt position. A stamp the reply
+    explains or quotes (code, blockquote, quoted phrase, legend, the stamp as a noun) is not counted."""
     if not isinstance(text, str):
         return 0
-    raw = text[:MAX_SCAN]
+    raw = _inert(text[:MAX_SCAN])
     t = unicodedata.normalize("NFKC", raw)
     # invisible format characters (zero-width, soft hyphen, bidi controls) and combining marks (N̲O̲) are dropped,
     # and Cyrillic / Greek lookalikes of N O C A P R E I T are read as Latin, so a homoglyph stamp is still a stamp
     t = "".join(ch for ch in t if unicodedata.category(ch) not in ("Cf", "Mn", "Me")).translate(_CONFUSABLE)
     t = t.replace("*", "").replace("_", " ")
     t = re.sub(r"[ \t\u00a0]+", " ", t)
-    stamps = len(STAMP_FORGED_RE.findall(t))
+    found = list(itertools.islice(STAMP_FORGED_RE.finditer(t), MAX_FORGED))  # bounded: the count only feeds a warning
+    spans = [m.span() for m in found]
+    stamps = sum(1 for k, m in enumerate(found) if not _in_prose(t, m, spans, k))
     if re.search(r"[\u202e\u2067]", raw):  # right-to-left override: "PAC ON" is shown as "NO CAP"
         stamps += len(re.findall(r"(?<!`)[🧾🧢🤔📜🎓]\W{0,6}P\W{0,3}A\W{0,3}C\b", t, re.I))
     return stamps or len(re.findall(r"^[^\w\n]*Receipts[^\w\n]*$|^[^\w\n]*Receipts[ \t]*·", t, re.M))

@@ -11,6 +11,8 @@ import pytest
 
 from nocap.claims import _FORMER_FAILURE_PASS_RE, extract_claims, forged_stamps
 from nocap.desktop import strip_model_directives
+from nocap.engine import Engine
+from nocap.surfaces.discord import claim_code, code
 from nocap.evidence import HEAD, TAIL, extract, parse_tests, redact, runner_segment, scan_window
 from nocap.lang import foreign_claims
 from redos_inputs import inputs
@@ -31,11 +33,25 @@ PARSERS = {
     "extract(file run)": lambda s: extract("terminal", {"command": "cd /nonexistent-nocap && pytest test_a.py && " + s,
                                                         "workdir": "/nonexistent-nocap"}, {"output": "", "exit_code": 0}),
     "foreign_claims": lambda s: foreign_claims(s),  # Chinese / Thai / Spanish (CJK and Thai shapes in redos_inputs)
+    # the footer hint reads only the tail of each of the last 40 assistant messages
+    "footer_hint": lambda s: Engine(lambda: "/nonexistent-nocap", lambda k, d=None: d)._footer_hint(
+        [{"role": "assistant", "content": s}] * 40),
+    "discord_code": lambda s: (code(s, 4000), claim_code(s, 4000)),
 }
 INPUTS = inputs()
 INPUTS["former_failure_prefixes"] = "failing " * 12_500 + "tests now pass"
 INPUTS["former_failure_still"] = "failing tests now pass " + "still " * 16_000 + "fai"
 INPUTS["former_failure_whitespace"] = "failing tests " + " " * 100_000 + "now pause"
+# the forged-stamp precision pass (dogfood round): stamps, legends, quotes, backticks and "run in" asides en masse
+INPUTS["stamp_legend"] = "🧾 NO CAP / 🧢 CAP or " * 5_000
+INPUTS["stamp_nouns"] = "the 🧢 CAP stamp " * 6_000
+INPUTS["stamp_lines"] = "🧾 NO CAP · x\n" * 7_000
+INPUTS["backticks"] = "`" * 100_000
+INPUTS["open_backtick_runs"] = ("`" + "a" * 299 + " ") * 330
+INPUTS["open_quotes"] = ("“" + "a" * 299 + "\n") * 330
+INPUTS["run_in_paths"] = "done, run in /" + "a" * 100_000
+INPUTS["run_in_many"] = "done, run in /a " * 6_000
+INPUTS["footer_heads"] = "**🧾 No Cap** · 🧾 1 no cap\n" * 4_000
 
 
 class _Slow(Exception):

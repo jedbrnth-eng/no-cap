@@ -6,6 +6,7 @@ exception here leaves the user's reply untouched and is logged.
 from __future__ import annotations
 
 import hashlib
+import re
 import threading
 import time
 from collections import OrderedDict
@@ -28,6 +29,14 @@ MODES = ("annotate", "strict", "quiet")
 STRICT_KINDS = {"tests", "build", "ci", "pushed", "merged", "deployed", "url", "file", "committed", "pr_opened"}
 MAX_STRICT_NUDGES = 2
 SKILL_TOOLS = ("skill_view", "skill")  # a turn "used" a skill when it loaded one with these tools
+# The footer hint (pre_llm_call): a footer head in an earlier assistant reply — the Discord head, the text head, or
+# a re-score line. Scanned on the last messages' tails only (a footer is at the end of a reply).
+FOOTER_HEAD_RE = re.compile(r"(?m)^\*\*(?:🧾 No Cap|Receipts)\*\*|^Receipts(?: · |$)|^🔁 /cap re-score")
+HINT_SCAN_MESSAGES = 40
+HINT_SCAN_CHARS = 4000
+FOOTER_HINT = ("[No Cap plugin] The receipt footers under your earlier replies (**🧾 No Cap** / **Receipts** lines) "
+               "were added by the No Cap plugin after you answered. Don't write or copy them: answer normally, and "
+               "No Cap adds this reply's receipts itself.")
 
 
 def _match_key(r: Dict[str, Any]) -> Tuple:
@@ -102,9 +111,34 @@ class Engine:
             if len(calls) > MAX_CALLS:  # keep the newest calls: the latest run is the one that matters
                 del calls[0]
 
-    def on_turn_start(self, **kwargs: Any) -> Optional[Dict[str, str]]:
-        """pre_llm_call: Cap Coach (nocap/coach.py) injects the rules the user approved."""
-        return self.coach.on_turn_start(**kwargs)
+    def on_turn_start(self, conversation_history: Any = None, **kwargs: Any) -> Optional[Dict[str, str]]:
+        """pre_llm_call: Cap Coach (nocap/coach.py) injects the rules the user approved, and the footer hint tells a
+        model that has seen No Cap footers under its own earlier replies not to write them itself."""
+        got = self.coach.on_turn_start(**kwargs)
+        hint = self._footer_hint(conversation_history)
+        if not hint:
+            return got
+        text = (got or {}).get("context") or ""
+        return {"context": (text + "\n\n" + hint).strip() if text else hint}
+
+    def _footer_hint(self, history: Any) -> Optional[str]:
+        """Hermes replays the rewritten reply (footer included) as the model's own words, and models then copy it:
+        on a real install, models often ended Discord replies with their own copy of the footer. One
+        labelled line, only when an earlier assistant reply in this history holds a footer; footer_hint: off stops it.
+        API-time context only (Hermes does not store pre_llm_call context in the transcript)."""
+        if str(self.setting("footer_hint", "auto") or "auto").strip().lower() in ("off", "false", "0", "no"):
+            return None
+        if not isinstance(history, (list, tuple)):
+            return None
+        for msg in list(history)[-HINT_SCAN_MESSAGES:]:
+            if not isinstance(msg, dict) or msg.get("role") != "assistant":
+                continue
+            content = msg.get("content")
+            if isinstance(content, list):  # content parts
+                content = " ".join(str(p.get("text") or "") for p in content if isinstance(p, dict))
+            if isinstance(content, str) and FOOTER_HEAD_RE.search(content[-HINT_SCAN_CHARS:]):
+                return FOOTER_HINT
+        return None
 
     def _take(self, session_id: str, turn_id: str) -> List[Dict[str, Any]]:
         with self._lock:

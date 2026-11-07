@@ -67,9 +67,20 @@ def _short(s: str, n: int) -> str:
 
 
 def code(s: Any, n: int) -> str:
-    """One inline code span. Backticks can't close it early (they become ˋ), newlines are folded, secrets masked."""
+    """One inline code span. Backticks can't close it early (they become the lookalike ˋ), newlines are folded,
+    secrets masked. Only a command or tool output can still hold one: a claim's own backticks are markdown and are
+    dropped first (claim_code)."""
     s = _short(redact(str(s or "")), n).replace("`", "ˋ")
     return f"`{s}`" if s.strip() else ""
+
+
+_MD_EMPHASIS = re.compile(r"`+|\*\*|__")
+
+
+def claim_code(s: Any, n: int) -> str:
+    """The agent's own words in a code span. Its markdown (`code`, **bold**) is formatting, not content: dropped, so
+    the footer reads `passed on abc1234`, not `passed on ˋabc1234ˋ`."""
+    return code(" ".join(_MD_EMPHASIS.sub("", str(s or "")).split()), n)
 
 
 def plain(s: Any, n: int = 200) -> str:
@@ -86,7 +97,7 @@ def _prose(line: str, n: int = 180) -> str:
     out, pos = [], 0
     for m in _QUOTED.finditer(line):
         out.append(plain(line[pos:m.start()], n))
-        out.append(code(m.group(1), 60))
+        out.append(claim_code(m.group(1), 60))
         pos = m.end()
     out.append(plain(line[pos:], n))
     return "".join(out)
@@ -97,7 +108,7 @@ def receipt_line(r: Dict[str, Any], strict: bool = False, wide: bool = False) ->
     v = r["verdict"]
     n = 2 if wide else 1
     head = EMOJI[v] + (" Unverified" if strict and v == CAP else "")
-    parts = [head + " " + (code(claim_text(r), 70 * n) or "`(claim)`")]
+    parts = [head + " " + (claim_code(claim_text(r), 70 * n) or "`(claim)`")]
     if r.get("cite") is not None:
         where = f" · call {plain(r['cite'], 8)}"
         what = r.get("cmd") or r.get("tool")
