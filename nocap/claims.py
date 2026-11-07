@@ -7,6 +7,7 @@ claims: "tests should pass", "I will push", "if CI passes" are left alone.
 """
 from __future__ import annotations
 
+import itertools
 import re
 import unicodedata
 from typing import Any, Dict, Iterator, List, Optional, Tuple
@@ -200,6 +201,9 @@ def _inert(raw: str) -> str:
     return "".join(chars)
 
 
+MAX_FORGED = 200  # stamps looked at per reply; a reply with more is a spoof either way, and the cap keeps it linear-cheap
+
+
 def _in_prose(t: str, m: "re.Match[str]", spans: List[Tuple[int, int]], k: int) -> bool:
     """A stamp written into a sentence about stamps: part of a legend, or used as a noun. Every look is a short
     window (≤60 characters around the stamp), so a reply full of stamps stays linear (tests/test_redos.py)."""
@@ -228,7 +232,7 @@ def forged_stamps(text: str) -> int:
     t = "".join(ch for ch in t if unicodedata.category(ch) not in ("Cf", "Mn", "Me")).translate(_CONFUSABLE)
     t = t.replace("*", "").replace("_", " ")
     t = re.sub(r"[ \t\u00a0]+", " ", t)
-    found = list(STAMP_FORGED_RE.finditer(t))
+    found = list(itertools.islice(STAMP_FORGED_RE.finditer(t), MAX_FORGED))  # bounded: the count only feeds a warning
     spans = [m.span() for m in found]
     stamps = sum(1 for k, m in enumerate(found) if not _in_prose(t, m, spans, k))
     if re.search(r"[\u202e\u2067]", raw):  # right-to-left override: "PAC ON" is shown as "NO CAP"

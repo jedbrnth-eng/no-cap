@@ -177,3 +177,10 @@ def test_doctor_reports_hook_activity_and_why_there_can_be_none(tmp_path):
     (store.parent / "ledger.jsonl").write_text('{"type": "turn"}\n{"type": "turn"}\n{"type": "other"}\n')
     text, _ = doctor.check(tmp_path, "annotate", {}, store, [], lambda n: None)
     assert "2 turns" in text
+
+
+def test_forged_count_is_bounded_on_a_stamp_flood():
+    """10,000 stamps in one line: the count is capped, so the ReDoS budget holds with margin."""
+    from nocap import claims
+    n = claims.forged_stamps("🧢 CAP done. " * 10_000)
+    assert 0 < n <= claims.MAX_FORGED
