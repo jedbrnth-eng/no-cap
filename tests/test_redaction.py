@@ -52,7 +52,26 @@ ENV_PAIRS = {  # KEY=value pairs whose name says secret; the value must go, the 
     "NODE_ENV=production": None,  # not a secret-named variable: stays
     "mysql --password=s3cr3t-pw db": "s3cr3t-pw",
 }
+CLI_PASSWORDS = {  # S9: passwords given as command-line flags; the user name and the rest of the command stay
+    "curl -u admin:" + "hunter2Pw" + " https://api.example.com/x": ("hunter2Pw", "curl -u admin:[redacted] https"),
+    "curl -sS --user admin:" + "hunter2Pw" + " https://api.example.com/x": ("hunter2Pw", "--user admin:[redacted]"),
+    "curl --user=admin:" + "hunter2Pw" + " https://api.example.com/x": ("hunter2Pw", "--user=admin:[redacted]"),
+    "mysql -u root -p" + "hunter2Pw" + " shop": ("hunter2Pw", "mysql -u root -p[redacted] shop"),
+    "mysqldump -h db -p" + "hunter2Pw" + " shop > dump.sql": ("hunter2Pw", "-p[redacted] shop"),
+    "sshpass -p " + "hunter2Pw" + " ssh deploy@host.example": ("hunter2Pw", "sshpass -p [redacted] ssh"),
+    "sshpass -p" + "hunter2Pw" + " scp a host.example:b": ("hunter2Pw", "sshpass -p[redacted] scp"),
+    "vault login --pass " + "hunter2Pw": ("hunter2Pw", "--pass [redacted]"),
+    "tool --passphrase=" + "hunter2Pw" + " sign": ("hunter2Pw", "--passphrase=[redacted]"),
+    "openssl pkcs12 --passwd " + "hunter2Pw": ("hunter2Pw", "--passwd [redacted]"),
+    "redis-cli -h cache -a " + "hunter2Pw" + " ping": ("hunter2Pw", "-a [redacted] ping"),
+}
 KEEP = [  # ordinary evidence text that must come through unchanged
+    "curl -u admin https://api.example.com/x",
+    "mysql -u root -p shop",
+    "ssh -p 2222 deploy@host.example",
+    "pytest -p no:cacheprovider -q",
+    "docker run -u 1000:1000 img",
+    "the tests pass because of the fix",
     "3 failed, 41 passed in 0.12s",
     "git push origin feat/login",
     "[main 1a2b3c4] Fix the login check",
@@ -146,3 +165,39 @@ def test_ledger_digest_changes_with_the_calls(tmp_path):
         e.on_reply(response_text="All tests pass.", session_id="s", turn_id="t", model="m")
         return json.loads((tmp_path / str(len(cmds)) / "receipts.jsonl").read_text().splitlines()[-1])["ledger"]
     assert run(["ls", "pytest"])["digest"] != run(["ls a", "ls b", "pytest"])["digest"]
+
+
+@pytest.mark.parametrize("text", sorted(CLI_PASSWORDS))
+def test_command_line_passwords_are_masked(text):
+    core, keep = CLI_PASSWORDS[text]
+    out = redact(text)
+    assert core not in out and keep in out, out
+
+
+@pytest.mark.parametrize("text", sorted(CLI_PASSWORDS))
+def test_command_line_passwords_never_reach_disk(text, tmp_path):
+    e = Engine(lambda: tmp_path, lambda k, v=None: v)
+    e.on_tool(tool_name="terminal", args={"command": text}, result={"output": "ok", "exit_code": 0}, session_id="s",
+              turn_id="t")
+    e.on_tool(tool_name="terminal", args={"command": "pytest -q"}, result={"output": "3 passed in 0.1s", "exit_code": 0},
+              session_id="s", turn_id="t")
+    e.on_reply(response_text="All tests pass.", session_id="s", turn_id="t", model="m")
+    for f in tmp_path.iterdir():
+        assert CLI_PASSWORDS[text][0] not in f.read_text(), f.name
+
+
+def test_home_dir_becomes_tilde_in_stored_cmd_and_workdir(tmp_path, monkeypatch):
+    """S9: the user's home path never lands in a stored or printed command or working dir (it names the user)."""
+    home = "/Users/" + "alice-example"
+    monkeypatch.setenv("HOME", home)
+    ev = extract("terminal", {"command": f"cd {home}/proj && pytest -q", "workdir": f"{home}/proj"},
+                 {"output": "3 passed in 0.1s", "exit_code": 0})
+    assert ev["cmd"] == "cd ~/proj && pytest -q" and ev["workdir"] == "~/proj" and ev["where"] == "~/proj"
+    ev = extract("terminal", {"command": f"ls {home}x/y"}, {"output": "", "exit_code": 0})
+    assert ev["cmd"] == f"ls {home}x/y"  # only the home dir itself, not a longer name that starts the same
+    e = Engine(lambda: tmp_path / "d", lambda k, v=None: v)
+    e.on_tool(tool_name="terminal", args={"command": f"cd {home}/proj && pytest -q", "workdir": f"{home}/proj"},
+              result={"output": "3 passed in 0.1s", "exit_code": 0}, session_id="s", turn_id="t")
+    e.on_reply(response_text="All tests pass.", session_id="s", turn_id="t", model="m")
+    assert "alice-example" not in "".join(f.read_text() for f in (tmp_path / "d").iterdir())
+    assert "alice-example" not in e.nocap("", session_id="s")

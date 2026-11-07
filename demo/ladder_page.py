@@ -30,7 +30,12 @@ WHY_NOT_CAP = {
     "merged": _GH_ONLY,
     "pr_opened": _GH_ONLY,
 }
-LADDER = ["the test lie", "the branch lie", "the fabricated SHA", "the phantom deploy", "the merge that never was"]
+LADDER = ["the test lie", "the branch lie", "the fabricated SHA", "the phantom deploy", "the merge that never was",
+          "the skipped test"]
+# Under a receipt the reply didn't show (hidden at the shipped default show_uncertain: off). Honest about defaults.
+HIDDEN_NOTE = ("Not stamped on the reply at the default <code>show_uncertain: off</code>: No Cap recorded this 🤔 (see "
+               "<code>/nocap all</code>, and <code>/cap</code> still calls it) but a fresh install shows no line for "
+               "it. <code>show_uncertain: expected</code> stamps it.")
 CSP = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"
 
 CSS = """
@@ -75,14 +80,26 @@ def _receipt_line(r: Dict[str, Any]) -> str:
         return f"{STAMP.get(r.get('verdict'), ('?', ''))[0]} “{r.get('text', '')}”"
 
 
+def _list(ns: List[int]) -> str:
+    ns = [str(n) for n in ns]
+    return ns[0] if len(ns) == 1 else ", ".join(ns[:-1]) + " and " + ns[-1] if ns else ""
+
+
 def build(records: List[Dict[str, Any]], session_id: str, snaps: Dict[str, str], images: Dict[str, bytes],
           verdict_png: Optional[bytes] = None, rungs: Optional[List[str]] = None, verdict_text: str = "",
           cast_note: str = "") -> str:
     from nocap.render import claim_text, dedupe
     rungs = rungs or []
     replies = [r for r in records if r.get("type", "reply") == "reply" and r.get("session_id") == session_id]
+    shown = [i for i, rec in enumerate(replies, 1) if any(isinstance(r, dict) and not r.get("hidden")
+                                                         for r in rec.get("receipts") or [])]
+    quiet = [i for i in range(1, len(replies) + 1) if i not in shown]
+    caption = (f"{len(replies)} escalating lies, one real Hermes session at No Cap's default settings. "
+               f"Stamped on the reply: rung{'s' if len(shown) != 1 else ''} {_list(shown) or 'none'}."
+               + (f" Recorded but not stamped at the default show_uncertain: off: rung{'s' if len(quiet) != 1 else ''} "
+                  f"{_list(quiet)}." if quiet else ""))
     body = [f"<h1>The Lie <b>Ladder</b></h1>",
-            '<p class="sub">Five escalating lies, one real Hermes session, every one caught with a receipt.</p>',
+            f'<p class="sub">{e(caption)}</p>',
             '<p class="disc">Disclosed: the model is scripted (<code>demo/stub_model.py</code>, an over-eager agent on '
             '127.0.0.1). Hermes, its tools, the shell, pytest, git and every stamp No Cap printed are real; this page '
             'is generated from the session\'s own receipt store.</p>']
@@ -104,6 +121,8 @@ def build(records: List[Dict[str, Any]], session_id: str, snaps: Dict[str, str],
                                                                         " · none cited") + "</p>")
         for r in receipts:
             part.append(f'<div class="r {STAMP[r["verdict"]][1]}">{e(_receipt_line(r))}</div>')
+            if r.get("hidden"):
+                part.append(f'<div class="pend">{HIDDEN_NOTE}</div>')
             if pending(r):
                 part.append(f'<div class="pend">Why not 🧢: {e(WHY_NOT_CAP[r["kind"]])} Today No Cap says '
                             f'{e(STAMP[r["verdict"]][0])}, honestly: nothing in the turn backs the claim, and it '

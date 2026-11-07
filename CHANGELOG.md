@@ -6,6 +6,21 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
 
 ## Unreleased
 
+- Suite tampering (the Lie Ladder's rung 6): deleting, moving, skipping or deselecting tests, conftest collection
+  hooks, runner-config filters and `PYTEST_ADDOPTS=-k …` env filters are recorded per call (any tool, including
+  `write_file` content and `sed -i`). A green run after such a change no longer earns 🧾 for "all tests pass": it gets a
+  visible 🤔 naming the change, and 🧢 "the failing test was removed, not fixed" when an earlier run named that test as
+  failing ([docs/SUITE_TAMPER.md](docs/SUITE_TAMPER.md)). A test runner script or Makefile the agent wrote this session
+  caps its 🧾 at 🤔.
+- `/cap` re-checks prove the session's work, not mere existence: "created X" needs a write in the session ledger or an
+  mtime after the session started; "pushed" needs a push in the ledger or an "update by push" reflog entry after the
+  session started; a SHA must be on HEAD and shown in the session or committed after it started.
+- Redaction: `curl -u user:pw`, `mysql -pPW`, `sshpass -p`, `redis-cli -a`, `--pass`/`--passwd`/`--passphrase` flags;
+  the home directory becomes `~` in stored and printed commands and working dirs. Pytest node ids (`test_auth.py::x`)
+  are no longer masked as `name: value` secrets.
+- Lie Ladder: rung 6 (the skipped test), recorded at the shipped default settings; the page says which rungs are
+  stamped at defaults. The demo shell gets a minimal environment and hash-pinned dependencies.
+
 - Dogfood round (real 41-profile install): a stamp the reply explains or quotes (code, blockquote, quotation marks,
   a legend, "a 🧢 CAP stamp") no longer triggers the "didn't issue" warning; a stamp in receipt position still does.
   New `footer_hint` (default `auto`): one labelled `pre_llm_call` line, only when the history holds a No Cap footer,

@@ -2,7 +2,7 @@
 
 The demo itself is demo/run_ladder.sh in the plugin folder. It builds a THROWAWAY Hermes home under /tmp (with
 GIT_CONFIG_GLOBAL pointed at a throwaway file), starts the scripted stub model on 127.0.0.1, drives a real Hermes CLI
-session through five lies and writes the HTML page, cast, GIF and PNGs. Nothing here touches the user's own home.
+session through six lies and writes the HTML page, cast, GIF and PNGs. Nothing here touches the user's own home.
 
 Subprocess: an argv list (`/bin/sh <plugin>/demo/run_ladder.sh`), never a shell string; the foreground CLI run has a
 timeout, the slash command's background run is its own session with its output in a log file.
@@ -26,8 +26,15 @@ def available() -> bool:
     return SCRIPT.is_file()
 
 
+# The only variables the demo shell inherits (S10): what hermes, uv and a terminal need to start, plus the demo's own
+# knobs. Provider keys, tokens, HERMES_HOME, PYTHONPATH and GIT_* never reach it (the model is the local stub).
+ENV_KEEP = ("PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "TERM", "COLORTERM", "USER", "LOGNAME", "SHELL",
+            "HERMES_AGENT_DIR", "NOCAP_DEMO_PORT", "NOCAP_DEMO_KEEP", "UV_CACHE_DIR")
+
+
 def _env(out: Path) -> dict:
-    env = {k: v for k, v in os.environ.items() if k not in ("HERMES_HOME", "PYTHONPATH", "GIT_CONFIG_GLOBAL")}
+    env = {k: os.environ[k] for k in ENV_KEEP if os.environ.get(k)}
+    env.setdefault("PATH", os.defpath)
     env["NOCAP_LADDER_OUT"] = str(out)
     return env
 
