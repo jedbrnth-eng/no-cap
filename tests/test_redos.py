@@ -9,7 +9,8 @@ import time
 
 import pytest
 
-from nocap.claims import _FORMER_FAILURE_PASS_RE, extract_claims, forged_stamps
+from nocap.claims import _FORMER_FAILURE_PASS_RE, extract_claims, forged_stamps, stamp_like
+from nocap.render import closer
 from nocap.desktop import strip_model_directives
 from nocap.engine import Engine
 from nocap.surfaces.discord import claim_code, code
@@ -27,6 +28,8 @@ PARSERS = {
     "formerly_failing_pass": lambda s: _FORMER_FAILURE_PASS_RE.search(s),
     "extract_claims": lambda s: extract_claims(s),
     "forged_stamps": lambda s: forged_stamps(s),
+    "stamp_like": lambda s: stamp_like(s),  # judge review S1: the "No Cap issued no stamps" check
+    "render.closer": lambda s: closer(s),  # judge review S11: fences, <!-- and <details> before the footer
     "strip_model_directives": lambda s: strip_model_directives(s),
     "extract(gh pr view)": lambda s: extract("terminal", {"command": "gh pr view 42"}, {"output": s, "exit_code": 1}),
     # a file-scoped run: the inventory-root check (one `cd` before the runner) scans the whole command
@@ -47,6 +50,13 @@ INPUTS["stamp_legend"] = "🧾 NO CAP / 🧢 CAP or " * 5_000
 INPUTS["stamp_nouns"] = "the 🧢 CAP stamp " * 6_000
 INPUTS["stamp_lines"] = "🧾 NO CAP · x\n" * 7_000
 INPUTS["backticks"] = "`" * 100_000
+# judge review S1: receipt-shaped lines (stamp, quoted claim, citation) en masse, and near misses that make the shape
+# scan try every quote opener (no closer, or no citation after the closer)
+INPUTS["receipt_shaped_lines"] = "> 🧾 NO CAP “All tests pass” · call 1 → ok\n" * 2_500
+INPUTS["receipt_open_quotes"] = ("🧾 NO CAP " + "“" * 60 + "\n") * 1_500
+INPUTS["receipt_no_citation"] = ("🧢 CAP " + "“a” " * 40 + "\n") * 600
+INPUTS["receipt_one_line"] = "🧾 NO CAP “x” " * 7_000
+INPUTS["fences_and_details"] = "```\n<details>\n<!--\n~~~\n" * 4_000
 INPUTS["open_backtick_runs"] = ("`" + "a" * 299 + " ") * 330
 INPUTS["open_quotes"] = ("“" + "a" * 299 + "\n") * 330
 INPUTS["run_in_paths"] = "done, run in /" + "a" * 100_000

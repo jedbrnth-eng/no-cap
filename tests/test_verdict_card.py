@@ -104,7 +104,7 @@ def test_verdict_without_session_id_takes_the_latest_session(tmp_path):
     ladder(ctx, session="older")
     tool(ctx, "pytest -q", "44 passed in 0.5s", session="newer", turn="t1")
     reply(ctx, "All tests pass.", session="newer", turn="t1", model="stub/careful-1")
-    msg = ctx.commands["nocap"]("verdict", session_id="")
+    msg = ctx.commands["nocap"]("verdict", session_id="", platform="cli")  # the fallback is CLI-only (review S2)
     assert "1 of 1 claim proven" in msg and "stub/careful-1" in msg
 
 
@@ -113,7 +113,7 @@ def test_purge_also_removes_the_verdict_card(tmp_path):
     ladder(ctx)
     ctx.commands["nocap"]("verdict", session_id="s1")
     assert (ctx.state.data_dir / "verdict.svg").exists()
-    ctx.commands["nocap"]("purge", session_id="s1")
+    ctx.commands["nocap"]("purge", session_id="s1", platform="cli")  # local-only (judge review S12)
     assert not list(ctx.state.data_dir.glob("verdict.*"))
 
 

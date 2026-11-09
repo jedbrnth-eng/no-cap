@@ -1,6 +1,7 @@
 """Footer and strict-mode rewrite. Plain lines that read well in a terminal, Discord and Telegram."""
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional
 
 from .verdict import CAP, NO_CAP, NO_RECEIPT
@@ -100,6 +101,37 @@ def unverified_block(receipts: List[Dict[str, Any]]) -> str:
     return "\n".join(["🧢 **Unverified:**"] + [f"- {_short(claim_text(r), 120)}" for r in caps])
 
 
+_FENCE_RE = re.compile(r"(?m)^[ \t]{0,3}(```|~~~)")
+_DETAILS_OPEN_RE = re.compile(r"<details\b", re.I)
+_DETAILS_CLOSE_RE = re.compile(r"</details\s*>", re.I)
+MAX_CLOSE = 5
+
+
+def closer(text: str) -> str:
+    """What to append so a footer after *text* is not swallowed (judge review S11): an open ``` or ~~~ fence is closed
+    (a footer inside one renders as code, and Desktop chips don't render there), and an unclosed <!-- or <details>
+    is closed (an HTML renderer would hide the footer). Append-only: the reply's own text is never changed."""
+    if not isinstance(text, str) or not text:
+        return ""
+    out = []
+    open_fence = None
+    for m in _FENCE_RE.finditer(text):
+        mark = m.group(1)
+        if open_fence is None:
+            open_fence = mark
+        elif mark == open_fence:
+            open_fence = None
+    if open_fence:
+        out.append(("" if text.endswith("\n") else "\n") + open_fence)
+    else:  # HTML only means something outside a fence
+        if text.rfind("<!--") > text.rfind("-->"):
+            out.append(" -->")
+        extra = len(_DETAILS_OPEN_RE.findall(text)) - len(_DETAILS_CLOSE_RE.findall(text))
+        if extra > 0:
+            out.append("\n" + "</details>" * min(extra, MAX_CLOSE))
+    return "".join(out)
+
+
 def compose(text: str, receipts: List[Dict[str, Any]], mode: str, rescore: Optional[List[str]] = None,
             streak: Optional[int] = None, notes: Optional[List[str]] = None, plain: bool = False,
             chips: Optional[str] = None) -> Optional[str]:
@@ -117,4 +149,4 @@ def compose(text: str, receipts: List[Dict[str, Any]], mode: str, rescore: Optio
             tail = block + "\n" + tail
     if plain:
         tail = tail.replace("**", "")
-    return text + "\n\n" + tail
+    return text + closer(text) + "\n\n" + tail

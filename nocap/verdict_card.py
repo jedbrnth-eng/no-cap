@@ -202,14 +202,19 @@ def render(records: List[Dict[str, Any]], out_dir: Path,
     return canvas.write(out_dir, "verdict"), findings, f"In re: {model}, session {short_id(sid)}"
 
 
-def command(records: List[Dict[str, Any]], out_dir: Path, session_id: str = "") -> str:
+def command(records: List[Dict[str, Any]], out_dir: Path, session_id: str = "", local: bool = True) -> str:
+    """``local``: the owner's CLI. Anywhere else (a gateway chat, an empty platform) only this session is judged, never
+    the latest session of someone else, and the card's file names are shown without the data folder (judge review S2)."""
+    if not local and not session_id:
+        return "⚖️ No receipts in this session yet, so the court has nothing to rule on."
     paths, findings, caption = render(records, out_dir, session_id)
-    if not paths and session_id:  # a fresh session with no checked replies yet: fall back to the latest one
+    if not paths and session_id and local:  # a fresh session with no checked replies yet: fall back to the latest one
         paths, findings, caption = render(records, out_dir, "")
     if not paths:
         return "⚖️ No receipts in this session yet, so the court has nothing to rule on."
+    shown = [str(p) if local else Path(p).name for p in paths]
     return (f"⚖️ {caption}\n{ruling(findings)[0]}\n{sentence(findings)}\n🖼️ Verdict card: "
-            + " · ".join(str(p) for p in paths))
+            + " · ".join(shown) + ("" if local else " (saved on the host running Hermes)"))
 
 
 def remove(out_dir: Path) -> None:
