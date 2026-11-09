@@ -20,7 +20,7 @@ from .evidence import extract, ledger_fact, summary
 from .render import EMOJI, TAG, claim_text, compose, dedupe, footer, receipt_line
 from .store import Ledger, Store
 from .verdict import CAP, DEFAULT_SHOW_UNCERTAIN, NO_CAP, NO_RECEIPT, judge, level_of, session_evidence, shown
-from .verify import check_artifacts, recheck, suggestion
+from .verify import check_artifacts, recheck, session_context, suggestion
 from . import board  # Cap Board: identity at hook time, /capscore board
 
 MAX_OPEN_TURNS = 64
@@ -242,7 +242,7 @@ class Engine:
         claims = extract_claims(response_text)
         if not bool(self.setting("check_numbers", True)):
             claims = [c for c in claims if c["kind"] != "number"]
-        receipts = judge(claims, evs, history=history, turn=turn) if claims else []
+        receipts = judge(claims, evs, history=history, turn=turn, reply=response_text) if claims else []
         receipts = self._artifacts(receipts, session_evidence(history, evs, turn))
         self._record_turn(session_id, turn_id, turn, evs)
         if not turn_id:  # no turn id: the evidence may belong to an earlier, interrupted turn, so never 🧢
@@ -375,9 +375,10 @@ class Engine:
         except Exception:
             cwd = ""
         allow_http = bool(self.setting("self_verify_http", False))
+        session = session_context(self.ledger.history(session_id or ""))  # what this session's calls did (S6)
         flipped, remaining = [], []
         for r in open_:
-            res = recheck(r, cwd, allow_http)
+            res = recheck(r, cwd, allow_http, session)
             if res and res[0] != r["verdict"]:
                 r2 = dict(r, verdict=res[0], verified=res[1], was=r["verdict"])
                 (flipped if res[0] == NO_CAP else remaining).append(r2)

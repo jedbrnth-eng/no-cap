@@ -1,10 +1,13 @@
 """Self-verify for /cap: cheap, read-only re-checks of unproven claims.
 
 Only these run, and only with argv lists (no shell):
-  * file claims: os.stat of the path (relative paths resolved against the session cwd)
-  * sha / commit claims: `git -C <cwd> cat-file -t <sha>`
-  * push claims with a branch: `git -C <cwd> rev-parse --verify <ref>` for the local branch and its
-    origin remote-tracking ref (no fetch, so no network)
+  * file claims: os.stat of the path (relative paths resolved against the session cwd); 🧾 only when a call in the
+    session ledger wrote that path, or its mtime is after the session's start (its first call, minus 5 minutes)
+  * sha / commit claims: `git cat-file -t`, `git merge-base --is-ancestor <sha> HEAD` and `git show -s --format=%ct`;
+    🧾 only for a commit on HEAD that the session showed or that was made after the session started
+  * push claims with a branch: `git rev-parse --verify` for the local branch and its origin remote-tracking ref (no
+    fetch, so no network), and 🧾 only with a push in the session ledger or a reflog entry "update by push" for that
+    tracking ref after the session started (`git reflog show --date=unix`)
   * url claims: one HTTP HEAD request, only when the user turns on `self_verify_http`, only to a public address
     (checked after DNS resolution), no redirects, 3 s timeout (see http_head)
 Everything else (tests, merges, deploys, numbers) becomes a suggested command in the /cap steer.
@@ -35,7 +38,8 @@ from .verdict import CAP, NO_CAP
 
 SHA_OK = re.compile(r"^[0-9a-f]{7,40}$")
 REF_OK = re.compile(r"^(?!-)(?!.*\.\.)[\w./-]{1,200}$")
-READ_ONLY_GIT = {("cat-file", "-t"), ("rev-parse", "--verify")}
+READ_ONLY_GIT = {("cat-file", "-t"), ("rev-parse", "--verify"), ("reflog", "show"), ("show", "-s"),
+                 ("merge-base", "--is-ancestor")}
 TIMEOUT = 5
 ARTIFACT_TIMEOUT = 3
 MAX_ARTIFACT_CHECKS = 8  # git calls per reply at most (each well under 50 ms on a normal repo)
@@ -72,14 +76,37 @@ CREATE_VERBS = re.compile(r"\b(creat\w*|add(ed|s)?|wr[io]te|written|sav(ed|es)|g
                           r"exports?|exported|dump(ed)?|copied|moved|renamed|made)\b")
 
 
-def _git(cwd: str, sub: Tuple[str, str], arg: str) -> Optional[str]:
+def _git(cwd: str, sub: Tuple[str, str], arg: str, *more: str) -> Optional[str]:
     if sub not in READ_ONLY_GIT:
         return None
-    res = run_git(cwd, [sub[0], sub[1], arg])
+    res = run_git(cwd, [sub[0], sub[1], *more, arg])
     return res[1].strip() if res and res[0] == 0 else None
 
 
-def _file(r, cwd) -> Optional[Tuple[str, str]]:
+# ---- what the session itself did (S6): a re-check proves the session's work, not mere existence -------------------
+SESSION_SLACK = 300  # seconds before the session's first recorded call that still count as "this session"
+
+
+def session_context(history: Optional[List[Dict[str, Any]]]) -> Dict[str, Any]:
+    """The session ledger (store.Ledger.history) as the re-check needs it: every call fact, and the session's start
+    (its first call's time, minus SESSION_SLACK, or None when no call carries a time)."""
+    calls = [e for t in history or [] for e in (t.get("calls") or []) if isinstance(e, dict)]
+    times = [float(e["ts"]) for e in calls if isinstance(e.get("ts"), (int, float)) and not isinstance(e.get("ts"), bool)]
+    return {"calls": calls, "start": (min(times) - SESSION_SLACK) if times else None}
+
+
+def _in_session(raw: str, session: Optional[Dict[str, Any]]) -> bool:
+    from .verdict import _path_match
+    for e in (session or {}).get("calls") or []:
+        if e.get("ok", True) is False:
+            continue
+        for key in ("paths_edited", "paths_written", "paths_reported"):
+            if any(_path_match(raw, str(p)) for p in e.get(key) or []):
+                return True
+    return False
+
+
+def _file(r, cwd, session=None) -> Optional[Tuple[str, str]]:
     raw = r["claim"].get("path", "")
     p = Path(os.path.expanduser(raw))
     if not p.is_absolute():
@@ -87,35 +114,73 @@ def _file(r, cwd) -> Optional[Tuple[str, str]]:
             return None
         p = Path(cwd) / p
     verb = r.get("text", "").lower()
+    start = (session or {}).get("start")
     if p.exists():
         if not CREATE_VERBS.search(verb):
             return None  # the file being there proves it exists, not that it was fixed or changed
         size = p.stat().st_size if p.is_file() else 0
-        return NO_CAP, f"{raw} exists ({size:,} bytes)" if p.is_file() else f"{raw} exists"
-    if re.search(r"\b(deleted|removed)\b", verb):
-        return NO_CAP, f"{raw} is gone"
+        what = f"{raw} exists ({size:,} bytes)" if p.is_file() else f"{raw} exists"
+        if _in_session(raw, session):
+            return NO_CAP, f"{what}, written by a call this session"
+        if start is not None and p.stat().st_mtime >= start:
+            return NO_CAP, f"{what}, modified after the session started"
+        return None  # there before the session ("I created README.md"): existence alone proves nothing
+    if re.search(r"\b(deleted|removed)\b", verb) and _in_session(raw, session):
+        return NO_CAP, f"{raw} is gone, removed by a call this session"
     return None  # absent but maybe created elsewhere: a hint, not a 🧢
 
 
-def _sha(r, cwd) -> Optional[Tuple[str, str]]:
+def _commit_time(cwd: str, sha: str) -> Optional[int]:
+    out = _git(cwd, ("show", "-s"), sha, "--format=%ct")
+    return int(out) if out and out.isdigit() else None
+
+
+def _sha(r, cwd, session=None) -> Optional[Tuple[str, str]]:
     sha = r["claim"].get("sha") or ""
     if not SHA_OK.match(sha):
         return None
     kind = _git(cwd, ("cat-file", "-t"), sha)
-    if kind == "commit":
-        return NO_CAP, f"git has commit {sha}"
+    if kind != "commit":
+        return None
+    res = run_git(cwd, ["merge-base", "--is-ancestor", sha, "HEAD"])
+    if not res or res[0] != 0:
+        return None  # an old or unrelated commit object, not one on this branch
+    seen = [str(x) for e in (session or {}).get("calls") or [] for x in (e.get("shas") or []) +
+            [(e.get("git") or {}).get("commit") or "", e.get("head_sha") or ""] if x]
+    if any(len(x) >= 7 and (x.startswith(sha) or sha.startswith(x)) for x in seen):
+        return NO_CAP, f"commit {sha} is on HEAD and a call this session showed it"
+    start, when = (session or {}).get("start"), _commit_time(cwd, sha)
+    if start is not None and when is not None and when >= start:
+        return NO_CAP, f"commit {sha} is on HEAD, made after the session started"
     return None
 
 
-def _pushed(r, cwd) -> Optional[Tuple[str, str]]:
+def _pushed_in_session(b: str, session: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    for e in reversed((session or {}).get("calls") or []):
+        g = e.get("git") or {}
+        if g.get("push_ok") and (b in (g.get("push_refs") or []) or re.search(
+                r"(?<![\w/-])" + re.escape(b) + r"(?![\w/-])", str(e.get("cmd") or ""))):
+            return e
+    return None
+
+
+def _pushed(r, cwd, session=None) -> Optional[Tuple[str, str]]:
     b = r["claim"].get("branch") or ""
     if not REF_OK.match(b):
         return None
     local = _git(cwd, ("rev-parse", "--verify"), f"refs/heads/{b}")
     remote = _git(cwd, ("rev-parse", "--verify"), f"refs/remotes/origin/{b}")
-    if local and remote and local == remote:
-        return NO_CAP, f"origin/{b} = local {b} at {local[:7]} (local tracking ref)"
-    return None
+    if not (local and remote and local == remote):
+        return None
+    if _pushed_in_session(b, session):
+        return NO_CAP, f"origin/{b} = local {b} at {local[:7]}, pushed by a call this session"
+    start = (session or {}).get("start")
+    log = _git(cwd, ("reflog", "show"), f"refs/remotes/origin/{b}", "--date=unix", "-n", "20") if start else None
+    for line in (log or "").splitlines():
+        m = re.search(r"@\{(\d{9,11})\}: update by push\b", line)
+        if m and int(m.group(1)) >= start:
+            return NO_CAP, f"origin/{b} = local {b} at {local[:7]}; its reflog shows a push after the session started"
+    return None  # a tracking ref from an earlier fetch matches too: no proof of a push in this session
 
 
 HTTP_TIMEOUT = 3.0
@@ -282,17 +347,20 @@ def suggestion(r: Dict[str, Any], test_cmds: List[str]) -> str:
     return "show the tool output this came from"
 
 
-def recheck(r: Dict[str, Any], cwd: str, allow_http: bool = False) -> Optional[Tuple[str, str]]:
+def recheck(r: Dict[str, Any], cwd: str, allow_http: bool = False,
+            session: Optional[Dict[str, Any]] = None) -> Optional[Tuple[str, str]]:
+    """``session``: session_context() of the session ledger. Without it nothing proves the work was this session's,
+    so file, SHA and push claims stay open."""
     k = r["kind"]
     if r.get("verdict") == CAP:
         return None  # a contradiction in this turn's own output stands; a local re-check can't overrule it
     try:
         if k == "file":
-            return _file(r, cwd)
+            return _file(r, cwd, session)
         if k in ("sha", "committed") and r["claim"].get("sha"):
-            return _sha(r, cwd)
+            return _sha(r, cwd, session)
         if k == "pushed":
-            return _pushed(r, cwd)
+            return _pushed(r, cwd, session)
         if k == "url":
             return _url(r, allow_http)
     except Exception:

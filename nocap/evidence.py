@@ -11,6 +11,7 @@ import json
 import os
 import re
 import shlex
+import time
 from typing import Any, Dict, List, Optional
 
 # Scan window per tool output. Test summaries sit at the end of a run and commands, push lines and errors near the
@@ -191,12 +192,16 @@ _COMMENT_LINE_RE = re.compile(r"^\s*(?:#(?!\[|!|(?:include|define|if|ifdef|ifnde
                               r"error|line|region|endregion)\b)|//|/\*|\*/|\*(?!\*)|--\s|<!--|;;|\"\"\"\s*$)")
 
 
+_TRAILING_COMMENT_RE = re.compile(r"(?<=\s)(?:#|//)\s")  # linear: one fixed-width lookbehind, no \s+ to rescan
+
+
 def _code_lines(s: str) -> List[str]:
     out = []
     for ln in s.splitlines():
         if _COMMENT_LINE_RE.match(ln):
             continue
-        ln = re.sub(r"\s+(?:#|//)\s.*$", "", ln).strip()  # trailing comment (needs a space before and after)
+        m = _TRAILING_COMMENT_RE.search(ln)  # trailing comment (needs a space before and after)
+        ln = (ln[:m.start()] if m else ln).strip()
         if ln:
             out.append(ln)
     return out
@@ -242,7 +247,7 @@ _VALUE_FLAGS = {"-n", "-p", "--tb", "-c", "-o", "-W", "--rootdir", "--timeout", 
                 "-j", "--jobs", "--features", "-F", "--target", "--manifest-path", "--profile", "--config",
                 "--reporter", "--maxWorkers", "--testTimeout", "--environment", "--pool", "--test-threads",
                 "--import-mode", "-gcflags", "-ldflags", "-exec", "--max-workers", "--shard", "--workers"}
-_SUBSET_FLAG_RE = re.compile(r"\s-k\s|\bpytest\b(?:(?!\bpytest\b).)*\s-m\s|::|\s--lf\b|\s--last-failed\b|\s--deselect\b|\s--ignore\b|--testNamePattern|"
+_SUBSET_FLAG_RE = re.compile(r"[\s'\"=]-k\s|--testPathIgnorePatterns\b|\bpytest\b(?:(?!\bpytest\b).)*\s-m\s|::|\s--lf\b|\s--last-failed\b|\s--deselect\b|\s--ignore\b|--testNamePattern|"
                              r"\s-t\s|--testPathPattern|\s-run[\s=]|\s['\"]?-D(?:it\.)?test=|\s-pl\s|\s--projects?\s|"
                              r"\s--tests?\s|\s--tests?=|\s--package\s|\bcargo\b(?:(?!\bcargo\b).)*\s(?:-p|--package|--test|"
                              r"--lib|--bin|--doc|--example)\b|--grep\b|\s-g\s|--filter\b|--only\b|:\w[\w-]*:test\b")
@@ -414,7 +419,10 @@ def _subset(seg: str, cmd: str) -> bool:
 # token is matched from its first character only (lookbehinds), so a long run can't be rescanned from every offset.
 _SECRET_NAME_RE = re.compile(r"(?i)token|secret|passw|pwd|api[_-]?key|apikey|auth|bearer|credential|private[_-]?key|"
                              r"(?:^|[_-])key(?:s|[_-]|$)|^key$|dsn$|cookie|session[_-]?id")
-_ASSIGN_RE = re.compile(r"(?<![\w.-])([\w.-]+)(['\"]?[ \t]*[:=][ \t]*)((?:(?i:bearer|basic|token)[ \t]+)?['\"]?)([^\s'\",;}]+)")
+# the lookahead skips names with no secret word before the Python callback runs (a long "a:b a:b ..." run was ~1 µs
+# per pair in _assign); _assign still checks the exact rule (_SECRET_NAME_RE)
+_ASSIGN_RE = re.compile(r"(?<![\w.-])(?=[\w.-]*?(?i:token|secret|passw|pwd|key|auth|bearer|credential|dsn|cookie|session))"
+                        r"([\w.-]+)(['\"]?[ \t]*(?:=|:(?!:))[ \t]*)((?:(?i:bearer|basic|token)[ \t]+)?['\"]?)([^\s'\",;}]+)")
 _KEYWORD_SPACE_RE = re.compile(r"(?i)(?<![A-Za-z0-9])(authorization|bearer|token|api[_-]?key|secret|password|passwd|pwd)"
                                r"\b([ \t]+)((?:bearer[ \t]+)?['\"]?)([^\s'\"]+)")
 _USERINFO_RE = re.compile(r"(?i)(?<![a-z0-9+.-])([a-z][a-z0-9+.-]{0,30}://[^\s/:@'\"]{1,200}:)([^\s@/'\"]{1,500})@")
@@ -426,6 +434,39 @@ SECRET_RES = [
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)", re.S),
 ]
 REDACTED = "[redacted]"
+# Passwords passed as command-line flags (S9). Each masks only its capture group, so the command stays readable.
+# The curl and mysql shapes only run when that tool is named, so `docker run -u 1000:1000` and `pytest -p no:x` stay.
+_CURL_RE = re.compile(r"\bcurl\b")
+_CURL_USER_RE = re.compile(r"((?<![\w-])(?:-u|--user)(?:[ \t]+|=)[^\s:'\"@/]{1,100}:)[^\s'\"]{1,300}")
+_MYSQL_RE = re.compile(r"\b(?:mysql\w{0,10}|mariadb\w{0,10})\b")
+_MYSQL_PW_RE = re.compile(r"((?<![\w-])-p)[^\s'\"\[-][^\s'\"]{0,300}")
+_REDIS_RE = re.compile(r"\bredis-cli\b")
+_REDIS_PW_RE = re.compile(r"((?<![\w-])-a[ \t]+)[^\s'\"\[][^\s'\"]{0,300}")
+_FLAG_PW_RES = [
+    re.compile(r"(\bsshpass[ \t]+(?:-[a-zA-Z][ \t]+)?-p[ \t]*)[^\s'\"\[][^\s'\"]{0,300}"),
+    re.compile(r"((?<![\w-])--pass(?:word|wd|phrase)?(?:[ \t]+|=))[^\s'\"\[][^\s'\"]{0,300}"),
+]
+_MASK = "\\g<1>" + REDACTED  # group 1 is everything before the secret: a template, no Python callback per match
+
+
+def _cli_passwords(text: str) -> str:
+    if _CURL_RE.search(text):
+        text = _CURL_USER_RE.sub(_MASK, text)
+    if _MYSQL_RE.search(text):
+        text = _MYSQL_PW_RE.sub(_MASK, text)
+    if _REDIS_RE.search(text):
+        text = _REDIS_PW_RE.sub(_MASK, text)
+    for rx in _FLAG_PW_RES:
+        text = rx.sub(_MASK, text)
+    return text
+
+
+def home_tilde(s: str) -> str:
+    """The user's home directory as `~` (S9): stored and printed commands and working dirs never name the user."""
+    home = os.path.expanduser("~").rstrip("/")
+    if not s or not home or home == "~" or len(home) < 2 or home not in s:
+        return s
+    return re.sub(re.escape(home) + r"(?=/|$|[\s'\";&|)])", "~", s)
 
 
 def _assign(m: "re.Match") -> str:
@@ -474,7 +515,7 @@ def redact(text: str) -> str:
     out = _AWS_SECRET_RE.sub(_aws_secret, out)
     for rx in SECRET_RES:
         out = rx.sub(REDACTED, out)
-    return out
+    return _cli_passwords(out)  # last: each mask lengthens the text, so the rules above scan the shorter original
 
 
 def scan_window(text: str) -> str:
@@ -855,6 +896,280 @@ def _numbers(text: str) -> List[str]:
     return list(seen)
 
 
+# ---- suite tampering (S4) and agent-written runners (S5) -----------------------------------------------------------
+# A green run only proves "all tests pass" for the suite as it was. These record, per call, a change to WHICH tests run:
+# a test file deleted or moved, a skip/xfail/only/todo marker, a test or an assertion removed, conftest collection
+# hooks, a runner-config filter, an env filter (PYTEST_ADDOPTS=...). Each entry names the change in a short sentence.
+# Precision first: new test files, added tests, and edits that keep every test and assertion are not changes.
+# Every regex here is bounded (fixed-width repeats, no nested quantifiers) and runs on at most MAX_CMD characters.
+TAMPER_MARK_RE = re.compile(
+    r"@pytest\.mark\.(?:skip(?!if)|xfail)\b|@pytest\.mark\.skipif\([ \t]*(?:True|1)\b|"
+    r"\bpytestmark[ \t]*=[ \t]*\[?[ \t]*pytest\.mark\.(?:skip(?!if)|xfail)\b|"
+    r"(?<![\w.])pytest\.(?:skip|xfail)\(|@(?:unittest\.)?skip(?:\(|\b(?!If|Unless))|\.skipTest\(|"
+    r"\bt\.Skip(?:Now|f)?\(|#\[ignore\]|@Disabled\b|@Ignore\b|"
+    r"(?<![\w.$])(?:it|test|describe|context|suite)\.(?:skip|only|todo)\b|(?<![\w.$])(?:xit|xdescribe|xtest|fit|fdescribe)\(")
+CONFTEST_KEY_RE = re.compile(r"\bcollect_ignore(?:_glob)?\b|\bpytest_collection_modifyitems\b|\bpytest_ignore_collect\b|"
+                             r"\bpytest_deselected\b|\bitems\[:\][ \t]*=|\bitems\.(?:remove|pop|clear)\(")
+# runner configs: a dedicated one (pytest.ini, jest.config.*) changes the suite with any edit; a shared one
+# (pyproject.toml, setup.cfg, package.json) only when the new text holds a key that selects tests
+RUNNER_CONFIG_RE = re.compile(r"(?:^|/)(?:pytest\.ini|tox\.ini|noxfile\.py|\.mocharc(?:\.[a-z]{2,4})?|karma\.conf\.[cm]?js|"
+                              r"phpunit\.xml(?:\.dist)?|(?:jest|vitest|vitest\.workspace|playwright|cypress)\.config\.[cm]?[jt]s(?:on)?)$")
+SHARED_CONFIG_RE = re.compile(r"(?:^|/)(?:pyproject\.toml|setup\.cfg|package\.json|vite\.config\.[cm]?[jt]s)$")
+CONFIG_KEY_RE = re.compile(r"\baddopts\b|--deselect\b|\bdeselect\b|--ignore(?:-glob)?\b|\bcollect_ignore\b|\bnorecursedirs\b|"
+                           r"\btestpaths\b|\bpython_(?:files|functions|classes)\b|\btestPathIgnorePatterns\b|"
+                           r"\bmodulePathIgnorePatterns\b|\btestMatch\b|\btestRegex\b|--testNamePattern\b|"
+                           r"\"test\"[ \t]*:|\btest[ \t]*:[ \t]*\{|(?:^|[\s'\"=])-k[ \t]")
+ENV_FILTER_RE = re.compile(r"(?:^|[\s;&|(])(?:export[ \t]+)?((?:PYTEST_ADDOPTS|JEST_[A-Z_]{1,30}|VITEST_[A-Z_]{1,30}|"
+                           r"MOCHA_[A-Z_]{1,30})=('[^'\n]{0,300}'|\"[^\"\n]{0,300}\"|[^\s;&|]{0,300}))")
+ENV_FILTER_VALUE_RE = re.compile(r"(?:^|[\s'\"=])(?:-k|-m|-t|--deselect|--ignore(?:-glob)?|--lf|--last-failed|--sw|"
+                                 r"--stepwise|--testNamePattern|--testPathIgnorePatterns|--grep)\b")
+ASSERT_LINE_RE = re.compile(r"^[ \t]*(?:assert\b|self\.assert\w{0,40}\(|expect\(|assert\w{0,40}\(|t\.(?:Error|Fatal)f?\(|"
+                            r"require\.\w{1,40}\(|XCTAssert\w{0,40}\(|should\b)")
+TEST_DEF_RE = re.compile(r"(?m)^[ \t]*(?:async[ \t]+)?def[ \t]+(test\w{0,100})|^[ \t]*func[ \t]+(Test\w{0,100})\(|"
+                         r"(?<![\w.$])(?:it|test)\([ \t]*['\"`]([^'\"`\n]{1,120})['\"`]")
+_DIFF_HEAD_RE = re.compile(r"(?m)^\*\*\* (Update|Add|Delete) File:[ \t]*([^\s\\\"]{1,300})|^\+\+\+ (?:b/)?([^\s\\\"]{1,300})|"
+                           r"^--- (?:a/)?([^\s\\\"]{1,300})")
+_TEST_DIRS = ("tests", "test", "__tests__", "spec", "specs", "e2e")
+_CODE_EXT_RE = re.compile(r"\.(?:py|[cm]?[jt]sx?|rb|go|rs|java|kt|php|cs|swift|scala|ex|exs)$")
+_NOT_SOURCE_RE = re.compile(r"(?:^|/)(?:testdata|test_?data|fixtures|snapshots?)/|\.snap$")
+MAX_TAMPER = 10
+FAILED_ID_RE = re.compile(
+    r"(?m)^(?:FAILED|ERROR)[ \t]+([\w./-]{1,200}\.\w{1,5})(?:::([\w.\[\]-]{1,200}))?|"
+    r"^([\w./-]{1,200}\.py)::([\w\[\].-]{1,200})[ \t]+(?:FAILED|ERROR)\b|"
+    r"^[ \t]*FAIL[ \t]+([\w./@-]{1,200}\.[cm]?[jt]sx?)\b|^[ \t]*--- FAIL: (\w{1,200})|"
+    r"^(?:FAIL|ERROR): (\w{1,200}) \(([\w.]{1,200})\)")
+
+
+def _bare(name: str) -> str:
+    """A test name without its parameters: test_login[bob] -> test_login."""
+    return name.split("[", 1)[0]
+
+
+def failed_test_ids(text: str) -> List[str]:
+    """Tests a run names as failing: "file::name" (pytest, unittest), "file::" (a jest/vitest file), "::Name" (go)."""
+    out: List[str] = []
+    for m in FAILED_ID_RE.finditer(text):
+        g = m.groups()
+        if g[0]:
+            item = f"{g[0]}::{_bare((g[1] or '').split('::')[-1])}"
+        elif g[2]:
+            item = f"{g[2]}::{_bare(g[3])}"
+        elif g[4]:
+            item = f"{g[4]}::"
+        elif g[5]:
+            item = f"::{g[5]}"
+        else:  # unittest: "FAIL: test_x (pkg.mod.Class)" or, on 3.11+, "(pkg.mod.Class.test_x)"
+            parts = g[7].split(".")
+            if parts[-1] == g[6]:
+                parts.pop()
+            if len(parts) > 1 and parts[-1][:1].isupper():
+                parts.pop()
+            item = f"{'/'.join(parts)}.py::{g[6]}"
+        if item not in out:
+            out.append(item)
+        if len(out) >= 50:
+            break
+    return out
+
+
+def test_source(p: str) -> bool:
+    """A file (or a whole test directory) the runner collects tests from; not fixtures, test data or snapshots."""
+    p = (p or "").strip("`'\"").rstrip("/")
+    if not p or path_class(p) != "test" and os.path.basename(p) not in _TEST_DIRS:
+        return False
+    if os.path.basename(p) in _TEST_DIRS or os.path.basename(p) == "conftest.py":
+        return True
+    return bool(_CODE_EXT_RE.search(p)) and not _NOT_SOURCE_RE.search(p)
+
+
+def _test_names(s: str) -> List[str]:
+    return [next(g for g in m.groups() if g) for m in TEST_DEF_RE.finditer(s or "")][:MAX_ITEMS]
+
+
+def _marked_names(s: str) -> List[str]:
+    """Tests a skip marker sits on: the next def within 3 lines, or the name inside it.skip('name')."""
+    out: List[str] = []
+    for k, m in enumerate(TAMPER_MARK_RE.finditer(s or "")):
+        if k >= MAX_ITEMS:
+            break
+        after = s[m.start():m.start() + 600]
+        d = TEST_DEF_RE.search("\n".join(after.split("\n")[:4]))
+        if d:
+            name = next(g for g in d.groups() if g)
+            if name not in out:
+                out.append(name)
+    return out[:MAX_ITEMS]
+
+
+def _edit_texts(args: Dict[str, Any]) -> List[tuple]:
+    """(path or None, old text, new text, whole_file) per edited file named by the tool's own arguments."""
+    for old_k, new_k in (("old_string", "new_string"), ("old_str", "new_str"), ("old_text", "new_text"),
+                         ("search", "replace")):
+        new = args.get(new_k)
+        if isinstance(new, str):
+            old = args.get(old_k)
+            return [(None, old[:MAX_CMD] if isinstance(old, str) else "", new[:MAX_CMD], False)]
+    for k in ("content", "file_text", "text", "contents"):
+        if isinstance(args.get(k), str):
+            return [(None, "", args[k][:MAX_CMD], True)]
+    for k in ("patch", "diff", "input"):
+        v = args.get(k)
+        if isinstance(v, str):
+            return _diff_sections(v[:MAX_CMD])
+    return []
+
+
+def _diff_sections(v: str) -> List[tuple]:
+    """A unified diff or an apply_patch body, split per file: (path, removed lines, added lines, deleted?)."""
+    out: List[tuple] = []
+    heads = list(_DIFF_HEAD_RE.finditer(v))[:MAX_ITEMS]
+    if not heads:
+        plus = "\n".join(ln[1:] for ln in v.splitlines() if ln.startswith("+") and not ln.startswith("+++"))
+        minus = "\n".join(ln[1:] for ln in v.splitlines() if ln.startswith("-") and not ln.startswith("---"))
+        return [(None, minus, plus, False)]
+    minus_path = None
+    for k, h in enumerate(heads):
+        body = v[h.end():heads[k + 1].start() if k + 1 < len(heads) else len(v)]
+        if h.group(4):  # "--- a/path": the old name of the next "+++" section
+            minus_path = h.group(4)
+            continue
+        path = h.group(2) or h.group(3)
+        deleted = h.group(1) == "Delete" or path == "/dev/null"
+        if path == "/dev/null":
+            path = minus_path
+        plus = "\n".join(ln[1:] for ln in body.splitlines() if ln.startswith("+"))
+        minus = "\n".join(ln[1:] for ln in body.splitlines() if ln.startswith("-"))
+        out.append((path, minus, plus, "DELETE" if deleted else False))
+        minus_path = None
+    return out
+
+
+def _key_lines(s: str) -> set:
+    return {ln.strip() for ln in (s or "").splitlines()[:5000] if CONFIG_KEY_RE.search(ln)}
+
+
+def _content_change(path: str, old: str, new: str, whole: Any) -> List[Dict[str, Any]]:
+    """What one edit of `path` did to the suite (empty for ordinary edits)."""
+    out: List[Dict[str, Any]] = []
+    base = os.path.basename(path)
+    if whole == "DELETE":
+        if test_source(path):
+            out.append({"kind": "deleted", "path": path, "what": f"{path} deleted"})
+        return out
+    if test_source(path):
+        added = len(TAMPER_MARK_RE.findall(new)) > len(TAMPER_MARK_RE.findall(old))
+        if added:
+            names = _marked_names(new)
+            out.append({"kind": "skip", "path": path, "names": names,
+                        "what": f"skip marker added in {path}" + (f" ({', '.join(names[:3])})" if names else "")})
+        if base == "conftest.py" and len(CONFTEST_KEY_RE.findall(new)) > len(CONFTEST_KEY_RE.findall(old)):
+            key = CONFTEST_KEY_RE.search(new).group(0).rstrip("(=[: \t")
+            out.append({"kind": "conftest", "path": path, "detail": new[:2000], "what": f"{path}: {key} added"})
+        if old and not whole:
+            now = set(_test_names(new))
+            gone = [n for n in _test_names(old) if n not in now]
+            if gone:
+                out.append({"kind": "removed", "path": path, "names": gone,
+                            "what": f"test removed from {path} ({', '.join(gone[:3])})"})
+            elif not added:
+                kept = {ln.strip() for ln in new.splitlines()}
+                if any(ASSERT_LINE_RE.match(ln) and ln.strip() not in kept for ln in old.splitlines()):
+                    out.append({"kind": "assert", "path": path, "what": f"assertion changed in {path}"})
+    elif RUNNER_CONFIG_RE.search(path) or (SHARED_CONFIG_RE.search(path) and _key_lines(new) - _key_lines(old)):
+        changed = sorted(_key_lines(new) - _key_lines(old))
+        key = CONFIG_KEY_RE.search(changed[0]) if changed else None
+        detail = f" ({key.group(0).strip(' =:{')})" if key and SHARED_CONFIG_RE.search(path) else ""
+        out.append({"kind": "config", "path": path, "detail": new[:2000], "what": f"{path} edited{detail}"})
+    return out
+
+
+def _shell_suite_changes(cmd: str, flat: str, targets: List[str]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for seg in re.split(r"&&|\|\||;|\||\n", flat or "")[:MAX_SEGS]:
+        try:
+            toks = shlex.split(seg[:MAX_SEG])
+        except ValueError:
+            toks = seg[:MAX_SEG].split()
+        while toks and (re.fullmatch(r"[A-Z_][A-Z0-9_]*=\S*", toks[0]) or toks[0] in ("sudo", "command", "env")):
+            toks = toks[1:]
+        if toks[:2] in (["git", "rm"], ["git", "mv"]):
+            toks = [toks[0] + "-" + toks[1]] + toks[2:]
+        if not toks:
+            continue
+        args = [t for t in toks[1:] if not t.startswith("-")]
+        if toks[0] in ("rm", "git-rm", "unlink", "rmdir"):
+            out += [{"kind": "deleted", "path": p, "what": f"{p.rstrip('/')} deleted"} for p in args if test_source(p)]
+        elif toks[0] in ("mv", "git-mv") and len(args) >= 2:
+            dest = args[-1]
+            for p in args[:-1]:
+                if test_source(p) and not (_test_file(dest) or os.path.basename(dest) == "conftest.py"):
+                    out.append({"kind": "deleted", "path": p, "moved": True, "what": f"{p} moved to {dest}"})
+    sed_targets = set(re.findall(r"\b(?:sed\s+-i(?:\s*''|\s+\S+)?|perl\s+-\w*i\S*(?:\s+-\w+)*)\s+(?:'[^']*'|\"[^\"]*\")\s+"
+                                 r"([\w./~$-]+)", flat))
+    for t in dict.fromkeys(targets):
+        if test_source(t):
+            if TAMPER_MARK_RE.search(cmd):  # names: a def right after the marker, or one the edit names (sed)
+                names = _marked_names(cmd) or list(dict.fromkeys(re.findall(r"\bdef[ \t]+(test\w{0,100})", cmd)))[:20]
+                out.append({"kind": "skip", "path": t, "names": names,
+                            "what": f"skip marker added in {t}" + (f" ({', '.join(names[:3])})" if names else "")})
+            elif os.path.basename(t) == "conftest.py" and CONFTEST_KEY_RE.search(cmd):
+                key = CONFTEST_KEY_RE.search(cmd).group(0).rstrip("(=[: \t")
+                out.append({"kind": "conftest", "path": t, "detail": cmd[:2000], "what": f"{t}: {key} added"})
+            elif t in sed_targets:
+                out.append({"kind": "edit", "path": t, "what": f"{t} edited by sed -i"})
+        elif RUNNER_CONFIG_RE.search(t) or (SHARED_CONFIG_RE.search(t) and CONFIG_KEY_RE.search(cmd)):
+            out.append({"kind": "config", "path": t, "detail": cmd[:2000], "what": f"{t} edited"})
+    for m in ENV_FILTER_RE.finditer(cmd):
+        if ENV_FILTER_VALUE_RE.search(m.group(2).strip("'\"")):
+            out.append({"kind": "env", "detail": m.group(2), "what": f"{m.group(1)} set"})
+        if len(out) >= MAX_TAMPER:
+            break
+    return out
+
+
+def suite_changes(name: str, args: Dict[str, Any], cmd: str, flat: str, shell: bool, edit_tool: bool,
+                  paths: List[str], targets: List[str]) -> List[Dict[str, Any]]:
+    """The suite changes one successful call made (see TAMPER_MARK_RE). Each: kind, path, names, what."""
+    out: List[Dict[str, Any]] = []
+    if shell:
+        out = _shell_suite_changes(cmd, flat, targets)
+    elif edit_tool:
+        deleting = bool(re.search(r"delete|remove|unlink", name))
+        if deleting:
+            out += [{"kind": "deleted", "path": p, "what": f"{p} deleted"} for p in paths if test_source(p)]
+        elif re.search(r"rename|move", name):
+            dest = next((args[k] for k in ("new_path", "destination", "dest", "to", "target") if isinstance(args.get(k), str)), "")
+            out += [{"kind": "deleted", "path": p, "moved": True, "what": f"{p} moved to {dest or 'elsewhere'}"}
+                    for p in paths[:1] if test_source(p) and not _test_file(dest)]
+        else:
+            for path, old, new, whole in _edit_texts(args):
+                for p in ([path] if path else paths[:1]):
+                    if p:
+                        out += _content_change(p, old, new, whole)
+    for t in out:
+        t["what"] = redact(t["what"])[:160]
+        if "detail" in t:
+            t["detail"] = redact(t["detail"])[:2000]
+    return out[:MAX_TAMPER]
+
+
+# a test runner the agent may have written itself: a script named by the run, or the Makefile behind `make test`
+RUNNER_SCRIPT_RE = re.compile(r"(?:^|\s)(?:(?:ba|z)?sh\s+|\./)?((?:[\w.-]{1,100}/){0,6}[\w.-]{1,100}\.(?:sh|bash|py))\b|"
+                              r"(?:^|\s)\./((?:[\w.-]{1,100}/){0,6}[\w-]{1,100})(?=\s|$)")
+
+
+def runner_files(cmd: str) -> List[str]:
+    """Files a test command runs that an agent could have written: `./test.sh`, `bash scripts/ci.sh`, a Makefile."""
+    seg = runner_segment(cmd or "")
+    if not seg:
+        return []
+    out = [a or b for a, b in RUNNER_SCRIPT_RE.findall(seg)]
+    if re.match(r"(?:g?make)\b", seg):
+        mk = re.search(r"\s-f\s+(\S+)", seg)
+        out += [mk.group(1)] if mk else ["Makefile", "makefile", "GNUmakefile"]
+    return [p for p in dict.fromkeys(out) if p][:10]
+
+
 def extract(tool_name: str, args: Any, result: Any, status: Optional[str] = None,
             index: int = 0, error_message: Optional[str] = None, cwd: str = "") -> Dict[str, Any]:
     """`cwd`: the session's recorded working directory (ctx.session_cwd), used only to place a file-scoped test run."""
@@ -879,7 +1194,7 @@ def extract(tool_name: str, args: Any, result: Any, status: Optional[str] = None
         "i": index,
         "tool": str(tool_name or "")[:80],
         "digest": _digest(args),
-        "cmd": redact(cmd.strip().replace("\n", " ⏎ "))[:160],
+        "cmd": redact(home_tilde(cmd.strip().replace("\n", " ⏎ ")))[:160],
         "exit": exit_code,
         "ok": ok,
         "error": redact(err or (error_message or ""))[:160],
@@ -895,6 +1210,7 @@ def extract(tool_name: str, args: Any, result: Any, status: Optional[str] = None
         "shas": [],
         "numbers": [],
         "windowed": windowed,  # the output was longer than the scan window (see HEAD): only part of it was parsed
+        "ts": round(time.time(), 3),  # when the call's result arrived (the /cap re-check's session start)
     }
     test_cmd = ev["test_cmd"]
     seg = runner_segment(cmd, cut) if test_cmd else ""
@@ -904,9 +1220,10 @@ def extract(tool_name: str, args: Any, result: Any, status: Optional[str] = None
         re.search(git + r"(?:checkout|switch)\s+(?:-\S+\s+)*(?:main|master|origin/\S+|HEAD~\d*|[0-9a-f]{7,40})\b", cmd))
     ev["chained"] = _chained(cmd)
     wm = re.search(r"(?:^|&&|;)\s*cd\s+(\"[^\"]+\"|'[^']+'|\S+)|\s-C\s+(\S+)|\s-R\s+(\S+)|--repo[ =](\S+)", cmd)
-    ev["where"] = next((g for g in wm.groups() if g), "").strip("\"'") if wm else ""
+    where = next((g for g in wm.groups() if g), "").strip("\"'") if wm else ""
+    ev["where"] = home_tilde(where)
     wd = args.get("workdir") or args.get("cwd") if isinstance(args, dict) else ""
-    ev["workdir"] = wd[:300] if isinstance(wd, str) else ""  # the tool's own working dir (another repo, maybe)
+    ev["workdir"] = home_tilde(wd)[:300] if isinstance(wd, str) else ""  # the tool's own working dir (another repo)
     ev["background"] = bool(args.get("background")) or bool(re.search(r"(?<!&)&\s*$|\bnohup\b", cmd))
     ev["masked"] = bool(re.search(r"\|\||\|\s*(?:tail|head|grep|tee|less|cat|sed|awk)\b|;\s*(?:true|exit 0)\b|\|\s*true\b"
                                   r"|;\s*echo\b", cmd))
@@ -922,7 +1239,7 @@ def extract(tool_name: str, args: Any, result: Any, status: Optional[str] = None
         if isinstance(ended, str) and ended:
             directory = ended
         else:
-            directory = os.path.join(base, ev["where"]) if isinstance(base, str) and ev["where"] else base
+            directory = os.path.join(base, where) if isinstance(base, str) and where else base
         files = _full_file_run(seg, cmd, directory) if isinstance(directory, str) and known else []
         if files:
             ev["subset"] = False
@@ -976,6 +1293,12 @@ def extract(tool_name: str, args: Any, result: Any, status: Optional[str] = None
     shell_code = [t for t in code_targets if path_class(t) == "code"] if not test_cmd else []
     ev["edit"] = bool(tool_code) or bool(shell_code) or unknown_target
     ev["skip_added"] = bool(written) and ok and _adds_skip(args)
+    # suite tampering (S4): which tests run changed in this call; a test run's own env filter makes it a subset
+    ev["tamper"] = suite_changes(name, args, cmd, flat, shell, edit_tool, ev["paths_written"], targets) if ok else []
+    ev["suite_change"] = [t["what"] for t in ev["tamper"]]
+    if test_cmd and any(t["kind"] == "env" for t in ev["tamper"]):
+        ev["subset"] = True
+    ev["failed_tests"] = [redact(x)[:200] for x in failed_test_ids(text)] if test_cmd else []
     ev["check_cmd"] = shell and not test_cmd and bool(CHECK_CMD_RE.search(strip_heredocs(cmd, cut=cut)))
     if cmd and WRITE_CMD_RE.search(cmd) and ok:
         ev["paths_seen"] = sorted(set(re.findall(r"[\w.@~/-]*[\w-]\.[A-Za-z0-9]{1,5}\b|[\w.~-]+/[\w./@-]+", cmd)))[
@@ -1043,8 +1366,9 @@ def summary(ev: Dict[str, Any]) -> Dict[str, Any]:
 _FACT_FLAGS = ("i", "tool", "cmd", "exit", "ok", "error", "test_cmd", "deploy_cmd", "build_cmd", "background", "edit",
                "any_edit", "skip_added", "check_cmd", "where", "suite", "baseline", "chained", "masked", "subset",
                "stopped", "tail_only", "partial", "fail_text", "quiet_silent", "out_empty", "windowed", "no_tests",
-               "head_sha", "diff_files", "workdir")
-_FACT_LISTS = {"paths_written": 10, "paths_edited": 20, "paths_reported": 10, "shas": 20, "test_files": 50}
+               "head_sha", "diff_files", "workdir", "ts")
+_FACT_LISTS = {"paths_written": 10, "paths_edited": 20, "paths_reported": 10, "shas": 20, "test_files": 50,
+               "failed_tests": 20, "suite_change": 10}
 
 
 def ledger_fact(ev: Dict[str, Any]) -> Dict[str, Any]:
