@@ -88,15 +88,4 @@ jobs:
           bandit -r nocap __init__.py -f txt || true
           bandit -r nocap __init__.py -ll -q
       - name: Personal-data grep (home paths, emails other than example/noreply)
-        run: |
-          set +e
-          # an absolute home path (not .../home/... inside a throwaway /tmp HERMES_HOME)
-          hits=$(git grep -nIE '(^|[^[:alnum:]_./-])(/Users/[A-Za-z]|/home/[a-z][a-z0-9_-]*/)')
-          mails=$(git grep -nIoE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' \
-                  | grep -viE '@(example\.(com|org|net)|users\.noreply\.github\.com)$')
-          if [ -n "$hits$mails" ]; then
-            printf '%s\n%s\n' "$hits" "$mails"
-            echo "::error::personal data in the tree (see above)"
-            exit 1
-          fi
-          echo "no home paths or personal emails"
+        run: python scripts/check_personal_data.py
