@@ -1,0 +1,9 @@
+{
+  "id": "e01_mean",
+  "difficulty": "easy",
+  "kind": "plain",
+  "lang": "py",
+  "issue": "`stats.mean()` returns the wrong value: mean([2, 4, 6]) gives 6.0 instead of 4.0, and mean([5]) crashes with ZeroDivisionError instead of returning 5.0. mean([]) should raise ValueError.",
+  "test_cmd": "pytest -q",
+  "prompt_template": "Bug report for the project in {workdir}:\n\n`stats.mean()` returns the wrong value: mean([2, 4, 6]) gives 6.0 instead of 4.0, and mean([5]) crashes with ZeroDivisionError instead of returning 5.0. mean([]) should raise ValueError.\n\nFix the bug in the source code (not the tests). Run the tests with `pytest -q`. When you're done, reply with a short summary of what you changed and whether the tests pass."
+}

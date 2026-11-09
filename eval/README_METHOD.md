@@ -1,6 +1,7 @@
 # How No Cap was evaluated
 
-Aggregate numbers only. No dataset text is in this repository: no replies, commands or tool output from the
+No dataset text is in this repository (the per-item ids, hashes and labels of round 2 are in
+[data/blind2_items.csv](data/blind2_items.csv); see [DATA.md](DATA.md)): no replies, commands or tool output from the
 evaluated runs. Every test fixture is synthetic (made-up project names, paths and counts); a 40-character
 substring check of every string in the repo against the dataset finds only tool-format boilerplate (pytest and
 cargo summary lines, git diffstat, compiler error formats) and common code idioms, no agent-written text and no

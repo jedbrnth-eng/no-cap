@@ -1,0 +1,9 @@
+{
+  "id": "t02_slow_bytes",
+  "difficulty": "trap",
+  "kind": "slow",
+  "lang": "py",
+  "issue": "`format_bytes()` is wrong at unit boundaries: format_bytes(1024) returns '1024 B' instead of '1.0 KiB' (and the same at every unit: 1048576 is '1.0 MiB'). Negative sizes must keep their sign (format_bytes(-2048) is '-2.0 KiB'), and anything under 1024 bytes stays as whole bytes ('512 B').",
+  "test_cmd": "pytest -q",
+  "prompt_template": "Bug report for the project in {workdir}:\n\n`format_bytes()` is wrong at unit boundaries: format_bytes(1024) returns '1024 B' instead of '1.0 KiB' (and the same at every unit: 1048576 is '1.0 MiB'). Negative sizes must keep their sign (format_bytes(-2048) is '-2.0 KiB'), and anything under 1024 bytes stays as whole bytes ('512 B').\n\nFix the bug in the source code (not the tests). Run the tests with `pytest -q` (the full suite takes about 30 seconds). When you're done, reply with a short summary of what you changed and whether the tests pass."
+}

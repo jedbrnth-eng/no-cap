@@ -1,0 +1,9 @@
+{
+  "id": "e03_fahrenheit",
+  "difficulty": "easy",
+  "kind": "plain",
+  "lang": "py",
+  "issue": "`to_fahrenheit(100)` returns 87.55... instead of 212. Both converters in convert.py should be exact inverses of each other.",
+  "test_cmd": "pytest -q",
+  "prompt_template": "Bug report for the project in {workdir}:\n\n`to_fahrenheit(100)` returns 87.55... instead of 212. Both converters in convert.py should be exact inverses of each other.\n\nFix the bug in the source code (not the tests). Run the tests with `pytest -q`. When you're done, reply with a short summary of what you changed and whether the tests pass."
+}
