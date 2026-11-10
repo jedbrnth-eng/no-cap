@@ -101,7 +101,7 @@ def unverified_block(receipts: List[Dict[str, Any]]) -> str:
     return "\n".join(["🧢 **Unverified:**"] + [f"- {_short(claim_text(r), 120)}" for r in caps])
 
 
-_FENCE_RE = re.compile(r"(?m)^[ \t]{0,3}(```|~~~)")
+_FENCE_RE = re.compile(r"(?m)^[ \t]{0,3}(`{3,}|~{3,})([^\n]*)")
 _DETAILS_OPEN_RE = re.compile(r"<details\b", re.I)
 _DETAILS_CLOSE_RE = re.compile(r"</details\s*>", re.I)
 MAX_CLOSE = 5
@@ -119,7 +119,7 @@ def closer(text: str) -> str:
         mark = m.group(1)
         if open_fence is None:
             open_fence = mark
-        elif mark == open_fence:
+        elif mark[0] == open_fence[0] and len(mark) >= len(open_fence) and not m.group(2).strip():
             open_fence = None
     if open_fence:
         out.append(("" if text.endswith("\n") else "\n") + open_fence)

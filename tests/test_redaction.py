@@ -201,3 +201,17 @@ def test_home_dir_becomes_tilde_in_stored_cmd_and_workdir(tmp_path, monkeypatch)
     e.on_reply(response_text="All tests pass.", session_id="s", turn_id="t", model="m")
     assert "alice-example" not in "".join(f.read_text() for f in (tmp_path / "d").iterdir())
     assert "alice-example" not in e.nocap("", session_id="s")
+
+
+# Cross-family release review (0.2.1, S9): plain and quoted CLI passwords. These fake credentials live in this file
+# because it is the only one the gitleaks config allows to hold them.
+@pytest.mark.parametrize("cmd", ["curl -u user:probe-password https://example.com", "mysql -pprobe-password db",
+                                 "sshpass -p probe-password ssh host"])
+def test_s9_plain_passwords(cmd):
+    assert "probe-password" not in redact(cmd)
+
+
+@pytest.mark.parametrize("cmd", ['curl -u "user:probe-password" https://example.com', "mysql -p'probe-password' db",
+                                 'sshpass -p "probe-password" ssh host'])
+def test_s9_quoted_passwords(cmd):
+    assert "probe-password" not in redact(cmd)

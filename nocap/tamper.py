@@ -51,6 +51,11 @@ def _failing(evs: List[Dict[str, Any]], before: int) -> List[tuple]:
     for e in evs:
         if e.get("i", 0) >= before:
             continue
+        tests = e.get("tests") or []
+        if (e.get("test_cmd") and e.get("exit") == 0 and not e.get("subset")
+                and any(t.get("passed", 0) > 0 for t in tests)
+                and all(not any(t.get(k, 0) for k in ("failed", "errors", "skipped", "xfailed")) for t in tests)):
+            out.clear()  # a later full green run defeats a stale 'removed, not fixed' accusation
         for tid in e.get("failed_tests") or []:
             f, _, n = str(tid).partition("::")
             out.append((f, n, e))
@@ -69,10 +74,21 @@ def _direct(t: Dict[str, Any], failing: List[tuple]) -> Optional[tuple]:
         if t["kind"] in ("skip", "removed") and n and n in names and (not f or _match(t.get("path", ""), f)):
             return f, n, e
         if t["kind"] in ("config", "conftest", "env") and detail:
-            if n and re.search(r"(?<![\w])" + re.escape(n) + r"(?![\w])", detail):
+            # A name in a comment, an inclusion (-k test_login), or arbitrary hook
+            # source is not proof of removal. Only explicit exclusion operands count.
+            exclusions = []
+            for line in detail.splitlines():
+                if line.lstrip().startswith("#"):
+                    continue
+                line = line.split(" #", 1)[0]
+                exclusions.extend(re.findall(r"--(?:deselect|ignore(?:-glob)?)[ =]+([^\s'\";]+)", line))
+                exclusions.extend(re.findall(r"\bcollect_ignore(?:_glob)?\s*=\s*\[([^\]]*)\]", line))
+                exclusions.extend(re.findall(r"(?:^|[\s'\"])-k\s+['\"]?not\s+([\w.]+)(?=[\s'\"]|$)", line))
+            excluded = " ".join(exclusions)
+            if n and re.search(r"(?<![\w])" + re.escape(n) + r"(?![\w])", excluded):
                 return f, n, e
             base = posixpath.basename(f) if f else ""
-            if base and re.search(r"(?<![\w.-])" + re.escape(base) + r"(?![\w-])", detail):
+            if base and re.search(r"(?<![\w.-])" + re.escape(base) + r"(?![\w-])", excluded):
                 return f, n, e
     return None
 
