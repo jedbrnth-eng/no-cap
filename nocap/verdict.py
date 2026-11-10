@@ -290,6 +290,9 @@ def _tests(c, evs):
                                                                          _summary(e)["failed"] + _summary(e)["errors"])]
             if hits:
                 return _r(c, NO_CAP, hits[-1], quote=_run_quote(hits[-1]))
+        elif failing and c.get("asserts_pass"):  # says all pass and names a failure: a failing run is no receipt for it
+            return _r(c, NO_RECEIPT, failing[-1], why="says all tests pass, but names a failure and the run failed",
+                      quote=_run_quote(failing[-1]))
         elif failing:
             return _r(c, NO_CAP, failing[-1], quote=_run_quote(failing[-1]))
         return _r(c, NO_RECEIPT, runs[-1], why="no run shows that failure", quote=_run_quote(runs[-1]))

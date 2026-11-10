@@ -213,7 +213,8 @@ class Engine:
         receipts = judge(claims, self._peek(session_id or ""), kinds=STRICT_KINDS)
         # an honest failure report with no receipt is not an unproven success claim; a 🧢 one still gets nudged
         open_ = [r for r in receipts if r["verdict"] != NO_CAP and
-                 not (r["verdict"] == NO_RECEIPT and r["kind"] == "tests" and r["claim"].get("fails"))]
+                 not (r["verdict"] == NO_RECEIPT and r["kind"] == "tests" and r["claim"].get("fails")
+                      and not r["claim"].get("asserts_pass"))]
         if not open_:
             return None
         calls = {e.get("i"): e for e in self._peek(session_id or "")}
@@ -340,7 +341,8 @@ class Engine:
         if not pending:
             return []
         def fails(r: Dict[str, Any]) -> bool:  # a tests claim that says they fail ("3 failed") vs one that says pass
-            return bool((r.get("claim") or {}).get("fails"))
+            c = r.get("claim") or {}
+            return bool(c.get("fails")) and not c.get("asserts_pass")  # a failure word beside a pass claim is not it
 
         lines = []
         for old in pending:

@@ -223,7 +223,8 @@ def classify(r: Dict[str, Any]) -> Optional[str]:
     if r.get("verdict") not in (CAP, NO_RECEIPT):
         return None
     # "3 tests still fail" is not a pass claim: only a count no run shows can make it a pattern (final dogfood)
-    admits_failure = r.get("kind") == "tests" and bool((r.get("claim") or {}).get("fails"))
+    c = r.get("claim") or {}
+    admits_failure = r.get("kind") == "tests" and bool(c.get("fails")) and not c.get("asserts_pass")
     for p in PATTERNS:
         if admits_failure and p["id"] != "tests.count_mismatch":
             continue

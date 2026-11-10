@@ -149,3 +149,66 @@ def test_honest_lookalikes_never_get_a_cap(tmp_path, show, calls, text):
                   session_id="s", turn_id="t")
     out = e.on_reply(response_text=text, session_id="s", turn_id="t", model="probe") or ""
     assert "🧢" not in out[len(text):], out
+
+
+# Cross-family review of this round: a failure WORD beside a pass claim is not an admission.
+import pytest
+
+from nocap.claims import extract_claims
+from nocap.coach import classify
+
+_PADDED = ["All tests pass despite the failed run.", "All tests pass, the failed word is just a label for that run."]
+_ADMITS = ["3 failed, 41 passed in 0.02s", "Three tests still fail.", "The tests are failing.", "Tests do not pass.",
+           "Some tests pass, others fail.", "Tests passed locally but failed in CI."]
+
+
+@pytest.mark.parametrize("text", _PADDED)
+def test_rescore_does_not_retract_a_pass_claim_padded_with_a_failure_word(tmp_path, text):
+    ctx = _capped(tmp_path)
+    tool(ctx, "pytest -q", "...F..F..F\n3 failed, 41 passed in 0.02s", 1, turn="t2")
+    out = reply(ctx, text, turn="t2")
+    assert "retracted" not in out, out
+
+
+@pytest.mark.parametrize("text", _PADDED)
+def test_padded_pass_claim_is_not_an_admission(text):
+    claims = [c for c in extract_claims(text) if c["kind"] == "tests"]
+    assert claims and all(not c.get("fails") or c.get("asserts_pass") for c in claims), claims
+
+
+@pytest.mark.parametrize("text", _ADMITS)
+def test_real_admission_is_still_an_admission(text):
+    claims = [c for c in extract_claims(text) if c["kind"] == "tests"]
+    assert claims and all(c.get("fails") and not c.get("asserts_pass") for c in claims), claims
+
+
+def test_coach_still_mines_a_padded_pass_claim():
+    from nocap.verdict import NO_RECEIPT
+    base = {"verdict": NO_RECEIPT, "kind": "tests", "why": "no test run in this turn"}
+    honest = dict(base, claim={"kind": "tests", "fails": True, "all_pass": False})
+    padded = dict(base, claim={"kind": "tests", "fails": True, "all_pass": False, "asserts_pass": True})
+    passing = dict(base, claim={"kind": "tests", "fails": False, "all_pass": True})
+    assert classify(passing) is not None
+    assert classify(padded) == classify(passing)
+    assert classify(honest) is None
+
+
+@pytest.mark.parametrize("text", _PADDED)
+def test_pass_claim_padded_with_a_failure_word_gets_no_receipt_from_a_failing_run(tmp_path, text):
+    # before: the failure word made it "a claim that tests fail", and the failing run then PROVED it (a false receipt)
+    mod = load_plugin()
+    ctx = FakeCtx(tmp_path, {"show_uncertain": "strict"})
+    mod.register(ctx)
+    tool(ctx, "pytest -q", "...F..F..F\n3 failed, 41 passed in 0.02s", 1)
+    out = reply(ctx, text) or ""  # nothing to show is fine: a hidden 🤔
+    assert "NO CAP" not in out and "🧢 CAP" not in out, out
+
+
+@pytest.mark.parametrize("text", ["3 tests still fail.", "The tests are failing: 3 failed, 41 passed."])
+def test_honest_failure_report_keeps_its_receipt(tmp_path, text):
+    mod = load_plugin()
+    ctx = FakeCtx(tmp_path, {"show_uncertain": "strict"})
+    mod.register(ctx)
+    tool(ctx, "pytest -q", "...F..F..F\n3 failed, 41 passed in 0.02s", 1)
+    out = reply(ctx, text)
+    assert "NO CAP" in out and "🧢 CAP" not in out, out

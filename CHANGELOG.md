@@ -56,6 +56,10 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
   `--pass`, `://`) is absent, and the KEY=value and `token <v>` rules when the text holds no secret word at all, so
   masking 100 KB of ordinary output is faster than in 0.2.0 despite the new rules. A differential test holds the
   gated rules equal to the ungated ones (`tests/test_redaction.py`).
+- A claim that all tests pass with a failure word beside it ("All tests pass despite the failed run.") no longer gets
+  🧾 from a failing run (it read as "says the tests fail", which the run then proved), is not counted as a retraction
+  by the /cap re-score, and is still mined by Cap Coach. "Some tests pass, others fail" is unchanged
+  (`tests/test_final_dogfood.py`).
 
 ## 0.2.0 (2026-11-06)
 

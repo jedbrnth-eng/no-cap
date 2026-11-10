@@ -484,6 +484,11 @@ def _tests(cl: str, low: str) -> Optional[Dict[str, Any]]:
         re.search(r"\b(all green|passes all tests|all tests passing)\b|\btests?\s*[:=-]?\s*ok\b", low)
     fail_hit = re.search(TEST_NOUN + r"\b[^.]{0,20}?\b(fail(?:s|ed|ing)?|red|broken)\b", low)
     negated = bool(NEG_RE.search(low)) and failed != 0
+    # "all tests pass despite the failed run": a claim that ALL pass with a failure word beside it is not an admission
+    # ("some tests pass, others fail" is). A failing run must not prove it, and /cap re-score and Cap Coach must not
+    # read it as the agent taking the claim back.
+    asserts_pass = bool(pass_hit and not negated and fail_hit and not failed
+                        and re.search(r"\ball\b|\bevery\b|\bentire\b|\bwhole\b", low))
     if pass_hit and not negated:
         all_pass = True
     if pass_hit and negated:
@@ -511,7 +516,7 @@ def _tests(cl: str, low: str) -> Optional[Dict[str, Any]]:
         return {"kind": "tests", "passed": passed, "failed": None, "total": None, "all_pass": False, "fails": False,
                 "count_only": True, "scoped": True, "cites_log": True}
     return {"kind": "tests", "passed": passed, "failed": failed, "total": total, "all_pass": all_pass and not fails,
-            "fails": fails, "count_only": count_only,
+            "fails": fails, "count_only": count_only, "asserts_pass": asserts_pass and fails,
             "scoped": not UNSCOPED_TESTS.search(low.strip()) or _qualified(low)}
 
 
