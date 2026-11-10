@@ -12,7 +12,7 @@
   really returned, then stamps each claim in the agent's reply:<br>
   <b>🧾 NO CAP</b> a tool result proves it · <b>🧢 CAP</b> the output says the opposite · no extra model, no network.<br>
   <b>🧾 was right 92/100</b> on a blind sample of public agent runs · <b>🧢 was right 13/13</b> against hidden tests ·
-  <a href="docs/media/demo/no-cap-demo-0.2.1-720p.mp4">72 s demo</a> · <a href="#proof">method</a> ·
+  <a href="#demo-72-s">72 s demo</a> · <a href="#proof">method</a> ·
   <a href="#what-it-doesnt-do">what did not go our way</a>
 </p>
 
@@ -46,8 +46,10 @@ Restart running sessions (and the gateway) so the hooks load. More options: [doc
 ## Demo (72 s)
 
 <p align="center">
-  <a href="docs/media/demo/no-cap-demo-0.2.1-720p.mp4"><img src="docs/media/demo/poster.png" width="640" alt="A frame of the demo film at 2.6 s, from a real Hermes CLI session: pytest -q exits 1, the agent replies 'Ran the suite. All tests pass.', and No Cap's footer reads 🧢 CAP “All tests pass.” · call 1 pytest -q → says “3 failed, 41 passed in 0.02s (exit 1)”. A CAP mark and red boxes are drawn over the footage."></a><br>
-  <sub><a href="docs/media/demo/no-cap-demo-0.2.1-720p.mp4">Watch the demo</a> (720p, 5.9 MB, with sound). Terminal
+  <a href="https://x.com/REFUSEFXth/status/2120127004385452517"><img src="docs/media/demo/no-cap-demo-0.2.1.gif" width="640" alt="The 72 s demo film, playing silently. It opens on a real Hermes CLI session: pytest -q exits 1, the agent replies 'Ran the suite. All tests pass.', and No Cap's footer reads 🧢 CAP “All tests pass.” · call 1 pytest -q → says “3 failed, 41 passed in 0.02s (exit 1)”. Then: 'Pushed to main' caught against a push to feat/login, a skip marker added to the failing test, receipt chips and Call /cap in Hermes Desktop, the Cap Board, the Cap Coach chart, 92/100, and the install line. A CAP mark, red boxes and captions are drawn over the footage."></a><br>
+  <sub>The whole film plays here, silent (GIF, 6 fps, 6.5 MB). With sound:
+  <a href="https://x.com/REFUSEFXth/status/2120127004385452517">watch on X</a> or open the
+  <a href="docs/media/demo/no-cap-demo-0.2.1-720p.mp4">720p file</a> (5.9 MB). Terminal
   footage is one real 0.2.1 Lie Ladder run with a scripted model; the Desktop and Cap Board shots are the v0.2.0
   install run. The CAP mark, boxes, captions and badges are drawn on top; every shot is badged with what it is.
   Sources: <a href="docs/media/PROVENANCE.md">docs/media/PROVENANCE.md</a>.</sub>
