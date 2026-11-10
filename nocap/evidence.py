@@ -544,8 +544,35 @@ def _cut(line: str, n: int = 160) -> str:
     return redact(line)[:n]
 
 
+_WS = (" ", "\t", "\n", "\r")
+
+
+def _cut_back(s: str) -> str:
+    """`s` without a cut-off last line or word: back to the last newline within MAX_LINE, else the last whitespace.
+    A window edge must never fall inside a token: the kept half of a secret (a URL password without its `@`, a long
+    token without its digits) matches no mask rule."""
+    if not s or s[-1] in _WS:
+        return s
+    i = s.rfind("\n", max(0, len(s) - MAX_LINE))
+    if i < 0:
+        i = max(s.rfind(c) for c in _WS)
+    return s[: i + 1]
+
+
+def _cut_fwd(s: str) -> str:
+    """`s` without a cut-off first line or word (see _cut_back)."""
+    if not s or s[0] in _WS:
+        return s
+    i = s.find("\n", 0, MAX_LINE)
+    if i < 0:
+        hits = [j for j in (s.find(c) for c in _WS) if j >= 0]
+        i = min(hits) if hits else len(s)
+    return s[i:]
+
+
 def scan_window(text: str) -> str:
-    """The part of a tool output that gets parsed: head + summary-like lines from the middle + tail (see HEAD)."""
+    """The part of a tool output that gets parsed: head + summary-like lines from the middle + tail (see HEAD).
+    Every edge is moved to a line or word boundary (see _cut_back)."""
     if len(text) <= HEAD + TAIL:
         return text
     mid = text[HEAD:len(text) - TAIL]
@@ -556,11 +583,17 @@ def scan_window(text: str) -> str:
     for m in MID_KEY_RE.finditer(mid):
         if m.start() < last_end:
             continue
-        a = mid.rfind("\n", max(0, m.start() - 300), m.start()) + 1 or max(0, m.start() - 300)
-        b = mid.find("\n", m.end(), m.end() + 300)
-        b = min(len(mid), m.end() + 300) if b < 0 else b
+        a = mid.rfind("\n", max(0, m.start() - MAX_LINE), m.start()) + 1
+        b = mid.find("\n", m.end(), m.end() + MAX_LINE)
+        if a > 0 and b >= 0:
+            line = mid[a:b]  # the whole line
+        else:  # a very long line (or the middle's own edge): a fragment around the hit, cut at word boundaries
+            a = max(0, m.start() - 300) if a == 0 else a
+            b = min(len(mid), m.end() + 300) if b < 0 else b
+            line = mid[a:b]
+            line = _cut_fwd(line) if a > 0 and mid[a - 1] not in _WS else line
+            line = _cut_back(line) if b < len(mid) and mid[b] not in _WS else line
         last_end = b
-        line = mid[a:b]
         bad = bool(_MID_FAIL_RE.search(line))
         if count[bad] >= MID_LINES or size[bad] >= MID_BYTES:
             if count[not bad] >= MID_LINES or size[not bad] >= MID_BYTES:
@@ -569,8 +602,10 @@ def scan_window(text: str) -> str:
         keep.append(line)
         count[bad] += 1
         size[bad] += len(line)
-    return text[:HEAD] + "\n" + "\n".join(keep) + ("\n" if keep else "") + text[len(text) - TAIL:]
-
+    head = text[:HEAD] if text[HEAD] in _WS else _cut_back(text[:HEAD])
+    tail = text[len(text) - TAIL:]
+    tail = tail if text[len(text) - TAIL - 1] in _WS else _cut_fwd(tail)
+    return head + "\n" + "\n".join(keep) + ("\n" if keep else "") + tail
 
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b\n]{0,2000}\x07")
@@ -1241,7 +1276,7 @@ def extract(tool_name: str, args: Any, result: Any, status: Optional[str] = None
     }
     test_cmd = ev["test_cmd"]
     seg = runner_segment(cmd, cut) if test_cmd else ""
-    ev["suite"] = " ".join(t for t in re.sub(r"\s[12]?>&?\S*", " ", seg).split() if not t.startswith("-"))[:120]
+    ev["suite"] = _cut(" ".join(t for t in re.sub(r"\s[12]?>&?\S*", " ", seg).split() if not t.startswith("-")), 120)
     git = r"\bgit\s+(?:(?:-C|-c)\s+\S+\s+|--[\w-]+=\S+\s+)*"  # `git -C /repo stash`, `git -c k=v stash`
     ev["baseline"] = bool(re.search(git + r"stash\b(?!\s+(?:list|show))", cmd)) or bool(
         re.search(git + r"(?:checkout|switch)\s+(?:-\S+\s+)*(?:main|master|origin/\S+|HEAD~\d*|[0-9a-f]{7,40})\b", cmd))

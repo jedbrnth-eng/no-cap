@@ -12,6 +12,7 @@ import re
 import unicodedata
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
+from .evidence import redact
 from .lang import foreign_claims
 
 MAX_SCAN = 64_000  # characters of a reply that are read (a final reply is rarely more than a few KB)
@@ -487,8 +488,8 @@ def _tests(cl: str, low: str) -> Optional[Dict[str, Any]]:
     # "all tests pass despite the failed run": a claim that ALL pass with a failure word beside it is not an admission
     # ("some tests pass, others fail" is). A failing run must not prove it, and /cap re-score and Cap Coach must not
     # read it as the agent taking the claim back.
-    asserts_pass = bool(pass_hit and not negated and fail_hit and not failed
-                        and re.search(r"\ball\b|\bevery\b|\bentire\b|\bwhole\b", low))
+    asserts_pass = bool(pass_hit and not negated and fail_hit and not failed and _ALL_PASS_SUBJECT_RE.search(low)
+                        and not _PARTIAL_RE.search(low))
     if pass_hit and not negated:
         all_pass = True
     if pass_hit and negated:
@@ -709,6 +710,14 @@ def admissions(text: str) -> List[Tuple[int, int]]:
 _LIST_AFTER_RE = re.compile(r"[ \t]*\n(?:[ \t]*\n)?[ \t]*(?:[-*+•]|\d+[.)])\s+")
 
 
+# "all tests pass ...", "every test passes ...", "the whole suite passes ...": the all-word belongs to what passes
+# ("some tests pass, others fail in every run" has one too, about the runs). A partial quantifier anywhere keeps the
+# sentence an honest mixed report.
+_ALL_PASS_SUBJECT_RE = re.compile(r"\b(?:all|every|entire|whole)\b(?:\s+[\w-]+){0,4}?\s+(?:pass|passes|passed|passing|green)\b"
+                                  r"|\beverything\s+(?:pass|passes|passed|is\s+green)\b")
+_PARTIAL_RE = re.compile(r"\b(?:some|most|many|few|several|other|others|rest|remaining|partly|partially|except|but\s+not)\b")
+
+
 def extract_claims(text: str) -> List[Dict[str, Any]]:
     if not isinstance(text, str) or not text.strip():
         return []
@@ -782,17 +791,20 @@ def extract_claims(text: str) -> List[Dict[str, Any]]:
             line_start = masked.rfind("\n", 0, start) + 1
             if masked[line_start:start].lstrip().startswith("|") and c["kind"] in ("tests", "ci"):
                 c["table"] = True  # a table cell: 🧢 only when the turn has a single matching run
-            c["text"] = text[start:start + len(clause)][:200]
+            c["text"] = redact(text[start:start + len(clause)])[:200]  # masked whole, then cut
             if c["kind"] == "tests":
                 s_lo, s_hi = sent_id, sent_id + len(sentence)
                 if any(b <= s_lo or a >= s_hi for a, b in admits):
                     c["ack_reply"] = True  # another part of the reply admits a failure: never 🧢, never 🧾 for "all"
                 if clause.rstrip().endswith(":") and _LIST_AFTER_RE.match(text, start + len(clause)):
                     c["scoped"] = True  # "All tests pass:" + a list: the claim is about the listed items
-                    c["scope_text"] = text[start + len(clause):start + len(clause) + 200]
+                    after = text[start + len(clause):start + len(clause) + 1200]
+                    if len(text) > start + len(clause) + 1200:  # never cut inside a word (see evidence._cut_back)
+                        after = after[:max(after.rfind(" "), after.rfind("\n")) + 1]
+                    c["scope_text"] = redact(after)[:200]
             fr = c.pop("_frag", None)
             if fr and fr != (0, len(clause)):
-                c["frag"] = text[start + fr[0]:start + fr[1]].strip()[:200]
+                c["frag"] = redact(text[start + fr[0]:start + fr[1]].strip())[:200]
             found.append(c)
             if len(found) >= MAX_CLAIMS:
                 return found

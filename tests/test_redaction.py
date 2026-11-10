@@ -323,3 +323,42 @@ def test_stored_lines_are_masked_before_they_are_cut(command, output, exit_code)
     # in-memory match set that is never stored, and a quote is masked whole before it is cut)
     blob = json.dumps(summary(ev), default=str) + json.dumps([ev.get("git"), ev.get("tests")], default=str)
     assert "syntheticordinary" not in blob, blob[:600]
+
+
+# Cross-family review (0.2.1 follow-up): every cut that can come before a mask, end to end through the Engine.
+# A stored or rendered value must never hold the first characters of a secret whose closing context was cut away.
+from nocap.evidence import HEAD, TAIL
+
+_E2E_URL = "postgres://demo:" + _LONG_PW + "@example.invalid/db"
+_E2E_BASE = "3 failed, 41 passed in 0.02s "
+
+
+def _e2e(tmp_path, out=_E2E_BASE, cmd="pytest -q", text="All tests pass."):
+    e = Engine(lambda: tmp_path, lambda k, d=None: {"show_uncertain": "all", "verify_artifacts": False}.get(k, d))
+    e.on_tool(tool_name="terminal", args={"command": cmd}, result={"output": out, "exit_code": 1},
+              session_id="s", turn_id="t")
+    rendered = e.on_reply(response_text=text, session_id="s", turn_id="t", platform="cli") or ""
+    footer = rendered[len(text):] if rendered.startswith(text) else rendered  # the reply's own words are the agent's
+    stored = "".join(f.read_text() for f in tmp_path.rglob("*.jsonl"))
+    assert stored, "nothing was stored: the probe did not run"
+    assert "syntheticordinary" not in stored, stored[:400]
+    assert "syntheticordinary" not in footer, footer[:400]
+
+
+@pytest.mark.parametrize("out", [
+    _E2E_BASE + _E2E_URL,
+    "x" * (HEAD - len(_E2E_BASE) - 40) + "\n" + _E2E_BASE + _E2E_URL + "\n" + "z" * (HEAD + TAIL),  # across the head cut
+    "x" * HEAD + "\n" + "z" * 1000 + "\n" + _E2E_BASE + _E2E_URL + "\n" + "z" * (TAIL + 1000),  # a kept middle line
+    "z" * (HEAD + TAIL) + "\n" + _E2E_URL[:40] + _LONG_PW * 3 + "@h/db " + _E2E_BASE,  # across the tail cut
+    ("z " * HEAD) + "A1" + "Qq" * 400 + " " + _E2E_BASE + "\n" + "z" * (HEAD + TAIL),
+], ids=["short", "head-cut", "middle-line", "tail-cut", "long-token"])
+def test_window_cuts_never_leave_a_secret_prefix(tmp_path, out):
+    _e2e(tmp_path, out=out)
+
+
+def test_suite_name_is_masked_before_it_is_cut(tmp_path):
+    _e2e(tmp_path, cmd="pytest " + _E2E_URL + " -q")
+
+
+def test_claim_text_is_masked_before_it_is_cut(tmp_path):
+    _e2e(tmp_path, text="All tests pass " + _E2E_URL)

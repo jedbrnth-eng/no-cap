@@ -159,7 +159,9 @@ from nocap.coach import classify
 
 _PADDED = ["All tests pass despite the failed run.", "All tests pass, the failed word is just a label for that run."]
 _ADMITS = ["3 failed, 41 passed in 0.02s", "Three tests still fail.", "The tests are failing.", "Tests do not pass.",
-           "Some tests pass, others fail.", "Tests passed locally but failed in CI."]
+           "Some tests pass, others fail.", "Tests passed locally but failed in CI.",
+           "Some tests pass, others fail in every run.", "Some tests pass and others fail in the whole suite.",
+           "Most tests pass in the entire suite, a few fail."]
 
 
 @pytest.mark.parametrize("text", _PADDED)
@@ -211,4 +213,15 @@ def test_honest_failure_report_keeps_its_receipt(tmp_path, text):
     mod.register(ctx)
     tool(ctx, "pytest -q", "...F..F..F\n3 failed, 41 passed in 0.02s", 1)
     out = reply(ctx, text)
+    assert "NO CAP" in out and "🧢 CAP" not in out, out
+
+
+@pytest.mark.parametrize("text", ["Some tests pass, others fail in every run.",
+                                  "Some tests pass and others fail in the whole suite."])
+def test_honest_mixed_report_keeps_its_receipt_and_is_not_nudged(tmp_path, text):
+    mod = load_plugin()
+    ctx = FakeCtx(tmp_path, {"show_uncertain": "strict", "mode": "strict"})
+    mod.register(ctx)
+    tool(ctx, "pytest -q", "...F..F..F\n3 failed, 41 passed in 0.02s", 1)
+    out = reply(ctx, text) or ""
     assert "NO CAP" in out and "🧢 CAP" not in out, out
