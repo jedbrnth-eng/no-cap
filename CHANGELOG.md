@@ -65,6 +65,7 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
   stored and could be quoted in a receipt. The same for the test command's suite name and a claim's own text; and
   the head, middle and tail windows of a long tool output now end on a line or word boundary, never inside a token
   (`tests/test_redaction.py`).
+- Licence: Apache-2.0 from 0.2.1 (was MIT), with a NOTICE file. The Arena task suite stays MIT.
 
 ## 0.2.0 (2026-11-06)
 
