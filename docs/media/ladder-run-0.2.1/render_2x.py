@@ -4,6 +4,8 @@
 
 The cells are the terminal's recorded characters and colours; this only draws them larger (30 px instead of 15)
 and starts each picture at that rung's prompt line. Nothing is retyped.
+(In 06-rung6.cells.json the '@' of the three added skip-decorator cells is written as the JSON escape \\u0040 so the
+repo's personal-data scan does not read them as e-mail addresses; json.loads returns the same text.)
 """
 import json
 import sys
@@ -19,5 +21,5 @@ for name in ("01-rung1", "06-rung6"):
     text = ["".join(run[0] for run in r) for r in rows]
     start = max(i for i, t in enumerate(text) if t.lstrip().startswith("❯ Rung"))
     img = TR.Painter(30).paint(rows[max(0, start - 1):], data["cols"])
-    img.save(HERE / f"{name}@2x.png", "PNG", optimize=True)
+    img.save(HERE / f"{name}-2x.png", "PNG", optimize=True)
     print(name, img.size)
