@@ -36,6 +36,8 @@ HINT_SCAN_MESSAGES = 40
 # Surfaces where the person typing is the machine's owner. Everything else (a gateway chat, an unknown or EMPTY
 # platform) is treated as shared: no other chat's receipts, no store path, no destructive admin (judge review S2, S12).
 LOCAL_PLATFORMS = ("cli", "tui", "local", "desktop")
+CLASSIC_CLI = ("", "cli", "local")  # not the TUI or Desktop: those render an injected turn
+CLI_INJECT_NOTE = doctor.CLI_INJECT_NOTE
 LOCAL_ONLY = ("🔒 That changes No Cap's local data, so it runs only from the local CLI (or `hermes nocap ...` in a "
               "terminal), not from a chat.")
 NONE_ISSUED = "ℹ️ No Cap issued no stamps for this reply."
@@ -211,7 +213,8 @@ class Engine:
         receipts = judge(claims, self._peek(session_id or ""), kinds=STRICT_KINDS)
         # an honest failure report with no receipt is not an unproven success claim; a 🧢 one still gets nudged
         open_ = [r for r in receipts if r["verdict"] != NO_CAP and
-                 not (r["verdict"] == NO_RECEIPT and r["kind"] == "tests" and r["claim"].get("fails"))]
+                 not (r["verdict"] == NO_RECEIPT and r["kind"] == "tests" and r["claim"].get("fails")
+                      and not r["claim"].get("asserts_pass"))]
         if not open_:
             return None
         calls = {e.get("i"): e for e in self._peek(session_id or "")}
@@ -337,20 +340,25 @@ class Engine:
                 break
         if not pending:
             return []
-        now = {_match_key(r): r for r in receipts}
-        now_kind = {}
-        for r in receipts:
-            now_kind.setdefault(r["kind"], r)
+        def fails(r: Dict[str, Any]) -> bool:  # a tests claim that says they fail ("3 failed") vs one that says pass
+            c = r.get("claim") or {}
+            return bool(c.get("fails")) and not c.get("asserts_pass")  # a failure word beside a pass claim is not it
+
         lines = []
         for old in pending:
-            new = now.get(_match_key(old)) or (now_kind.get(old["kind"]) if old["kind"] in
-                                               ("tests", "ci", "build", "deployed") else None)
+            # the same claim again: same key and the same direction. "3 failed" after a capped "all tests pass" is
+            # the agent taking it back, not the pass claim still standing (final dogfood, a real Qwen3 reply)
+            same = [r for r in receipts if _match_key(r) == _match_key(old) or (
+                r["kind"] == old["kind"] and old["kind"] in ("tests", "ci", "build", "deployed"))]
+            new = next((r for r in same if fails(r) == fails(old)), None)
             was = EMOJI[old["verdict"]]
             what = f"“{claim_text(old)[:50]}” ({old['kind']})"  # one sentence can hold two claims: name the kind
             if new is None:
                 lines.append(f"🔁 /cap re-score: {was} → 🫡 retracted {what}")
             elif new["verdict"] == NO_CAP:
                 lines.append(f"🔁 /cap re-score: {was} → 🧾 {what} now has a receipt")
+            elif new["verdict"] != old["verdict"]:
+                lines.append(f"🔁 /cap re-score: {was} → {EMOJI[new['verdict']]} {what}")
             else:
                 lines.append(f"🔁 /cap re-score: still {EMOJI[new['verdict']]} {what}")
         return lines
@@ -408,6 +416,8 @@ class Engine:
         if ok:
             lines.append(f"🧢 Cap called on {len(remaining)} claim(s). The agent has to show receipts or take "
                          f"them back; the next reply gets re-scored.")
+            if (platform or "").lower() in CLASSIC_CLI:
+                lines.append(CLI_INJECT_NOTE)
         else:
             lines.append("🧢 Cap called. Hermes didn't let No Cap send the steer from here (gateway-backed sessions, "
                          "which on current Hermes includes the classic CLI and Desktop, need "

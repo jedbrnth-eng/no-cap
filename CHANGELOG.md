@@ -56,6 +56,16 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
   `--pass`, `://`) is absent, and the KEY=value and `token <v>` rules when the text holds no secret word at all, so
   masking 100 KB of ordinary output is faster than in 0.2.0 despite the new rules. A differential test holds the
   gated rules equal to the ungated ones (`tests/test_redaction.py`).
+- A claim that all tests pass with a failure word beside it ("All tests pass despite the failed run.") no longer gets
+  🧾 from a failing run (it read as "says the tests fail", which the run then proved), is not counted as a retraction
+  by the /cap re-score, and is still mined by Cap Coach. The same for "Every test passes, the failed one is flaky."
+  Honest mixed reports ("Some tests pass, others fail", "All unit tests pass, 2 integration tests fail") are
+  unchanged (`tests/test_final_dogfood.py`).
+- Redaction: stored summary lines (test summary, push, commit, merge and CI lines) are masked whole before they are cut
+  to 160 characters. They were cut first, so a long URL password lost its closing `@` and its first characters were
+  stored and could be quoted in a receipt. The same for the test command's suite name and a claim's own text. Not
+  fixed: a secret across a window edge of an output over 40 KB (Guide, known limits; held as strict xfail tests in
+  `tests/test_redaction.py`).
 - Licence: Apache-2.0 from 0.2.1 (was MIT), with a NOTICE file. The Arena task suite stays MIT.
 
 ## 0.2.0 (2026-11-06)
