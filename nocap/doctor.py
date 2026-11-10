@@ -69,7 +69,7 @@ def run(home: Path, mode: str, entry: Dict[str, Any], store_path: Path, records:
 
 def check(home: Path, mode: str, entry: Dict[str, Any], store_path: Path, records: List[Dict[str, Any]],
           enabled: Callable[[str], Any], show_uncertain: str = "off",
-          desktop_line: Optional[str] = None) -> Tuple[str, int]:
+          desktop_line: Optional[str] = None, extra: Optional[List[Tuple[str, bool]]] = None) -> Tuple[str, int]:
     """The report and its problem count (`hermes nocap doctor` exits 1 when the count is not zero)."""
     lines = ["🩺 **No Cap doctor**"]
     problems = 0
@@ -113,6 +113,9 @@ def check(home: Path, mode: str, entry: Dict[str, Any], store_path: Path, record
                      "running at install.")
     if desktop_line:
         lines.append(desktop_line)
+    for line, bad in extra or []:  # one line per optional feature (the Obsidian lessons bridge)
+        lines.append(line)
+        problems += 1 if bad else 0
     lines.append("✅ Network: none" + (" (except /cap HEAD checks: self_verify_http is on)"
                                         if (entry.get("settings") or {}).get("self_verify_http") else ""))
     lines.append(f"{problems} problem{'s' if problems != 1 else ''} found.")

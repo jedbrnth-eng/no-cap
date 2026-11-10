@@ -22,6 +22,7 @@ from .store import Ledger, Store
 from .verdict import CAP, DEFAULT_SHOW_UNCERTAIN, NO_CAP, NO_RECEIPT, judge, level_of, session_evidence, shown
 from .verify import check_artifacts, recheck, session_context, suggestion
 from . import board  # Cap Board: identity at hook time, /capscore board
+from . import obsidian  # Obsidian lessons bridge (opt-in: obsidian_vault)
 
 MAX_OPEN_TURNS = 64
 MAX_CALLS = 500
@@ -125,6 +126,7 @@ class Engine:
         self.coach = Coach(data_dir, setting, lambda: self.store.records(), self.home, inject)  # nocap/coach.py
         self.cwd = cwd or (lambda: "")
         self.profile = board.profile_name  # who this turn runs as, recorded with each reply for the Cap Board
+        self.obsidian = obsidian.Bridge(data_dir, setting, lambda: self.profile() or "default")  # nocap/obsidian.py
         self.store = Store(data_dir, lambda: setting("retention_days", 30))
         self.ledger = Ledger(data_dir, lambda: setting("retention_days", 30))  # cross-turn receipts, per session
         self._turns: "OrderedDict[Tuple[str, str], List[Dict[str, Any]]]" = OrderedDict()
@@ -163,12 +165,24 @@ class Engine:
     def on_turn_start(self, conversation_history: Any = None, **kwargs: Any) -> Optional[Dict[str, str]]:
         """pre_llm_call: Cap Coach (nocap/coach.py) injects the rules the user approved, and the footer hint tells a
         model that has seen No Cap footers under its own earlier replies not to write them itself."""
-        got = self.coach.on_turn_start(**kwargs)
+        got = self._with_lessons(self.coach.on_turn_start(**kwargs), kwargs.get("model") or "")
         hint = self._footer_hint(conversation_history)
         if not hint:
             return got
         text = (got or {}).get("context") or ""
         return {"context": (text + "\n\n" + hint).strip() if text else hint}
+
+    def _with_lessons(self, got: Optional[Dict[str, str]], model: str) -> Optional[Dict[str, str]]:
+        """Obsidian lessons bridge: this agent's recurring 🧢 patterns as built-in rule lines (fail open)."""
+        try:
+            skip = {str(p.get("pattern") or "") for p in self.coach.active_rules(model)}
+            text = self.obsidian.lessons(self.store.records(), exclude=skip)
+        except Exception:
+            text = None
+        if not text:
+            return got
+        base = (got or {}).get("context") or ""
+        return {"context": (base + "\n\n" + text).strip() if base else text}
 
     def _footer_hint(self, history: Any) -> Optional[str]:
         """Hermes replays the rewritten reply (footer included) as the model's own words, and models then copy it:
@@ -258,6 +272,11 @@ class Engine:
                                "model": model or "unknown", "platform": platform or "", "mode": self.mode(),
                                "calls": _cited(evs, receipts), "ledger": _ledger(evs), "receipts": receipts,
                                "rescore": rescore, "coach": coached})
+        if any(r.get("verdict") == CAP for r in receipts):
+            try:  # Obsidian lessons bridge: one line per 🧢 in this agent's vault note (off unless obsidian_vault)
+                self.obsidian.record(receipts, session_id, turn_id)
+            except Exception:
+                pass
         streak = None
         if visible:
             mine = [r for r in self.store.records() if r.get("session_id") == session_id]
@@ -473,7 +492,8 @@ class Engine:
 
     def doctor_report(self) -> Tuple[str, int]:
         return doctor.check(Path(self.home()), self.mode(), self.entry() or {}, self.store.path, self.store.records(),
-                            self.enabled, show_uncertain=self.show_uncertain(), desktop_line=self._desktop_line())
+                            self.enabled, show_uncertain=self.show_uncertain(), desktop_line=self._desktop_line(),
+                            extra=[self.obsidian.doctor_line()])
 
     def _desktop_chip(self, on_desktop: bool, visible: List[Dict[str, Any]], session_id: str,
                       turn_id: str) -> Optional[str]:

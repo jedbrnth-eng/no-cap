@@ -5,6 +5,7 @@ Everything runs on a made-up vault under tmp_path; nothing here reads a real vau
 """
 import json
 import os
+import re
 import threading
 from pathlib import Path
 
@@ -258,6 +259,19 @@ def test_secret_in_a_cap_is_masked(tmp_path):
     assert "tests.failed_run" in all_text
 
 
+def test_secret_at_the_pre_redact_cut_is_dropped():
+    """A long token that redact() shrinks pulls later text forward; a second secret cut in half at the pre-redact
+    bound must not ride along into the 160-char field."""
+    secret = "ghp_" + "Z9y8X7w6V5u4T3s2R1q0P9o8N7m6L5k4J3i2"
+    for cut in range(2, len(secret) - 1):
+        long_token = "sk-" + ("Ab1" * 700)[: obsidian.PRE_REDACT - 4 - cut]
+        s = long_token + " " + secret
+        out = obsidian.field(s)
+        assert long_token[:12] not in out, out  # the long token itself is masked
+        assert secret[:cut] not in out, (cut, out)
+    assert len(obsidian.field("z " * 50_000)) <= obsidian.MAX_FIELD
+
+
 def test_non_utf8_note_is_kept_byte_for_byte(tmp_path):
     v = make_vault(tmp_path, abb=False)
     (v / "No Cap").mkdir()
@@ -272,8 +286,10 @@ def test_non_utf8_note_is_kept_byte_for_byte(tmp_path):
 def test_markdown_in_a_claim_is_escaped():
     line = obsidian.entry_line("2026-11-10", "tests.failed_run", "All tests pass [[Secrets]] <img src=x> ^nc-fake",
                                "1 failed\n## Heading", "abc123def456")
-    assert "[[" not in line and "<img" not in line and "\n" not in line
-    assert line.count("^nc-") == 1 and line.endswith("^nc-abc123def456")
+    assert "[[" not in line and "\n" not in line
+    assert re.search(r"(?<!\\)[<>\[\]#]", line) is None  # every < > [ ] # is backslash-escaped
+    assert "\\<img" in line
+    assert line.count(" ^nc-") == 1 and line.endswith(" ^nc-abc123def456")
 
 
 # ---- learn per agent -----------------------------------------------------------------------------------------

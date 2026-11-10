@@ -17,6 +17,7 @@ from nocap.surfaces.discord import claim_code, code
 from nocap.evidence import (HEAD, TAIL, extract, failed_test_ids, home_tilde, parse_tests, redact, runner_files,
                             runner_segment, scan_window)
 from nocap.lang import foreign_claims
+from nocap import obsidian
 from redos_inputs import inputs
 
 BUDGET_MS = 50.0
@@ -52,6 +53,12 @@ PARSERS = {
     "failed_test_ids": lambda s: failed_test_ids(s),
     "runner_files": lambda s: runner_files("sh " + s),
     "home_tilde": lambda s: home_tilde(s),
+    # Obsidian lessons bridge: names, folders, the note line (redact + flatten + escape), the slug and the marker scan
+    "obsidian.safe_agent": lambda s: obsidian.safe_agent(s),
+    "obsidian.safe_folder": lambda s: obsidian.safe_folder(s),
+    "obsidian.entry_line": lambda s: obsidian.entry_line("2026-11-10", "tests.failed_run", s, s, "abc123def456"),
+    "obsidian.slug": lambda s: obsidian._slug(s),
+    "obsidian.marks": lambda s: obsidian._MARK_RE.findall(s.encode("utf-8", "replace")),
 }
 INPUTS = inputs()
 INPUTS["former_failure_prefixes"] = "failing " * 12_500 + "tests now pass"
