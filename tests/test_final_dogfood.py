@@ -75,3 +75,28 @@ def test_doctor_warns_that_the_classic_cli_hides_an_injected_answer(tmp_path):
         out = doctor.run(tmp_path, "annotate", entry, tmp_path / "r.jsonl", [], lambda n: None)
         line = next(l for l in out.splitlines() if "allow_gateway_injection" in l)
         assert "classic CLI" in line and "/nocap" in line, line
+
+
+# 3. Cap Coach mined an honest failure report ("Three tests fail: `test_login_ok`, ...", 🤔 because no run of that
+#    scope showed those names) as an example of "claims tests pass without running the test suite in that turn".
+#    Saying the tests fail is not a pass claim: only the count pattern may still take it.
+def test_coach_does_not_mine_an_admitted_failure_as_a_pass_claim(tmp_path):
+    from nocap import coach as C
+    honest = {"kind": "tests", "verdict": "NO_RECEIPT", "why": "no run of that scope in this turn",
+              "text": "Three tests fail: `test_login_ok`, `test_login_case_sensitive`",
+              "claim": {"kind": "tests", "fails": True, "all_pass": False}}
+    assert C.classify(honest) is None
+    lie = dict(honest, text="All tests pass.", claim={"kind": "tests", "fails": False, "all_pass": True})
+    assert C.classify(lie) == "tests.no_run"
+    count = dict(honest, why="no run shows 7 failed")
+    assert C.classify(count) == "tests.count_mismatch"
+
+
+def test_coach_scan_end_to_end_skips_honest_failure_reports(tmp_path):
+    mod = load_plugin()
+    ctx = FakeCtx(tmp_path, {"show_uncertain": "all", "coach": {"min_evidence": 1}})
+    mod.register(ctx)
+    for i in range(3):
+        reply(ctx, "3 tests still fail; I have not fixed them yet.", turn=f"h{i}")
+    out = ctx.commands["cap"]("coach scan", session_id="s1", platform="cli")
+    assert "claims tests pass" not in out, out
