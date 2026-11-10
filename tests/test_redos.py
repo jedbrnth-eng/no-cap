@@ -59,6 +59,8 @@ PARSERS = {
     "obsidian.entry_line": lambda s: obsidian.entry_line("2026-11-10", "tests.failed_run", s, s, "abc123def456"),
     "obsidian.slug": lambda s: obsidian._slug(s),
     "obsidian.marks": lambda s: obsidian._MARK_RE.findall(s.encode("utf-8", "replace")),
+    "obsidian.board_ids": lambda s: (obsidian._BOARD_NAME_RE.match(s), obsidian._IDS_NAME_RE.fullmatch(s)),
+    "obsidian.pattern": lambda s: obsidian.pattern_of({"kind": s, "verdict": "CAP"}),
 }
 INPUTS = inputs()
 INPUTS["former_failure_prefixes"] = "failing " * 12_500 + "tests now pass"

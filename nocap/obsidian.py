@@ -20,8 +20,12 @@ rules, labelled, and only when `obsidian_learn: true` as well as `obsidian_vault
 """
 from __future__ import annotations
 
-import fcntl
+try:
+    import fcntl
+except ImportError:  # Windows can still use No Cap while this optional bridge is off.
+    fcntl = None
 import hashlib
+from contextlib import contextmanager
 import json
 import os
 import re
@@ -69,7 +73,7 @@ def safe_agent(name: Any) -> Optional[str]:
     if not isinstance(name, str):
         return None
     s = name.strip().lower()
-    if not s or len(s) > 64 or ".." in s or not _AGENT_RE.fullmatch(s):
+    if not s or len(s) > 64 or ".." in s or not _AGENT_RE.fullmatch(s) or redact(name) != name:
         return None
     return s
 
@@ -85,7 +89,8 @@ def safe_folder(rel: Any) -> Optional[List[str]]:
     if not parts or len(parts) > 6:
         return None
     for p in parts:
-        if p in (".", "..") or p.startswith(".") or p != p.strip() or not _PART_RE.fullmatch(p):
+        if (p in (".", "..") or p.startswith(".") or p != p.strip() or not _PART_RE.fullmatch(p)
+                or any(c in p for c in "[]#^%{}=!$~`") or redact(p) != p):
             return None
     return parts
 
@@ -117,7 +122,7 @@ def escape_md(s: str) -> str:
 def receipt_id(session_id: Any, turn_id: Any, r: Dict[str, Any]) -> str:
     """Stable per receipt, live and in a backfill: the same fields are on the stored record."""
     claim = (r.get("claim") or {}).get("frag") or r.get("text") or ""
-    raw = f"{session_id or ''}|{turn_id or ''}|{r.get('kind') or ''}|{claim}"
+    raw = f"{session_id or ''}|{turn_id or ''}|{r.get('kind') or ''}|{redact(str(claim))}"
     return hashlib.sha256(raw.encode("utf-8", "replace")).hexdigest()[:12]
 
 
@@ -136,7 +141,7 @@ def entry_line(date: str, pid: str, claim: str, evidence: str, rid: str) -> str:
     date = date if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date or "") else "0000-00-00"
     c = escape_md(field(claim))
     e = escape_md(field(evidence))
-    return f"- {date} 🧢 `{pid}` claim: “{c}” · evidence: “{e}” ^nc-{rid}"
+    return redact(f"- {date} 🧢 `{pid}` claim: “{c}” · evidence: “{e}” ^nc-{rid}")
 
 
 def _date(ts: Any) -> str:
@@ -167,7 +172,7 @@ def lesson_text(records: Iterable[Dict[str, Any]], agent: str, exclude: Iterable
     who = safe_agent(agent)
     if not who:
         return None
-    mine_recs = [r for r in records if isinstance(r, dict) and str(r.get("profile") or "").strip().lower() in ("", who)]
+    mine_recs = [r for r in records if isinstance(r, dict) and str(r.get("profile") or "").strip().lower() == who]
     caps: Dict[str, int] = {}
     for g in mine(mine_recs):
         if g["pattern"] in BY_ID and g.get("caps"):
@@ -217,54 +222,76 @@ def _dir(root: str, parts: List[str], create: bool = True) -> Path:
     return d
 
 
-def _read_nofollow(path: Path, limit: int) -> Optional[bytes]:
+@contextmanager
+def _pinned_dir(root: str, parts: List[str], create: bool = True):
+    """Pin each directory with openat(O_NOFOLLOW). A concurrent rename or symlink swap cannot redirect a write:
+    all later operations use the pinned directory fd, never a re-resolved absolute path."""
+    fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for part in parts:
+            if create:
+                try:
+                    os.mkdir(part, 0o700, dir_fd=fd)
+                except FileExistsError:
+                    pass
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = child
+        yield fd
+    finally:
+        os.close(fd)
+
+
+def _read_nofollow(path: Path, limit: int, dir_fd: Optional[int] = None) -> Optional[bytes]:
     """The file's bytes (None when it doesn't exist). A symlink, a non-file or a file over `limit` is refused."""
     try:
-        st = os.lstat(path)
+        st = os.stat(path, dir_fd=dir_fd, follow_symlinks=False)
     except FileNotFoundError:
         return None
     if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode):
         raise Refused(f"{path} is not a plain file")
     if st.st_size > limit:
         raise Refused(f"{path} is over {limit} bytes")
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=dir_fd)
     with os.fdopen(fd, "rb") as fh:
+        if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
+            raise Refused(f"{path} is not a plain file")
         return fh.read(limit + 1)
 
 
-def _write_new(path: Path, data: bytes) -> None:
+def _write_new(path: Path, data: bytes, dir_fd: Optional[int] = None) -> None:
     """Create path exclusively (never through a link); raises FileExistsError when it is there."""
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=dir_fd)
     try:
         with os.fdopen(fd, "wb") as fh:
             fh.write(data)
     except BaseException:
         try:
-            os.unlink(path)
+            os.unlink(path, dir_fd=dir_fd)
         except OSError:
             pass
         raise
 
 
-def _replace(path: Path, data: bytes, mode: int) -> None:
+def _replace(path: Path, data: bytes, mode: int, dir_fd: Optional[int] = None) -> None:
     tmp = path.with_name(f".{path.name}.{os.getpid()}-{threading.get_ident()}.nocap-tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode, dir_fd=dir_fd)
     try:
         with os.fdopen(fd, "wb") as fh:
             fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
-        os.replace(tmp, path)
+        os.replace(tmp, path, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
     except BaseException:
         try:
-            os.unlink(tmp)
+            os.unlink(tmp, dir_fd=dir_fd)
         except OSError:
             pass
         raise
 
 
 def note_header(agent: str) -> bytes:
-    return (f"---\ntype: nocap-lessons\nagent: {agent}\n---\n\n# {agent}: claims No Cap stamped 🧢 CAP\n\n"
+    return redact(f"---\ntype: nocap-lessons\nagent: {agent}\n---\n\n# {agent}: claims No Cap stamped 🧢 CAP\n\n"
             "Written by the No Cap plugin: one line per 🧢 CAP verdict (a claim the tool output in the same turn "
             "contradicted), redacted. The lessons this agent is given come from No Cap's own store and built-in "
             "rules, never from this note.\n\n").encode("utf-8")
@@ -289,7 +316,7 @@ def board_note(n: int, agent: str, pid: str, date: str, claim: str, evidence: st
     for head, body in sections:
         fm += [f"## {head}"] + ([body] if body else []) + [""]
     fm += ["## Related", f"[[{log_link}]]", ""]
-    return f"{mid} {_slug(title)}.md", "\n".join(fm)
+    return f"{mid} {_slug(title)}.md", redact("\n".join(fm))
 
 
 # ---- the bridge ------------------------------------------------------------------------------------------------
@@ -357,13 +384,13 @@ class Bridge:
             raise Refused(f"obsidian_folder must be a plain vault-relative folder, got {self.folder()!r}")
         return _dir(root, parts, create)
 
-    def board_dir(self, root: str, create: bool = True) -> Optional[Path]:
+    def board_parts(self, root: str) -> Optional[List[str]]:
         """ABB's mistakes folder (from .agentbox.json, else ABB's default), or None when the board is off."""
         mode = self.board_mode()
         if mode == "off":
             return None
-        cfg_path = Path(root) / ABB_CONFIG
-        raw = _read_nofollow(cfg_path, MAX_CONFIG_BYTES)
+        with _pinned_dir(root, [], create=False) as root_fd:
+            raw = _read_nofollow(Path(ABB_CONFIG), MAX_CONFIG_BYTES, dir_fd=root_fd)
         has_abb = raw is not None or os.path.isdir(Path(root) / ABB_DATA)
         if mode == "auto" and not has_abb:
             return None
@@ -379,7 +406,11 @@ class Bridge:
         parts = safe_folder(folder)
         if parts is None:
             raise Refused(f"{ABB_CONFIG} mistakesFolder is not a plain vault-relative folder: {folder!r}")
-        return _dir(root, parts, create)
+        return parts
+
+    def board_dir(self, root: str, create: bool = True) -> Optional[Path]:
+        parts = self.board_parts(root)
+        return _dir(root, parts, create) if parts is not None else None
 
     # -- writing --
     def _locked(self):
@@ -387,6 +418,8 @@ class Bridge:
 
         class _L:
             def __enter__(self_inner):
+                if fcntl is None:
+                    raise Refused("Obsidian writes require POSIX directory handles and flock")
                 bridge._lock.acquire()
                 self_inner.fd = None
                 try:
@@ -395,16 +428,22 @@ class Bridge:
                     self_inner.fd = os.open(d / LOCK_FILE, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
                     fcntl.flock(self_inner.fd, fcntl.LOCK_EX)
                 except OSError:
-                    self_inner.fd = None  # no cross-process lock: the thread lock still serialises this process
+                    if self_inner.fd is not None:
+                        os.close(self_inner.fd)
+                    bridge._lock.release()
+                    raise  # fail closed: a thread lock alone cannot make a multi-process append safe
                 return self_inner
 
             def __exit__(self_inner, *exc):
-                if self_inner.fd is not None:
-                    try:
-                        fcntl.flock(self_inner.fd, fcntl.LOCK_UN)
-                    finally:
-                        os.close(self_inner.fd)
-                bridge._lock.release()
+                try:
+                    if self_inner.fd is not None:
+                        try:
+                            if fcntl is not None:
+                                fcntl.flock(self_inner.fd, fcntl.LOCK_UN)
+                        finally:
+                            os.close(self_inner.fd)
+                finally:
+                    bridge._lock.release()
                 return False
         return _L()
 
@@ -423,10 +462,12 @@ class Bridge:
             return out
         try:
             root = self.vault()
-            with self._locked():
-                notes = self.notes_dir(root)
-                path = notes / f"{who}.md"
-                old = _read_nofollow(path, MAX_NOTE_BYTES)
+            parts = safe_folder(self.folder())
+            if parts is None:
+                raise Refused("obsidian_folder must be a plain vault-relative folder")
+            with self._locked(), _pinned_dir(root, parts) as note_fd:
+                path = Path(f"{who}.md")
+                old = _read_nofollow(path, MAX_NOTE_BYTES, dir_fd=note_fd)
                 buf = old if old is not None else note_header(who)
                 date = _date(ts if ts is not None else time.time())
                 firsts: Dict[str, Dict[str, Any]] = {}
@@ -442,8 +483,10 @@ class Bridge:
                     buf += (entry_line(date, pid, _claim(r), _evidence(r), rid) + "\n").encode("utf-8", "replace")
                     out["written"] += 1
                 if out["written"]:
-                    mode = (os.lstat(path).st_mode & 0o777) if old is not None else 0o600
-                    _replace(path, buf, mode)
+                    if len(buf) > MAX_NOTE_BYTES:
+                        raise Refused("agent note would exceed the size limit")
+                    mode = (os.stat(path, dir_fd=note_fd, follow_symlinks=False).st_mode & 0o777) if old is not None else 0o600
+                    _replace(path, buf, mode, dir_fd=note_fd)
                 link = "/".join(safe_folder(self.folder()) or [DEFAULT_FOLDER]) + f"/{who}"
                 for pid, r in firsts.items():
                     try:
@@ -453,58 +496,67 @@ class Bridge:
                         continue
                     if made:
                         out["board"].append(made)
-        except Refused as exc:
+        except (Refused, OSError) as exc:
+            out["written"] = 0
             out["skipped"] = str(exc)
             self.last_error = str(exc)
         return out
 
     def _board(self, root: str, who: str, pid: str, date: str, r: Dict[str, Any], link: str) -> Optional[str]:
-        d = self.board_dir(root)
-        if d is None:
+        parts = self.board_parts(root)
+        if parts is None:
             return None
+        with _pinned_dir(root, parts) as board_fd:
+            return self._board_at(board_fd, who, pid, date, r, link)
+
+    def _board_at(self, board_fd: int, who: str, pid: str, date: str,
+                  r: Dict[str, Any], link: str) -> Optional[str]:
         src = f'source: "nocap:{who}:{pid}"'.encode()
         top = 0
-        for entry in os.scandir(d):
+        for entry in os.scandir(board_fd):
             m = _BOARD_NAME_RE.match(entry.name)
             if m:
                 top = max(top, int(m.group(1)))
             if not entry.name.endswith(".md") or not entry.is_file(follow_symlinks=False):
                 continue
             try:
-                fd = os.open(entry.path, os.O_RDONLY | os.O_NOFOLLOW)
+                fd = os.open(entry.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=board_fd)
                 with os.fdopen(fd, "rb") as fh:
+                    if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
+                        continue
                     head = fh.read(HEADER_SCAN)
             except OSError:
                 continue
             if src in head.split(b"\n---", 1)[0]:
-                return None  # this lesson is on the board already (ours, or claimed by hand: never duplicated)
-        ids = d / ".ids"
+                return None  # an existing source key suppresses duplicates, but is never trusted as a rule
+        # Open .ids relative to the already pinned board directory, even if an attacker renames its parent.
         try:
-            os.mkdir(ids, 0o700)
+            os.mkdir(".ids", 0o700, dir_fd=board_fd)
         except FileExistsError:
             pass
-        st = os.lstat(ids)
-        if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode) or not _within(root, str(ids)):
-            raise Refused(f"{ids} is not a plain folder")
-        for entry in os.scandir(ids):
-            m = _IDS_NAME_RE.fullmatch(entry.name)
-            if m:
-                top = max(top, int(m.group(1)))
-        n = top + 1
-        for _ in range(100):
-            try:
-                _write_new(ids / f"{n:04d}", b"")
-            except FileExistsError:
-                n += 1
-                continue
-            name, text = board_note(n, who, pid, date, _claim(r), _evidence(r), link)
-            try:
-                _write_new(d / name, text.encode("utf-8"))
-            except FileExistsError:
-                n += 1
-                continue
-            return name
-        raise Refused("could not reserve a board id after 100 tries")
+        ids_fd = os.open(".ids", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=board_fd)
+        try:
+            for entry in os.scandir(ids_fd):
+                m = _IDS_NAME_RE.fullmatch(entry.name)
+                if m:
+                    top = max(top, int(m.group(1)))
+            n = top + 1
+            for _ in range(100):
+                try:
+                    _write_new(Path(f"{n:04d}"), b"", dir_fd=ids_fd)
+                except FileExistsError:
+                    n += 1
+                    continue
+                name, text = board_note(n, who, pid, date, _claim(r), _evidence(r), link)
+                try:
+                    _write_new(Path(name), text.encode("utf-8"), dir_fd=board_fd)
+                except FileExistsError:
+                    n += 1
+                    continue
+                return name
+            raise Refused("could not reserve a board id after 100 tries")
+        finally:
+            os.close(ids_fd)
 
     def sync(self, records: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
         """Backfill from the local store: every stored 🧢, idempotent per receipt id."""
@@ -514,7 +566,10 @@ class Bridge:
                 continue
             if not any(isinstance(x, dict) and x.get("verdict") == CAP for x in rec["receipts"]):
                 continue
-            agent = safe_agent(rec.get("profile")) or self.who()
+            agent = safe_agent(rec.get("profile"))
+            if not agent:
+                total["skipped"] = "record has no valid profile; not attributed to the current agent"
+                continue
             got = self.record(rec["receipts"], str(rec.get("session_id") or ""), str(rec.get("turn_id") or ""),
                               ts=rec.get("ts"), agent=agent or "")
             total["written"] += got["written"]
@@ -607,6 +662,8 @@ class Bridge:
     def doctor_line(self) -> Tuple[str, bool]:
         if not self.enabled():
             return "ℹ️ Obsidian lessons: off (obsidian_vault not set).", False
+        if fcntl is None:
+            return "❌ Obsidian lessons: writes require POSIX directory handles and flock.", True
         try:
             root = self.vault()
         except Refused as exc:
