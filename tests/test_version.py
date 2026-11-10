@@ -19,9 +19,21 @@ def _package_version():
 
 
 def _changelog_top():
-    m = re.search(r"^## \[?(\d+\.\d+\.\d+)\]?", (ROOT / "CHANGELOG.md").read_text(), re.M)
+    """The newest RELEASED entry. A `## X.Y.Z (unreleased)` heading collects work for the next release and is
+    skipped here until the release renames it and bumps plugin.yaml."""
+    m = re.search(r"^## \[?(\d+\.\d+\.\d+)\]?(?! \(unreleased\))[ \t]*(?:\(\d{4}-\d{2}-\d{2}\))?[ \t]*$",
+                  (ROOT / "CHANGELOG.md").read_text(), re.M)
     assert m, "CHANGELOG.md has no '## <version>' entry"
     return m.group(1)
+
+
+def test_unreleased_entry_is_newer_than_the_release():
+    text = (ROOT / "CHANGELOG.md").read_text()
+    pending = re.findall(r"^## (\d+\.\d+\.\d+) \(unreleased\)$", text, re.M)
+    assert len(pending) <= 1, pending
+    for v in pending:
+        assert text.index(f"## {v} (unreleased)") < text.index(f"## {_changelog_top()}")
+        assert tuple(map(int, v.split("."))) > tuple(map(int, _plugin_yaml_version().split(".")))
 
 
 def test_every_version_string_agrees():
