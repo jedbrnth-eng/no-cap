@@ -4,7 +4,7 @@ manifest_version: 2
 api_version: 1
 description: "Receipts for agent claims. Checks the claims in each final reply (tests pass, merged, pushed, deployed, file written, URL live, SHAs, numbers) against the tool calls of that turn and, for claims about earlier work, earlier turns of the same session (cross_turn, on by default), with no extra model: 🧾 NO CAP, 🧢 CAP or 🤔 NO RECEIPT. /cap makes the agent prove it or retract, /capscore keeps an honesty leaderboard, and the Cap Board dashboard tab ranks agents, models and skills live (this profile by default; a multi-profile team view is opt-in)."
 author: "jedbrnth-eng"
-license: MIT
+license: Apache-2.0
 requires_hermes: ">=0.22.5"
 tags: [verification, honesty, receipts, tools]
 provides_hooks:

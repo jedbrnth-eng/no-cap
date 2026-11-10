@@ -56,6 +56,7 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
   `--pass`, `://`) is absent, and the KEY=value and `token <v>` rules when the text holds no secret word at all, so
   masking 100 KB of ordinary output is faster than in 0.2.0 despite the new rules. A differential test holds the
   gated rules equal to the ungated ones (`tests/test_redaction.py`).
+- Licence: Apache-2.0 from 0.2.1 (was MIT), with a NOTICE file. The Arena task suite stays MIT.
 
 ## 0.2.0 (2026-11-06)
 
