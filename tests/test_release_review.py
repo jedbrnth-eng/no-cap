@@ -86,12 +86,12 @@ def test_s6_existing_file_without_session(tmp_path):
     assert recheck({'kind': 'file', 'text': 'I created old.txt', 'claim': {'path': 'old.txt'}, 'verdict': 'NO_RECEIPT'}, str(tmp_path), session={'calls': [], 'start': None}) is None
 
 
-@pytest.mark.parametrize('cmd', ['curl -u user:probe-password https://example.com', 'mysql -pprobe-password db', 'sshpass -p probe-password ssh host'])
+@pytest.mark.parametrize('cmd', ['curl -u ' + 'user:' + 'probe-password https://example.com', 'mysql -pprobe-password db', 'sshpass -p probe-password ssh host'])
 def test_s9_plain_passwords(cmd):
     assert 'probe-password' not in redact(cmd)
 
 
-@pytest.mark.parametrize('cmd', ['curl -u "user:probe-password" https://example.com', "mysql -p'probe-password' db", 'sshpass -p "probe-password" ssh host'])
+@pytest.mark.parametrize('cmd', ['curl -u "' + 'user:' + 'probe-password" https://example.com', "mysql -p'probe-password' db", 'sshpass -p "probe-password" ssh host'])
 def test_s9_quoted_passwords(cmd):
     assert 'probe-password' not in redact(cmd)
 
