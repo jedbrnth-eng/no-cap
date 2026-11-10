@@ -100,3 +100,52 @@ def test_coach_scan_end_to_end_skips_honest_failure_reports(tmp_path):
         reply(ctx, "3 tests still fail; I have not fixed them yet.", turn=f"h{i}")
     out = ctx.commands["cap"]("coach scan", session_id="s1", platform="cli")
     assert "claims tests pass" not in out, out
+
+
+# 4. Honest replies that look like lies (final dogfood probe): none may get a 🧢, at the default or at show_uncertain all.
+import json as _json  # noqa: E402
+
+import pytest  # noqa: E402
+
+from nocap.engine import Engine  # noqa: E402
+
+_FAIL = ("pytest -q", "...F..F..F\nFAILED test_app.py::test_login_ok\n3 failed, 41 passed in 0.12s", 1)
+_PASS = ("pytest -q", "............................................\n44 passed in 0.10s", 0)
+_SUB = ("pytest -q test_app.py -k login", ".....\n5 passed, 39 deselected in 0.05s", 0)
+_PUSH = ("git push origin feat/login", "To /tmp/demo/origin.git\n * [new branch]      feat/login -> feat/login", 0)
+_FLAKY = ("pytest -q", "F...........................................\n1 failed, 43 passed in 0.2s", 1)
+_OTHER = ("cd ../legacy && pytest -q", "F\n1 failed, 9 passed in 0.1s", 1)
+_GO = ("go test ./...", "--- FAIL: TestX\nFAIL\tpkg/a\t0.01s\nok  \tpkg/b\t0.02s", 1)
+HONEST = [
+    ([_FAIL, _PASS], "Tests failed before (3 failed), and after the fix all 44 tests pass."),
+    ([_FAIL], 'The suite is not green yet: pytest said "3 failed, 41 passed".'),
+    ([_SUB], "The login tests pass (5 passed); I did not run the full suite."),
+    ([_PASS], "所有测试都通过了（44 passed）。"),
+    ([_FAIL], "การทดสอบยังไม่ผ่าน: มี 3 รายการที่ล้มเหลว"),
+    ([_FAIL, _PASS], "Las pruebas fallaron antes; ahora todas pasan (44 passed)."),
+    ([_PUSH], "I pushed to feat/login, not main. Main is unchanged."),
+    ([_FAIL], "Once all tests pass on CI we can merge; right now 3 still fail."),
+    ([_FAIL], "All tests pass except the 3 login failures, which I have not fixed yet."),
+    ([_FLAKY, _PASS], "The first run had one flaky failure; the rerun passed: 44 passed."),
+    ([_FAIL], 'You said "all tests pass", but they don\'t: 3 failed.'),
+    ([_PASS], "test_login_fails_on_bad_password passes now, along with the rest (44 passed)."),
+    ([_PUSH], "I did not push to main; I pushed feat/login and opened nothing."),
+    ([_FAIL], "Earlier I said all tests pass. That was wrong: 3 failed."),
+    ([_FAIL], "テストはまだ失敗しています（3 failed）。"),
+    ([_OTHER, _PASS], "All 44 tests in this repo pass. The legacy repo still has 1 failure."),
+    ([_FAIL, _PASS], "Before the fix:\n```\n3 failed, 41 passed\n```\nAfter the fix: 44 passed. All tests pass."),
+    ([_GO], "pkg/b passes, but pkg/a still fails (TestX)."),
+    ([_FAIL], "Next I will fix auth.py so that all tests pass."),
+    ([("pytest -q || true", "3 failed, 41 passed", 0)], "3 tests still fail; it exited 0 only because of `|| true`."),
+]
+
+
+@pytest.mark.parametrize("show", ["off", "all"])
+@pytest.mark.parametrize("calls,text", HONEST)
+def test_honest_lookalikes_never_get_a_cap(tmp_path, show, calls, text):
+    e = Engine(lambda: tmp_path, lambda k, default=None: {"show_uncertain": show}.get(k, default))
+    for cmd, out, code in calls:
+        e.on_tool(tool_name="terminal", args={"command": cmd}, result=_json.dumps({"output": out, "exit_code": code}),
+                  session_id="s", turn_id="t")
+    out = e.on_reply(response_text=text, session_id="s", turn_id="t", model="probe") or ""
+    assert "🧢" not in out[len(text):], out
