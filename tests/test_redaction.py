@@ -301,3 +301,25 @@ def test_gates_equal_the_ungated_rules_on_the_redos_corpus():
     from redos_inputs import inputs
     for name, text in inputs().items():
         assert redact(text) == _ungated(text), name
+
+
+# A stored line is cut to 160 characters. Cutting BEFORE masking can cut a secret's closing context away (the `@`
+# of a URL password, the end of a long token), and the kept prefix then no longer matches any rule.
+_LONG_PW = "syntheticordinary-" * 20
+
+
+@pytest.mark.parametrize("command,output,exit_code", [
+    ("pytest -q", "3 failed, 41 passed in 0.02s postgres://demo:" + _LONG_PW + "@example.invalid/db", 1),
+    ("python -m unittest", "Ran 3 tests in 0.1s postgres://demo:" + _LONG_PW + "@example.invalid/db\n\nFAILED (failures=1)", 1),
+    ("git push origin main", "error: failed to push some refs to 'https://demo:" + _LONG_PW + "@example.invalid/r.git'", 1),
+    ("git commit -m x", "[main abc1234] x https://demo:" + _LONG_PW + "@example.invalid/r", 0),
+    ("git merge feature", "Merge made by postgres://demo:" + _LONG_PW + "@example.invalid/db", 0),
+    ("gh pr merge 5 --squash", "✓ Squashed and merged pull request #5 https://demo:" + _LONG_PW + "@example.invalid", 0),
+    ("gh pr checks 5", "build\tfail\t1m\thttps://demo:" + _LONG_PW + "@example.invalid/x", 1),
+])
+def test_stored_lines_are_masked_before_they_are_cut(command, output, exit_code):
+    ev = extract("terminal", {"command": command}, {"output": output, "exit_code": exit_code})
+    # what is persisted and quoted: the stored summary, and every line a receipt can cite (ev["urls"] is an
+    # in-memory match set that is never stored, and a quote is masked whole before it is cut)
+    blob = json.dumps(summary(ev), default=str) + json.dumps([ev.get("git"), ev.get("tests")], default=str)
+    assert "syntheticordinary" not in blob, blob[:600]

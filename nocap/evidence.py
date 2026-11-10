@@ -538,6 +538,12 @@ def redact(text: str) -> str:
     return _cli_passwords(out)  # last: each mask lengthens the text, so the rules above scan the shorter original
 
 
+def _cut(line: str, n: int = 160) -> str:
+    """A stored line: masked whole first, then cut. Cutting first can remove the context a rule needs (the `@` after
+    a URL password, the far end of a long token), and the kept prefix of the secret then matches nothing."""
+    return redact(line)[:n]
+
+
 def scan_window(text: str) -> str:
     """The part of a tool output that gets parsed: head + summary-like lines from the middle + tail (see HEAD)."""
     if len(text) <= HEAD + TAIL:
@@ -639,7 +645,7 @@ def parse_tests(text: str) -> List[Dict[str, Any]]:
 
     def add(runner, passed=0, failed=0, errors=0, skipped=0, line=""):
         runs.append({"runner": runner, "passed": passed, "failed": failed, "errors": errors,
-                     "skipped": skipped, "line": line.strip()[:160]})
+                     "skipped": skipped, "line": _cut(line.strip())})
 
     # only lines with a digit, or Go's per-test / per-package lines, can carry a summary
     lines = [m.group(0) for m in _CAND_LINE_RE.finditer(text.replace("\r\n", "\n").replace("\r", "\n"))]
@@ -759,7 +765,7 @@ def parse_tests(text: str) -> List[Dict[str, Any]]:
             e = re.search(r"errors=(\d+)", ran.group(3))
             failed = int(f.group(1)) if f else 0
             errors = int(e.group(1)) if e else 0
-        add("unittest", total - failed - errors, failed, errors, line=ran.group(0).replace("\n", " ")[:160])
+        add("unittest", total - failed - errors, failed, errors, line=_cut(ran.group(0).replace("\n", " ")))
     if tap and ("pass" in tap or "fail" in tap):
         add("node", tap.get("pass", 0), tap.get("fail", 0), line=f"# pass {tap.get('pass', 0)}, # fail {tap.get('fail', 0)}")
     if bun and "pass" in bun:
@@ -832,7 +838,8 @@ def parse_git(cmd: str, text: str, exit_code: Optional[int]) -> Dict[str, Any]:
         refs = {r.split(":")[-1].replace("refs/heads/", "") for r in refs}
         g["push_refs"] = sorted(refs)[:MAX_ITEMS]
         g["push_line"] = next((ln.strip() for ln in text.splitlines() if "->" in ln or "rejected" in ln
-                               or "up-to-date" in ln or "error" in ln), "")[:160]
+                               or "up-to-date" in ln or "error" in ln), "")
+        g["push_line"] = _cut(g["push_line"])
     if re.search(r"\bgit\b(?:(?!\bgit\b)[^|;&])*\bcommit\b", cmd):
         m = re.search(r"^\[([^\]\s]+)(?:\s+\(root-commit\))?\s+([0-9a-f]{7,40})\]", text, re.M)
         clean = bool(re.search(r"nothing to commit|nothing added to commit", text))  # already committed: not a failure
@@ -843,7 +850,7 @@ def parse_git(cmd: str, text: str, exit_code: Optional[int]) -> Dict[str, Any]:
         if m:
             g["commit"] = m.group(2)
             g["commit_branch"] = m.group(1)
-        g["commit_line"] = (m.group(0) if m else text.strip().splitlines()[0] if text.strip() else "")[:160]
+        g["commit_line"] = _cut(m.group(0) if m else text.strip().splitlines()[0] if text.strip() else "")
     if re.search(r"\bgh\s+pr\s+merge\b", cmd):
         nums = [int(n) for n in re.findall(r"\bgh\s+pr\s+merge\s+(\d+)", cmd)]
         nums += [int(n) for n in re.findall(r"(?i)merged pull request [^#\n]*#(\d+)", text)]
@@ -859,7 +866,7 @@ def parse_git(cmd: str, text: str, exit_code: Optional[int]) -> Dict[str, Any]:
         g["merge_cmd_prs"] = sorted(set(nums))
         if merged:
             g["merged_prs"] = sorted(set(nums))
-        g["merge_line"] = text.strip().splitlines()[0][:160] if text.strip() else ""
+        g["merge_line"] = _cut(text.strip().splitlines()[0]) if text.strip() else ""
     elif re.search(r"\bgh\s+pr\s+(view|status|list)\b", cmd) or re.search(r"\bgh\s+api\b(?:(?!\bgh\s+api\b).)*pulls", cmd):
         states = re.findall(r"(?i)\"?state\"?\s*[:=]\s*\"?(MERGED|OPEN|CLOSED)\b", text)
         nums = [int(n) for n in re.findall(r"\bgh\s+pr\s+view\s+(\d+)", cmd)]
@@ -880,7 +887,7 @@ def parse_git(cmd: str, text: str, exit_code: Optional[int]) -> Dict[str, Any]:
     elif re.search(r"\bgit\b(?:(?!\bgit\b)[^|;&])*\bmerge\b", cmd) and not re.search(r"--abort", cmd):
         g["git_merge_failed"] = bool(re.search(r"CONFLICT|Automatic merge failed|^fatal:", text, re.M))
         g["git_merge_ok"] = ok and not g["git_merge_failed"]
-        g["merge_line"] = text.strip().splitlines()[0][:160] if text.strip() else ""
+        g["merge_line"] = _cut(text.strip().splitlines()[0]) if text.strip() else ""
     if re.search(r"\bgh\s+pr\s+create\b", cmd):
         g["opened_prs"] = sorted({int(n) for n in re.findall(r"/pull/(\d+)", text)})
         g["pr_create_ok"] = bool(g["opened_prs"])
@@ -892,7 +899,7 @@ def parse_git(cmd: str, text: str, exit_code: Optional[int]) -> Dict[str, Any]:
             g.update(st)
             line = next((ln for ln in text.splitlines() if re.search(r"(?i)\b(fail|failure)\b", ln)), "") \
                 if st["ci_fail"] else (text.strip().splitlines() or [""])[0]
-            g["ci_line"] = line.strip()[:160]
+            g["ci_line"] = _cut(line.strip())
     return g
 
 

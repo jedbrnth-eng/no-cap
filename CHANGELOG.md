@@ -60,6 +60,9 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
   🧾 from a failing run (it read as "says the tests fail", which the run then proved), is not counted as a retraction
   by the /cap re-score, and is still mined by Cap Coach. "Some tests pass, others fail" is unchanged
   (`tests/test_final_dogfood.py`).
+- Redaction: stored summary lines (test summary, push, commit, merge and CI lines) are masked whole before they are cut
+  to 160 characters. They were cut first, so a long URL password lost its closing `@` and its first characters were
+  stored and could be quoted in a receipt (`tests/test_redaction.py`).
 
 ## 0.2.0 (2026-11-06)
 
