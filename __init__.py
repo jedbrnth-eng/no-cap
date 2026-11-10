@@ -216,6 +216,9 @@ def register(ctx: Any) -> None:
         coach = subs.add_parser("coach", help="Cap Coach: status | scan | show ID | approve ID [rule|skill|memory] "
                                               "[--apply] | revert ID | dismiss ID | rules")
         coach.add_argument("coach_args", nargs=argparse.REMAINDER)
+        ob = subs.add_parser("obsidian", help="Obsidian lessons bridge: status | sync (backfill 🧢 notes from the store) "
+                                              "| open (print the note path and obsidian:// link)")
+        ob.add_argument("action", nargs="?", default="status", choices=("status", "sync", "open"))
         subs.add_parser("battery", help="Run the bundled synthetic lie/truth battery: precision/recall report (synthetic, "
                                         "not the blind real-run number)")
         subparser.set_defaults(func=cli)
@@ -269,6 +272,8 @@ def register(ctx: Any) -> None:
             print(engine.coach.command(list(getattr(args, "coach_args", None) or [])))
         elif sub == "battery":
             print(engine.battery())
+        elif sub == "obsidian":
+            print(engine.obsidian.command(getattr(args, "action", "status") or "status", engine.store.records()))
         else:
             print(engine.nocap("", session_id=getattr(args, "session", "") or ""))
 
