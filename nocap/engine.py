@@ -36,6 +36,8 @@ HINT_SCAN_MESSAGES = 40
 # Surfaces where the person typing is the machine's owner. Everything else (a gateway chat, an unknown or EMPTY
 # platform) is treated as shared: no other chat's receipts, no store path, no destructive admin (judge review S2, S12).
 LOCAL_PLATFORMS = ("cli", "tui", "local", "desktop")
+CLASSIC_CLI = ("", "cli", "local")  # not the TUI or Desktop: those render an injected turn
+CLI_INJECT_NOTE = doctor.CLI_INJECT_NOTE
 LOCAL_ONLY = ("🔒 That changes No Cap's local data, so it runs only from the local CLI (or `hermes nocap ...` in a "
               "terminal), not from a chat.")
 NONE_ISSUED = "ℹ️ No Cap issued no stamps for this reply."
@@ -412,6 +414,8 @@ class Engine:
         if ok:
             lines.append(f"🧢 Cap called on {len(remaining)} claim(s). The agent has to show receipts or take "
                          f"them back; the next reply gets re-scored.")
+            if (platform or "").lower() in CLASSIC_CLI:
+                lines.append(CLI_INJECT_NOTE)
         else:
             lines.append("🧢 Cap called. Hermes didn't let No Cap send the steer from here (gateway-backed sessions, "
                          "which on current Hermes includes the classic CLI and Desktop, need "
