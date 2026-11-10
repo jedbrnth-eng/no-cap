@@ -50,6 +50,10 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
   cross-turn wording). New [eval/data/](eval/DATA.md): blind rounds 2 and 3 as public SWE-rebench ids, row hashes and
   adjudicated labels; the Arena's 30-task MIT suite and per-episode/per-stamp rows; League results and summary;
   Cap Coach pairs; `python eval/recompute.py --check` rebuilds every README number (tested in CI).
+- Redaction: a private key behind a secret-looking name (`private_key: -----BEGIN ...`, `TLS_KEY=...`) is masked
+  whole; the KEY=value rule used to take only the `-----BEGIN` word and leave the key body. Discord code spans mask
+  only the part they keep plus a margin, so a 100 KB tool output no longer costs two full masking passes
+  (`tests/test_discord_code_window.py`, `tests/test_redaction.py`).
 
 ## 0.2.0 (2026-11-06)
 

@@ -215,3 +215,28 @@ def test_s9_plain_passwords(cmd):
                                  'sshpass -p "probe-password" ssh host'])
 def test_s9_quoted_passwords(cmd):
     assert "probe-password" not in redact(cmd)
+
+
+# A private key behind a secret-looking name (`private_key: -----BEGIN ...`, a service-account JSON, a .env line).
+# The KEY=value rule used to mask only the `-----BEGIN` word, which broke the PEM rule and left the key body visible.
+_PEM_BODY = "MIIEvQ" + "Ab3/" * 40
+_PEM = "-----BEGIN RSA PRIVATE KEY-----\n" + _PEM_BODY + "\n-----END RSA PRIVATE KEY-----"
+
+
+@pytest.mark.parametrize("text", [
+    "key: " + _PEM,
+    "private_key: " + _PEM + "\nnext: line",
+    '{"private_key": "' + _PEM.replace("\n", "\\n") + '", "client_email": "x@example.com"}',
+    "TLS_KEY=" + _PEM,
+    "SSH_PRIVATE_KEY='" + _PEM + "'",
+    "token -----BEGIN PRIVATE KEY-----\n" + _PEM_BODY,  # unterminated
+])
+def test_private_key_behind_a_secret_name(text):
+    out = redact(text)
+    assert "MIIEvQ" not in out and "Ab3/Ab3/" not in out
+    assert "[redacted]" in out
+
+
+def test_private_key_rule_keeps_the_rest():
+    assert redact("private_key: " + _PEM + "\nnext: line").endswith("\nnext: line")
+    assert redact("cat id_rsa\n" + _PEM + "\nexit 0") == "cat id_rsa\n[redacted]\nexit 0"

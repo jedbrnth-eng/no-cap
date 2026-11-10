@@ -431,8 +431,10 @@ _DOTTED_TOKEN_RE = re.compile(r"(?<![\w-])[\w-]{20,200}\.[\w-]{6,200}\.[\w-]{20,
 SECRET_RES = [
     re.compile(r"(?<![\w-])(?:sk|pk|rk|ghp|gho|ghs|ghu|ghr|github_pat|glpat|xox[abpr]|AKIA|ASIA|npm|hf|AIza)[-_A-Za-z0-9]{12,}"),
     re.compile(r"(?<![\w+-])(?![0-9a-f]{32,}\b)(?=[A-Za-z0-9_+-]*\d)(?=[A-Za-z0-9_+-]*[A-Za-z])[A-Za-z0-9_+-]{32,}={0,2}"),
-    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)", re.S),
 ]
+# Runs first: a key behind a secret-looking name (`private_key: -----BEGIN ...`) would otherwise lose only its
+# `-----BEGIN` word to the KEY=value rule, and the key body would stay.
+_PEM_RE = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)", re.S)
 REDACTED = "[redacted]"
 # Passwords passed as command-line flags (S9). Each masks only its capture group, so the command stays readable.
 # The curl and mysql shapes only run when that tool is named, so `docker run -u 1000:1000` and `pytest -p no:x` stay.
@@ -507,7 +509,8 @@ def redact(text: str) -> str:
     prefixes, long mixed tokens, AWS secret keys, dotted tokens (JWT, Discord) and PEM private keys."""
     if not text:
         return text
-    out = _USERINFO_RE.sub(lambda m: m.group(1) + REDACTED + "@", text)
+    out = _PEM_RE.sub(REDACTED, text) if "-----BEGIN" in text else text
+    out = _USERINFO_RE.sub(lambda m: m.group(1) + REDACTED + "@", out)
     out = _ASSIGN_RE.sub(_assign, out)
     out = _KEYWORD_SPACE_RE.sub(lambda m: m.group(1) + m.group(2) + m.group(3) + REDACTED
                                 if m.group(4) != REDACTED else m.group(0), out)
