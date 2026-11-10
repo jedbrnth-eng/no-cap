@@ -59,6 +59,10 @@ an `obsidian://` link (it runs nothing). `hermes nocap doctor` shows the bridge 
   `@` after a long URL password), then cut to 160 and Markdown-escaped. A claim can't become a link, an embed,
   HTML or a block id. No other
   reply text, no session content, no commands.
+- **Known limit (same as No Cap's, docs/GUIDE.md):** a secret that sits across a parse-window edge of a tool output over
+  40 KB may reach a receipt in part, unrecognised. The bridge re-runs `redact()` on every field at the vault write and
+  exports nothing the local store doesn't already hold, so it doesn't make that worse, but it can't mask a fragment
+  `redact()` can't recognise either.
 - **New `pre_llm_call` line** (only with `obsidian_learn: true`): `[No Cap lessons for agent <profile>: ...]` plus up to
   3 of No Cap's built-in rules. Rules already live as approved Cap Coach rules are not repeated.
 - **Reads:** the vault's `.agentbox.json` (a folder name, validated); on a 🧢 write, this agent's note, the NAMES in

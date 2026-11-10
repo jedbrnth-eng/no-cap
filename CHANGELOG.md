@@ -4,6 +4,17 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
 [jedbrnth-eng/no-cap](https://github.com/jedbrnth-eng/no-cap/pulls?q=is%3Apr+is%3Amerged), by PR number
 (`gh pr list -R jedbrnth-eng/no-cap --state merged`).
 
+## 0.3.0 (unreleased)
+
+- Obsidian lessons bridge, opt-in (`obsidian_vault`, empty = off; nothing read or written). On each 🧢 verdict, one
+  redacted line for that agent (Hermes profile) goes to `<vault>/<folder>/<agent>.md`, plus an Agent Black Box
+  mistakes-board note per agent and pattern when the vault has `.agentbox.json`. With `obsidian_learn: true`,
+  `pre_llm_call` adds up to 3 of No Cap's built-in Coach rules picked from that agent's own recurring 🧢 patterns
+  (never text read back from the vault). The vault is held by a descriptor walked with `O_NOFOLLOW`; one flock per
+  destination folder; an unknown profile gets no note and no lesson; every field is redacted again at the sink.
+  Commands: `hermes nocap obsidian status|sync|open`; doctor reports the bridge in one line. Docs: `docs/OBSIDIAN.md`.
+  Tests: `tests/test_obsidian.py`, `tests/test_obsidian_review.py`, `tests/test_obsidian_sink.py`.
+
 ## 0.2.1
 
 - Security (judge review S1, S2, S3, S11, S12). S1: a RECEIPT-SHAPED line (a stamp, a quoted claim, then `call N`,
