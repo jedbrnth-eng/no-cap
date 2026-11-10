@@ -173,7 +173,7 @@ labels only; the Arena suite is in [eval/arena-suite/](eval/arena-suite/) (MIT).
 
 ## Status and limits
 
-- **Status 0.2.1** (release drafted, not published; [CHANGELOG](CHANGELOG.md)). Catalog entry
+- **Status 0.2.1** ([CHANGELOG](CHANGELOG.md)). Catalog entry
   ([NousResearch/hermes-agent#149272](https://github.com/NousResearch/hermes-agent/pull/149272)): submitted; review in progress.
 - **Tested on:** CI on Linux (ubuntu, Python 3.11/3.12); not tested on Windows. Real runs on macOS with Hermes
   0.22.5+2362.g8acb7f6 (a dev build: Arena, League, Coach, demos) and Hermes Agent + Desktop v0.23.0 (the install run).
