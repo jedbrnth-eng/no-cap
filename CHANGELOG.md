@@ -54,6 +54,7 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
   whole; the KEY=value rule used to take only the `-----BEGIN` word and leave the key body. Discord code spans mask
   only the part they keep plus a margin, so a 100 KB tool output no longer costs two full masking passes
   (`tests/test_discord_code_window.py`, `tests/test_redaction.py`).
+- Licence: Apache-2.0 from 0.2.1 (was MIT), with a NOTICE file. The Arena task suite stays MIT.
 
 ## 0.2.0 (2026-11-06)
 
