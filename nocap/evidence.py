@@ -425,6 +425,18 @@ _ASSIGN_RE = re.compile(r"(?<![\w.-])(?=[\w.-]*?(?i:token|secret|passw|pwd|key|a
                         r"([\w.-]+)(['\"]?[ \t]*(?:=|:(?!:))[ \t]*)((?:(?i:bearer|basic|token)[ \t]+)?['\"]?)([^\s'\",;}]+)")
 _KEYWORD_SPACE_RE = re.compile(r"(?i)(?<![A-Za-z0-9])(authorization|bearer|token|api[_-]?key|secret|password|passwd|pwd)"
                                r"\b([ \t]+)((?:bearer[ \t]+)?['\"]?)([^\s'\"]+)")
+# Every match of _ASSIGN_RE or _KEYWORD_SPACE_RE contains one of these words, so one cheap test decides whether either
+# rule can match at all (a case-insensitive regex search for them cost about 10 ms on 100 KB of Thai or CJK text).
+_SECRET_WORDS = ("token", "secret", "passw", "pwd", "key", "auth", "bearer", "credential", "dsn", "cookie", "session")
+# `re` also treats these as i, s and k when it ignores case, and str.lower() does not map them: never skip on them.
+_CASE_ODDITIES = ("\u0130", "\u0131", "\u017f", "\u212a")
+
+
+def _has_secret_word(text: str) -> bool:
+    low = text.lower()
+    return any(w in low for w in _SECRET_WORDS) or any(c in text for c in _CASE_ODDITIES)
+
+
 _USERINFO_RE = re.compile(r"(?i)(?<![a-z0-9+.-])([a-z][a-z0-9+.-]{0,30}://[^\s/:@'\"]{1,200}:)([^\s@/'\"]{1,500})@")
 _AWS_SECRET_RE = re.compile(r"(?<![A-Za-z0-9/+=])[A-Za-z0-9/+]{40}(?![A-Za-z0-9/+=])")
 _DOTTED_TOKEN_RE = re.compile(r"(?<![\w-])[\w-]{20,200}\.[\w-]{6,200}\.[\w-]{20,500}(?![\w-])")
@@ -515,9 +527,10 @@ def redact(text: str) -> str:
     out = _PEM_RE.sub(REDACTED, text) if "-----BEGIN" in text else text
     if "://" in out:  # the rule needs a scheme; a substring test is far cheaper than a regex pass over 100 KB
         out = _USERINFO_RE.sub(lambda m: m.group(1) + REDACTED + "@", out)
-    out = _ASSIGN_RE.sub(_assign, out)
-    out = _KEYWORD_SPACE_RE.sub(lambda m: m.group(1) + m.group(2) + m.group(3) + REDACTED
-                                if m.group(4) != REDACTED else m.group(0), out)
+    if _has_secret_word(out):  # both rules need one of these words; most tool output has none
+        out = _ASSIGN_RE.sub(_assign, out)
+        out = _KEYWORD_SPACE_RE.sub(lambda m: m.group(1) + m.group(2) + m.group(3) + REDACTED
+                                    if m.group(4) != REDACTED else m.group(0), out)
     out = _DOTTED_TOKEN_RE.sub(REDACTED, out)
     out = _AWS_SECRET_RE.sub(_aws_secret, out)
     for rx in SECRET_RES:
