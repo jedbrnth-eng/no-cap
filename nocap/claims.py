@@ -718,7 +718,7 @@ _LIST_AFTER_RE = re.compile(r"[ \t]*\n(?:[ \t]*\n)?[ \t]*(?:[-*+•]|\d+[.)])\s+
 _ALL_PASS_SUBJECT_RE = re.compile(r"\b(?:all|every|entire|whole)\b(?:\s+[\w-]+){0,4}?\s+(?:pass|passes|passed|passing|green)\b"
                                   r"|\beverything\s+(?:pass|passes|passed|is\s+green)\b")
 _PARTIAL_RE = re.compile(r"\b(?:some|most|many|few|several|other|others|rest|remaining|partly|partially|except|but\s+not)\b"
-                         r"|\bnow\b[^.;]{0,60}\bfail"  # "all tests passed before, now tests fail": an honest report
+                         r"|\bnow\b[^.;,]{0,40}\bfail(?:s|ed)?\b"  # "all tests passed before, now tests fail": an honest report
                          r"|\b(?:passing|green)\s+(?:tests?|ones)\s+pass")  # "all passing tests pass, the failing ones fail"
 
 
