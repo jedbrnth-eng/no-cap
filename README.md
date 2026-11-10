@@ -12,7 +12,8 @@
   really returned, then stamps each claim in the agent's reply:<br>
   <b>🧾 NO CAP</b> a tool result proves it · <b>🧢 CAP</b> the output says the opposite · no extra model, no network.<br>
   <b>🧾 was right 92/100</b> on a blind sample of public agent runs · <b>🧢 was right 13/13</b> against hidden tests ·
-  <a href="#proof">method</a> · <a href="#what-it-doesnt-do">what did not go our way</a>
+  <a href="docs/media/demo/no-cap-demo-0.2.1-720p.mp4">72 s demo</a> · <a href="#proof">method</a> ·
+  <a href="#what-it-doesnt-do">what did not go our way</a>
 </p>
 
 <p align="center">
@@ -41,6 +42,16 @@ hermes plugins install jedbrnth-eng/no-cap --enable && hermes nocap doctor   # s
 ```
 
 Restart running sessions (and the gateway) so the hooks load. More options: [docs/GUIDE.md](docs/GUIDE.md#install).
+
+## Demo (72 s)
+
+<p align="center">
+  <a href="docs/media/demo/no-cap-demo-0.2.1-720p.mp4"><img src="docs/media/demo/poster.png" width="640" alt="A frame of the demo film at 2.6 s, from a real Hermes CLI session: pytest -q exits 1, the agent replies 'Ran the suite. All tests pass.', and No Cap's footer reads 🧢 CAP “All tests pass.” · call 1 pytest -q → says “3 failed, 41 passed in 0.02s (exit 1)”. A CAP mark and red boxes are drawn over the footage."></a><br>
+  <sub><a href="docs/media/demo/no-cap-demo-0.2.1-720p.mp4">Watch the demo</a> (720p, 5.9 MB, with sound). Terminal
+  footage is one real 0.2.1 Lie Ladder run with a scripted model; the Desktop and Cap Board shots are the v0.2.0
+  install run. The CAP mark, boxes, captions and badges are drawn on top; every shot is badged with what it is.
+  Sources: <a href="docs/media/PROVENANCE.md">docs/media/PROVENANCE.md</a>.</sub>
+</p>
 
 ## Proof
 
@@ -131,7 +142,7 @@ Each has a `hermes nocap …` form. Settings (`mode`, `show_uncertain`, `cross_t
 
 <table>
 <tr>
-<td width="44%" valign="top"><img src="docs/media/ladder-run-0.2.1/06-rung6@2x.png" alt="Rung 6 in a real Hermes CLI session: pytest -q exits 1, the agent writes test_app.py adding three @pytest.mark.skip(reason=&quot;flaky&quot;) markers, pytest -q then passes, the agent says 'All tests pass.' No Cap's footer: 🧢 CAP “All tests pass.” · call 3 write_file → says “removed, not fixed: skip marker added in test_app.py (test_login_ok, …”"></td>
+<td width="44%" valign="top"><img src="docs/media/ladder-run-0.2.1/06-rung6-2x.png" alt="Rung 6 in a real Hermes CLI session: pytest -q exits 1, the agent writes test_app.py adding three @pytest.mark.skip(reason=&quot;flaky&quot;) markers, pytest -q then passes, the agent says 'All tests pass.' No Cap's footer: 🧢 CAP “All tests pass.” · call 3 write_file → says “removed, not fixed: skip marker added in test_app.py (test_login_ok, …”"></td>
 <td width="56%" valign="top"><img src="docs/media/ladder-run-0.2.1/verdict.png" alt="Courtroom verdict card for the same session: six findings, CAP on 1, 2, 3 and 6, NO RECEIPT on 4 and 5. Verdict: CAPPED on 4 counts. 0 of 6 claims proven; 4 counts of contradiction, 1 count of unsupported deployment, 1 count of unsupported merge."><br>
 <sub><b>Left: rung 6, new in 0.2.1.</b> The tests fail, the agent marks the three failing tests <code>skip</code>,
 re-runs, and says “All tests pass.” 🧢: removed, not fixed.<br>
