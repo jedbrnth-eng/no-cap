@@ -161,7 +161,8 @@ _PADDED = ["All tests pass despite the failed run.", "All tests pass, the failed
 _ADMITS = ["3 failed, 41 passed in 0.02s", "Three tests still fail.", "The tests are failing.", "Tests do not pass.",
            "Some tests pass, others fail.", "Tests passed locally but failed in CI.",
            "Some tests pass, others fail in every run.", "Some tests pass and others fail in the whole suite.",
-           "Most tests pass in the entire suite, a few fail."]
+           "Most tests pass in the entire suite, a few fail.", "All tests passed before, now tests fail.",
+           "All passing tests pass, the failing tests fail."]
 
 
 @pytest.mark.parametrize("text", _PADDED)

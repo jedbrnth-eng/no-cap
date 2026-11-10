@@ -544,50 +544,11 @@ def _cut(line: str, n: int = 160) -> str:
     return redact(line)[:n]
 
 
-_WS = (" ", "\t", "\n", "\r")
-
-
-def _cut_back(s: str) -> str:
-    """`s` without a cut-off last line or word: back to the last newline within MAX_LINE, else the last whitespace.
-    A window edge must never fall inside a token: the kept half of a secret (a URL password without its `@`, a long
-    token without its digits) matches no mask rule."""
-    if not s or s[-1] in _WS:
-        return s
-    i = s.rfind("\n", max(0, len(s) - MAX_LINE))
-    if i < 0:
-        i = max(s.rfind(c) for c in _WS)
-    return s[: i + 1]
-
-
-def _cut_fwd(s: str) -> str:
-    """`s` without a cut-off first line or word (see _cut_back)."""
-    if not s or s[0] in _WS:
-        return s
-    i = s.find("\n", 0, MAX_LINE)
-    if i < 0:
-        hits = [j for j in (s.find(c) for c in _WS) if j >= 0]
-        i = min(hits) if hits else len(s)
-    return s[i:]
-
-
 def scan_window(text: str) -> str:
-    """The part of a tool output that gets parsed: head + summary-like lines from the middle + tail (see HEAD).
-    No edge falls inside a token (see _cut_back). An edge inside a line takes the whole line when the line is within
-    MAX_LINE on both sides, so a summary line across the cut is still parsed; otherwise it moves to a word boundary."""
+    """The part of a tool output that gets parsed: head + summary-like lines from the middle + tail (see HEAD)."""
     if len(text) <= HEAD + TAIL:
         return text
-    cut = len(text) - TAIL
-    end = text.find("\n", HEAD, HEAD + MAX_LINE)
-    if end >= 0 and text.rfind("\n", max(0, HEAD - MAX_LINE), HEAD) >= 0:
-        head = text[:end]
-    else:
-        head = text[:HEAD] if text[HEAD] in _WS else _cut_back(text[:HEAD])
-    start = text.rfind("\n", max(0, cut - MAX_LINE), cut)
-    if start >= len(head) and text.find("\n", cut, cut + MAX_LINE) >= 0:
-        tail = text[start + 1:]
-    else:
-        tail = text[cut:] if text[cut - 1] in _WS else _cut_fwd(text[cut:])
-    mid = text[len(head):len(text) - len(tail)]  # starts and ends where the head and tail do: on a boundary
+    mid = text[HEAD:len(text) - TAIL]
     keep: List[str] = []
     size = {False: 0, True: 0}  # bytes kept: other summary-like lines, failure lines (each has its own budget)
     count = {False: 0, True: 0}
@@ -595,23 +556,11 @@ def scan_window(text: str) -> str:
     for m in MID_KEY_RE.finditer(mid):
         if m.start() < last_end:
             continue
-        a = mid.rfind("\n", max(0, m.start() - MAX_LINE), m.start())
-        b = mid.find("\n", m.end(), m.end() + MAX_LINE)
-        whole_left = a >= 0 or m.start() <= MAX_LINE  # a newline, or the middle's own (boundary) start
-        whole_right = b >= 0 or len(mid) - m.end() <= MAX_LINE
-        if whole_left and whole_right:
-            a, b = a + 1, (len(mid) if b < 0 else b)
-            line = mid[a:b]  # the whole line
-        else:  # a very long line: a fragment around the hit, cut at word boundaries
-            a, b = max(0, m.start() - 300), min(len(mid), m.end() + 300)
-            line = mid[a:b]
-            line = _cut_fwd(line) if a > 0 and mid[a - 1] not in _WS else line
-            line = _cut_back(line) if b < len(mid) and mid[b] not in _WS else line
-            # the tool name that switches a CLI-password rule on (`curl`, `mysql`, `redis-cli`) may be outside the
-            # fragment: mask those flag shapes here without it
-            for rx in (_CURL_USER_RE, _MYSQL_PW_RE, _REDIS_PW_RE):
-                line = rx.sub(_MASK, line)
+        a = mid.rfind("\n", max(0, m.start() - 300), m.start()) + 1 or max(0, m.start() - 300)
+        b = mid.find("\n", m.end(), m.end() + 300)
+        b = min(len(mid), m.end() + 300) if b < 0 else b
         last_end = b
+        line = mid[a:b]
         bad = bool(_MID_FAIL_RE.search(line))
         if count[bad] >= MID_LINES or size[bad] >= MID_BYTES:
             if count[not bad] >= MID_LINES or size[not bad] >= MID_BYTES:
@@ -620,7 +569,8 @@ def scan_window(text: str) -> str:
         keep.append(line)
         count[bad] += 1
         size[bad] += len(line)
-    return head + "\n" + "\n".join(keep) + ("\n" if keep else "") + tail
+    return text[:HEAD] + "\n" + "\n".join(keep) + ("\n" if keep else "") + text[len(text) - TAIL:]
+
 
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b\n]{0,2000}\x07")
