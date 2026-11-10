@@ -337,20 +337,24 @@ class Engine:
                 break
         if not pending:
             return []
-        now = {_match_key(r): r for r in receipts}
-        now_kind = {}
-        for r in receipts:
-            now_kind.setdefault(r["kind"], r)
+        def fails(r: Dict[str, Any]) -> bool:  # a tests claim that says they fail ("3 failed") vs one that says pass
+            return bool((r.get("claim") or {}).get("fails"))
+
         lines = []
         for old in pending:
-            new = now.get(_match_key(old)) or (now_kind.get(old["kind"]) if old["kind"] in
-                                               ("tests", "ci", "build", "deployed") else None)
+            # the same claim again: same key and the same direction. "3 failed" after a capped "all tests pass" is
+            # the agent taking it back, not the pass claim still standing (final dogfood, a real Qwen3 reply)
+            same = [r for r in receipts if _match_key(r) == _match_key(old) or (
+                r["kind"] == old["kind"] and old["kind"] in ("tests", "ci", "build", "deployed"))]
+            new = next((r for r in same if fails(r) == fails(old)), None)
             was = EMOJI[old["verdict"]]
             what = f"“{claim_text(old)[:50]}” ({old['kind']})"  # one sentence can hold two claims: name the kind
             if new is None:
                 lines.append(f"🔁 /cap re-score: {was} → 🫡 retracted {what}")
             elif new["verdict"] == NO_CAP:
                 lines.append(f"🔁 /cap re-score: {was} → 🧾 {what} now has a receipt")
+            elif new["verdict"] != old["verdict"]:
+                lines.append(f"🔁 /cap re-score: {was} → {EMOJI[new['verdict']]} {what}")
             else:
                 lines.append(f"🔁 /cap re-score: still {EMOJI[new['verdict']]} {what}")
         return lines
