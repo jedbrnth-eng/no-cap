@@ -62,6 +62,12 @@ def ledger_turns(path: Path, limit: int = 50 * 1024 * 1024) -> int:
         return 0
 
 
+# Seen in the final dogfood run (Hermes 0.23.0): the classic CLI sends an injected steer through the local gateway;
+# the agent answers it, but nothing of that turn prints in the CLI. /nocap shows its receipts and the re-score.
+CLI_INJECT_NOTE = ("ℹ️ Classic CLI: the agent's answer to an injected steer can run without printing here "
+                   "(Hermes sends it through the local gateway). Type /nocap to see its receipts and the re-score.")
+
+
 def run(home: Path, mode: str, entry: Dict[str, Any], store_path: Path, records: List[Dict[str, Any]],
         enabled: Callable[[str], Any], show_uncertain: str = "off") -> str:
     return check(home, mode, entry, store_path, records, enabled, show_uncertain)[0]
@@ -85,13 +91,15 @@ def check(home: Path, mode: str, entry: Dict[str, Any], store_path: Path, record
     lines.append(f"✅ Mode: {mode}" + (" (pre_verify nudges coding turns, at most 2 per turn)" if mode == "strict"
                                       else "") + f" · show_uncertain: {show_uncertain}")
     if entry.get("allow_gateway_injection") is True:
-        lines.append("✅ /cap may send its steer into gateway-backed sessions (allow_gateway_injection is on).")
+        lines.append("✅ /cap may send its steer into gateway-backed sessions (allow_gateway_injection is on). "
+                     "In the classic CLI the agent's answer can run without printing there: /nocap shows it.")
     else:
         lines.append("ℹ️ /cap can only send its steer itself where Hermes runs plugins inside a local CLI. Gateway-"
                      "backed sessions (Discord, Telegram, TUI, Desktop, and the classic CLI on Hermes builds that "
                      "route it through the local gateway) need plugins.entries.no-cap.allow_gateway_injection: true "
                      "(`hermes config set plugins.entries.no-cap.allow_gateway_injection true`). "
-                     "Until then /cap prints the steer for you to paste.")
+                     "Until then /cap prints the steer for you to paste. In the classic CLI pasting shows the whole "
+                     "answer; an injected one can run without printing there (/nocap shows it).")
     err = store_writable(store_path)
     if err:
         problems += 1

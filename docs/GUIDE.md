@@ -282,6 +282,11 @@ above are the ones to quote.
 
 ## Known limits
 
+- Secret masking works on what No Cap keeps. Every stored line, the suite name and the claim text are masked whole
+  before they are cut to length. One case is not covered: a tool output over 40 KB is parsed as its first 8 KB, its
+  last 32 KB and up to 600-character fragments around summary-like lines between, and a secret that sits across one
+  of those edges (or whose marker word, such as `curl` or `password`, falls outside a fragment) is seen only in part
+  and may not be recognised. It needs a credential on or beside a test-summary line in a very long output.
 - No Cap only sees a model turn that ends with a reply. A profile whose only activity is no-agent cron scripts,
   gateway reconnects or plugin reloads, or whose turns failed before any reply (an HTTP 429 from the provider, an auth
   error), has no `receipts.jsonl` and no `ledger.jsonl`, and that is expected: on a real multi-profile install, the profiles

@@ -301,3 +301,102 @@ def test_gates_equal_the_ungated_rules_on_the_redos_corpus():
     from redos_inputs import inputs
     for name, text in inputs().items():
         assert redact(text) == _ungated(text), name
+
+
+# A stored line is cut to 160 characters. Cutting BEFORE masking can cut a secret's closing context away (the `@`
+# of a URL password, the end of a long token), and the kept prefix then no longer matches any rule.
+_LONG_PW = "syntheticordinary-" * 20
+
+
+@pytest.mark.parametrize("command,output,exit_code", [
+    ("pytest -q", "3 failed, 41 passed in 0.02s postgres://demo:" + _LONG_PW + "@example.invalid/db", 1),
+    ("python -m unittest", "Ran 3 tests in 0.1s postgres://demo:" + _LONG_PW + "@example.invalid/db\n\nFAILED (failures=1)", 1),
+    ("git push origin main", "error: failed to push some refs to 'https://demo:" + _LONG_PW + "@example.invalid/r.git'", 1),
+    ("git commit -m x", "[main abc1234] x https://demo:" + _LONG_PW + "@example.invalid/r", 0),
+    ("git merge feature", "Merge made by postgres://demo:" + _LONG_PW + "@example.invalid/db", 0),
+    ("gh pr merge 5 --squash", "✓ Squashed and merged pull request #5 https://demo:" + _LONG_PW + "@example.invalid", 0),
+    ("gh pr checks 5", "build\tfail\t1m\thttps://demo:" + _LONG_PW + "@example.invalid/x", 1),
+])
+def test_stored_lines_are_masked_before_they_are_cut(command, output, exit_code):
+    ev = extract("terminal", {"command": command}, {"output": output, "exit_code": exit_code})
+    # what is persisted and quoted: the stored summary, and every line a receipt can cite (ev["urls"] is an
+    # in-memory match set that is never stored, and a quote is masked whole before it is cut)
+    blob = json.dumps(summary(ev), default=str) + json.dumps([ev.get("git"), ev.get("tests")], default=str)
+    assert "syntheticordinary" not in blob, blob[:600]
+
+
+# Cross-family review (0.2.1 follow-up): every cut that can come before a mask, end to end through the Engine.
+# A stored or rendered value must never hold the first characters of a secret whose closing context was cut away.
+from nocap.evidence import HEAD, TAIL
+
+_E2E_URL = "postgres://demo:" + _LONG_PW + "@example.invalid/db"
+_E2E_BASE = "3 failed, 41 passed in 0.02s "
+
+
+def _e2e(tmp_path, out=_E2E_BASE, cmd="pytest -q", text="All tests pass."):
+    e = Engine(lambda: tmp_path, lambda k, d=None: {"show_uncertain": "all", "verify_artifacts": False}.get(k, d))
+    e.on_tool(tool_name="terminal", args={"command": cmd}, result={"output": out, "exit_code": 1},
+              session_id="s", turn_id="t")
+    rendered = e.on_reply(response_text=text, session_id="s", turn_id="t", platform="cli") or ""
+    footer = rendered[len(text):] if rendered.startswith(text) else rendered  # the reply's own words are the agent's
+    stored = "".join(f.read_text() for f in tmp_path.rglob("*.jsonl"))
+    assert stored, "nothing was stored: the probe did not run"
+    assert "syntheticordinary" not in stored, stored[:400]
+    assert "syntheticordinary" not in footer, footer[:400]
+
+
+_WINDOW_LIMIT = pytest.mark.xfail(strict=True, reason="known limit (docs/GUIDE.md): a secret across a window edge of "
+                                                     "an output over 40 KB; the windowing is unchanged in 0.2.1")
+
+
+@pytest.mark.parametrize("out", [
+    _E2E_BASE + _E2E_URL,
+    pytest.param("x" * (HEAD - len(_E2E_BASE) - 40) + "\n" + _E2E_BASE + _E2E_URL + "\n" + "z" * (HEAD + TAIL),
+                 marks=_WINDOW_LIMIT),  # across the head cut
+    pytest.param("x" * HEAD + "\n" + "z" * 1000 + "\n" + _E2E_BASE + _E2E_URL + "\n" + "z" * (TAIL + 1000),
+                 marks=_WINDOW_LIMIT),  # a kept middle fragment
+    "z" * (HEAD + TAIL) + "\n" + _E2E_URL[:40] + _LONG_PW * 3 + "@h/db " + _E2E_BASE,  # across the tail cut
+    ("z " * HEAD) + "A1" + "Qq" * 400 + " " + _E2E_BASE + "\n" + "z" * (HEAD + TAIL),
+], ids=["short", "head-cut", "middle-line", "tail-cut", "long-token"])
+def test_window_cuts_never_leave_a_secret_prefix(tmp_path, out):
+    _e2e(tmp_path, out=out)
+
+
+def test_suite_name_is_masked_before_it_is_cut(tmp_path):
+    _e2e(tmp_path, cmd="pytest " + _E2E_URL + " -q")
+
+
+def test_claim_text_is_masked_before_it_is_cut(tmp_path):
+    _e2e(tmp_path, text="All tests pass " + _E2E_URL)
+
+
+_SUMMARY_LINE = "================ 3 failed, 41 passed in 0.02s =================="
+_DOTS = "." * 70 + "\n"
+
+
+def test_a_summary_line_across_the_tail_cut_is_still_parsed():
+    for fwd in (2, 20, len(_SUMMARY_LINE) - 2):
+        tail = ("\n" + _DOTS * 600)[: TAIL - fwd]
+        out = _DOTS * 800 + _SUMMARY_LINE + tail
+        cut = len(out) - TAIL
+        assert out.rindex(_SUMMARY_LINE) < cut < out.rindex(_SUMMARY_LINE) + len(_SUMMARY_LINE)
+        ev = extract("terminal", {"command": "pytest -q"}, {"output": out, "exit_code": 1})
+        assert ev["tests"] and ev["tests"][-1]["failed"] == 3, (fwd, ev["tests"])
+
+
+@_WINDOW_LIMIT
+def test_cli_password_in_a_fragment_of_a_very_long_line(tmp_path):
+    # the line is longer than MAX_LINE, so only a fragment around the summary is kept, and `curl` is outside it
+    marker = "syntheticordinary" + "value"
+    line = "curl " + "x " * 900 + "-u demo:" + marker + " " + "x " * 125 + _E2E_BASE + "z " * 900
+    out = _DOTS * 200 + line + "\n" + _DOTS * 700
+    assert marker not in redact(out)
+    _e2e(tmp_path, out=out)
+
+
+def test_a_summary_inside_a_very_long_line_is_still_parsed():
+    # a second windowing "fix" tried in review lost this one
+    line = "=" * 1100 + " 3 failed, 41 passed in 0.02s " + "=" * 16
+    out = "log padding\n" * 1800 + line + "\n" + "end padding\n" * 4000
+    ev = extract("terminal", {"command": "pytest -q"}, {"output": out, "exit_code": 1})
+    assert ev["tests"] and ev["tests"][-1]["failed"] == 3 and ev["tests"][-1]["passed"] == 41, ev["tests"]
