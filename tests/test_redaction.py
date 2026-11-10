@@ -240,3 +240,21 @@ def test_private_key_behind_a_secret_name(text):
 def test_private_key_rule_keeps_the_rest():
     assert redact("private_key: " + _PEM + "\nnext: line").endswith("\nnext: line")
     assert redact("cat id_rsa\n" + _PEM + "\nexit 0") == "cat id_rsa\n[redacted]\nexit 0"
+
+
+# The CLI-password and URL rules are skipped by a substring test when their literal word is absent (ReDoS budget:
+# 0.2.1's new rules added several full regex passes per call). The gate must never skip a text the rule would mask.
+@pytest.mark.parametrize("cmd,secret", [
+    ("x " * 60_000 + "curl -u admin:" + "hunter2Pw" + " https://api.example.com", "hunter2Pw"),
+    ("-u admin:" + "hunter2Pw" + " " + "x " * 60_000 + "| curl -K -", "hunter2Pw"),  # the tool is named far after the flag
+    ("mariadb -p" + "hunter2Pw" + " shop", "hunter2Pw"),
+    ("mysqldump -p" + "hunter2Pw" + " shop", "hunter2Pw"),
+    ("redis-cli -a " + "hunter2Pw" + " ping", "hunter2Pw"),
+    ("sshpass -p " + "hunter2Pw" + " ssh host", "hunter2Pw"),
+    ("tool --password " + "hunter2Pw", "hunter2Pw"), ("tool --passphrase=" + "hunter2Pw", "hunter2Pw"),
+    ("tool --passwd " + "hunter2Pw", "hunter2Pw"), ("tool --pass " + "hunter2Pw", "hunter2Pw"),
+    ("git clone postgres://bob:" + "hunter2Pw" + "@db.example.com/x", "hunter2Pw"),
+    ("Q" * 100_000 + "7", "QQQQQQQQ"), ("7" + "Q" * 100_000, "QQQQQQQQ"),  # one long mixed token: masked whole
+])
+def test_gated_rules_still_mask(cmd, secret):
+    assert secret not in redact(cmd)

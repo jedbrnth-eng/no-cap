@@ -51,9 +51,10 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
   adjudicated labels; the Arena's 30-task MIT suite and per-episode/per-stamp rows; League results and summary;
   Cap Coach pairs; `python eval/recompute.py --check` rebuilds every README number (tested in CI).
 - Redaction: a private key behind a secret-looking name (`private_key: -----BEGIN ...`, `TLS_KEY=...`) is masked
-  whole; the KEY=value rule used to take only the `-----BEGIN` word and leave the key body. Discord code spans mask
-  only the part they keep plus a margin, so a 100 KB tool output no longer costs two full masking passes
-  (`tests/test_discord_code_window.py`, `tests/test_redaction.py`).
+  whole; the KEY=value rule used to take only the `-----BEGIN` word and leave the key body. The CLI-password and
+  URL-password rules are skipped by a plain substring test when their literal word (`curl`, `mysql`, `sshpass`,
+  `--pass`, `://`) is absent, so 0.2.1's new rules no longer add full regex passes to every call
+  (`tests/test_redaction.py`).
 
 ## 0.2.0 (2026-11-06)
 

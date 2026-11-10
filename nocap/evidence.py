@@ -452,14 +452,17 @@ _MASK = "\\g<1>" + REDACTED  # group 1 is everything before the secret: a templa
 
 
 def _cli_passwords(text: str) -> str:
-    if _CURL_RE.search(text):
+    # each rule needs its literal word, so a plain substring test (no regex pass) skips the rules a text can't match
+    if "curl" in text and _CURL_RE.search(text):
         text = _CURL_USER_RE.sub(_MASK, text)
-    if _MYSQL_RE.search(text):
+    if ("mysql" in text or "mariadb" in text) and _MYSQL_RE.search(text):
         text = _MYSQL_PW_RE.sub(_MASK, text)
-    if _REDIS_RE.search(text):
+    if "redis-cli" in text and _REDIS_RE.search(text):
         text = _REDIS_PW_RE.sub(_MASK, text)
-    for rx in _FLAG_PW_RES:
-        text = rx.sub(_MASK, text)
+    if "sshpass" in text:
+        text = _FLAG_PW_RES[0].sub(_MASK, text)
+    if "--pass" in text:
+        text = _FLAG_PW_RES[1].sub(_MASK, text)
     return text
 
 
@@ -510,7 +513,8 @@ def redact(text: str) -> str:
     if not text:
         return text
     out = _PEM_RE.sub(REDACTED, text) if "-----BEGIN" in text else text
-    out = _USERINFO_RE.sub(lambda m: m.group(1) + REDACTED + "@", out)
+    if "://" in out:  # the rule needs a scheme; a substring test is far cheaper than a regex pass over 100 KB
+        out = _USERINFO_RE.sub(lambda m: m.group(1) + REDACTED + "@", out)
     out = _ASSIGN_RE.sub(_assign, out)
     out = _KEYWORD_SPACE_RE.sub(lambda m: m.group(1) + m.group(2) + m.group(3) + REDACTED
                                 if m.group(4) != REDACTED else m.group(0), out)

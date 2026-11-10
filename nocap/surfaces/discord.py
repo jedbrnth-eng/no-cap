@@ -70,29 +70,9 @@ def code(s: Any, n: int) -> str:
     """One inline code span. Backticks can't close it early (they become the lookalike ˋ), newlines are folded,
     secrets masked. Only a command or tool output can still hold one: a claim's own backticks are markdown and are
     dropped first (claim_code)."""
-    s = _short(redact(_window(str(s or ""), n)), n).replace("`", "ˋ")
+    s = _short(redact(str(s or "")), n).replace("`", "ˋ")
     return f"`{s}`" if s.strip() else ""
 
-
-_REDACT_MARGIN = 8192  # longer than any bounded secret rule (the longest spans about 900 characters)
-_WORD = re.compile(r"\S+")
-
-
-def _window(s: str, n: int) -> str:
-    """The start of `s` that can reach the `n` kept characters, plus a margin. Only this part is masked: the rest is
-    cut anyway, and masking 100 KB to print a line held the GIL for tens of ms. Counted the way _short counts
-    (whitespace runs as one space), so a long run of blank lines does not push the kept text out of the window.
-    A secret that starts in the kept part is still masked: the bounded rules fit in the margin, and the unbounded
-    ones (long tokens, KEY=value, an unterminated private key) match a prefix of the secret as well."""
-    need = n + _REDACT_MARGIN
-    if len(s) <= need:
-        return s
-    got = 0
-    for m in _WORD.finditer(s):
-        got += m.end() - m.start() + 1
-        if got > need:
-            return s[: m.end() - (got - need)]  # may cut inside a very long word: its prefix still matches
-    return s
 
 
 _MD_EMPHASIS = re.compile(r"`+|\*\*|__")
