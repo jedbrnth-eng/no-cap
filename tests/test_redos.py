@@ -56,7 +56,9 @@ PARSERS = {
     # Obsidian lessons bridge: names, folders, the note line (redact + flatten + escape), the slug and the marker scan
     "obsidian.safe_agent": lambda s: obsidian.safe_agent(s),
     "obsidian.safe_folder": lambda s: obsidian.safe_folder(s),
-    "obsidian.entry_line": lambda s: obsidian.entry_line("2026-11-10", "tests.failed_run", s, s, "abc123def456"),
+    "obsidian.field": lambda s: obsidian.field(s),
+    # One adversarial ~100 KB field per invocation (not two copies, which would benchmark ~200 KB).
+    "obsidian.entry_line": lambda s: obsidian.entry_line("2026-11-10", "tests.failed_run", s, "1 failed", "abc123def456"),
     "obsidian.slug": lambda s: obsidian._slug(s),
     "obsidian.marks": lambda s: obsidian._MARK_RE.findall(s.encode("utf-8", "replace")),
     "obsidian.board_ids": lambda s: (obsidian._BOARD_NAME_RE.match(s), obsidian._IDS_NAME_RE.fullmatch(s)),

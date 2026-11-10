@@ -50,8 +50,9 @@ an `obsidian://` link (it runs nothing). `hermes nocap doctor` shows the bridge 
   directory traversal and writes are pinned with POSIX directory descriptors, so a parent renamed to a symlink
   cannot redirect them), and a profile name that isn't letters, digits, `.`, `_` or `-`.
 - **What a line holds:** date, pattern id, the claim, the contradicting evidence, the receipt id. Both text fields pass
-  through `redact()` (cut to 2,000 characters first, dropping a half word at the cut so a split secret can't slip past,
-  then cut to 160) and are Markdown-escaped, so a claim can't become a link, an embed, HTML or a block id. No other
+  through `redact()` in FULL before flattening or clipping (a redaction rule can need distant context, such as the
+  `@` after a long URL password), then cut to 160 and Markdown-escaped. A claim can't become a link, an embed,
+  HTML or a block id. No other
   reply text, no session content, no commands.
 - **New `pre_llm_call` line** (only with `obsidian_learn: true`): `[No Cap lessons for agent <profile>: ...]` plus up to
   3 of No Cap's built-in rules. Rules already live as approved Cap Coach rules are not repeated.
