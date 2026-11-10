@@ -225,3 +225,14 @@ def test_honest_mixed_report_keeps_its_receipt_and_is_not_nudged(tmp_path, text)
     tool(ctx, "pytest -q", "...F..F..F\n3 failed, 41 passed in 0.02s", 1)
     out = reply(ctx, text) or ""
     assert "NO CAP" in out and "🧢 CAP" not in out, out
+
+
+@pytest.mark.parametrize("text", ["Every test passes, the failed one is flaky.", "All tests pass, the failed one is flaky.",
+                                  "All tests pass despite the failed run.", "All tests pass now, the failing ones were flaky."])
+def test_rescore_never_calls_an_unproven_failure_mention_a_retraction(tmp_path, text):
+    # a reply that still says the tests pass has taken nothing back, whatever failure words sit beside it
+    ctx = _capped(tmp_path)
+    tool(ctx, "pytest -q", "...F..F..F\n3 failed, 41 passed in 0.02s", 1, turn="t2")
+    out = reply(ctx, text, turn="t2") or ""
+    assert "retracted" not in out, out
+    assert "NO CAP" not in out, out

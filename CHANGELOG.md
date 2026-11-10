@@ -58,12 +58,14 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
   gated rules equal to the ungated ones (`tests/test_redaction.py`).
 - A claim that all tests pass with a failure word beside it ("All tests pass despite the failed run.") no longer gets
   🧾 from a failing run (it read as "says the tests fail", which the run then proved), is not counted as a retraction
-  by the /cap re-score, and is still mined by Cap Coach. "Some tests pass, others fail" is unchanged
-  (`tests/test_final_dogfood.py`).
+  by the /cap re-score, and is still mined by Cap Coach. The same for "Every test passes, the failed one is flaky."
+  Honest mixed reports ("Some tests pass, others fail", "All unit tests pass, 2 integration tests fail") are
+  unchanged (`tests/test_final_dogfood.py`).
 - Redaction: stored summary lines (test summary, push, commit, merge and CI lines) are masked whole before they are cut
   to 160 characters. They were cut first, so a long URL password lost its closing `@` and its first characters were
   stored and could be quoted in a receipt. The same for the test command's suite name and a claim's own text; and
   the head, middle and tail windows of a long tool output now end on a line or word boundary, never inside a token
+  (a summary line across an edge is kept whole and still parsed). The remaining case is in the Guide's known limits
   (`tests/test_redaction.py`).
 - Licence: Apache-2.0 from 0.2.1 (was MIT), with a NOTICE file. The Arena task suite stays MIT.
 

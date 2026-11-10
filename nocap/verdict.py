@@ -285,14 +285,14 @@ def _tests(c, evs):
             if not runs:
                 return _r(c, NO_RECEIPT, why="no run of that scope in this turn")
         failing = [e for e in runs if _run_failed(e)]
+        if c.get("asserts_pass"):  # says all pass and names a failure: no run is a receipt for that sentence
+            e = failing[-1] if failing else runs[-1]
+            return _r(c, NO_RECEIPT, e, why="says all tests pass, but names a failure", quote=_run_quote(e))
         if c.get("failed"):
             hits = [e for e in runs if _summary(e) and c["failed"] in (_summary(e)["failed"],
                                                                          _summary(e)["failed"] + _summary(e)["errors"])]
             if hits:
                 return _r(c, NO_CAP, hits[-1], quote=_run_quote(hits[-1]))
-        elif failing and c.get("asserts_pass"):  # says all pass and names a failure: a failing run is no receipt for it
-            return _r(c, NO_RECEIPT, failing[-1], why="says all tests pass, but names a failure and the run failed",
-                      quote=_run_quote(failing[-1]))
         elif failing:
             return _r(c, NO_CAP, failing[-1], quote=_run_quote(failing[-1]))
         return _r(c, NO_RECEIPT, runs[-1], why="no run shows that failure", quote=_run_quote(runs[-1]))

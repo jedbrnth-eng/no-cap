@@ -488,8 +488,10 @@ def _tests(cl: str, low: str) -> Optional[Dict[str, Any]]:
     # "all tests pass despite the failed run": a claim that ALL pass with a failure word beside it is not an admission
     # ("some tests pass, others fail" is). A failing run must not prove it, and /cap re-score and Cap Coach must not
     # read it as the agent taking the claim back.
-    asserts_pass = bool(pass_hit and not negated and fail_hit and not failed and _ALL_PASS_SUBJECT_RE.search(low)
-                        and not _PARTIAL_RE.search(low))
+    # No digit: "the failed one is flaky" is no count ("one" parses as 1), while "2 integration tests fail" is an
+    # honest count beside the pass claim and stays an admission.
+    asserts_pass = bool(pass_hit and not negated and fail_hit and not re.search(r"\d", low)
+                        and _ALL_PASS_SUBJECT_RE.search(low) and not _PARTIAL_RE.search(low))
     if pass_hit and not negated:
         all_pass = True
     if pass_hit and negated:

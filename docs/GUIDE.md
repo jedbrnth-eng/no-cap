@@ -282,6 +282,11 @@ above are the ones to quote.
 
 ## Known limits
 
+- Secret masking works on what No Cap keeps, and a tool output over 40 KB is parsed as its head, its tail and the
+  summary-like lines between. Window edges never fall inside a word, and a kept line is masked whole before it is cut
+  to 160 characters. One case is not covered: a single line over 1,000 characters is kept as a 600-character fragment,
+  so a value whose only marker is a word outside that fragment (`password <value>` with `password` cut away) is not
+  recognised. `curl -u`, `mysql -p` and `redis-cli -a` values are masked in a fragment even without the tool name.
 - No Cap only sees a model turn that ends with a reply. A profile whose only activity is no-agent cron scripts,
   gateway reconnects or plugin reloads, or whose turns failed before any reply (an HTTP 429 from the provider, an auth
   error), has no `receipts.jsonl` and no `ledger.jsonl`, and that is expected: on a real multi-profile install, the profiles

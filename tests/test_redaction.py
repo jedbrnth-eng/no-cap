@@ -362,3 +362,36 @@ def test_suite_name_is_masked_before_it_is_cut(tmp_path):
 
 def test_claim_text_is_masked_before_it_is_cut(tmp_path):
     _e2e(tmp_path, text="All tests pass " + _E2E_URL)
+
+
+_SUMMARY_LINE = "================ 3 failed, 41 passed in 0.02s =================="
+_DOTS = "." * 70 + "\n"
+
+
+def test_a_summary_line_across_the_head_cut_is_still_parsed():
+    # the window edge completes the line instead of dropping it (cross-family re-check: a lost receipt)
+    for back in (2, 5, 20, 40, len(_SUMMARY_LINE) - 1):
+        out = _DOTS * ((HEAD - back) // len(_DOTS) - 1)
+        out += "x" * (HEAD - back - len(out) - 1) + "\n" + _SUMMARY_LINE + "\n" + _DOTS * 800
+        assert out.index(_SUMMARY_LINE) < HEAD < out.index(_SUMMARY_LINE) + len(_SUMMARY_LINE)
+        ev = extract("terminal", {"command": "pytest -q"}, {"output": out, "exit_code": 1})
+        assert ev["tests"] and ev["tests"][-1]["failed"] == 3 and ev["tests"][-1]["passed"] == 41, (back, ev["tests"])
+
+
+def test_a_summary_line_across_the_tail_cut_is_still_parsed():
+    for fwd in (2, 20, len(_SUMMARY_LINE) - 2):
+        tail = ("\n" + _DOTS * 600)[: TAIL - fwd]
+        out = _DOTS * 800 + _SUMMARY_LINE + tail
+        cut = len(out) - TAIL
+        assert out.rindex(_SUMMARY_LINE) < cut < out.rindex(_SUMMARY_LINE) + len(_SUMMARY_LINE)
+        ev = extract("terminal", {"command": "pytest -q"}, {"output": out, "exit_code": 1})
+        assert ev["tests"] and ev["tests"][-1]["failed"] == 3, (fwd, ev["tests"])
+
+
+def test_cli_password_in_a_fragment_of_a_very_long_line(tmp_path):
+    # the line is longer than MAX_LINE, so only a fragment around the summary is kept, and `curl` is outside it
+    marker = "syntheticordinary" + "value"
+    line = "curl " + "x " * 900 + "-u demo:" + marker + " " + "x " * 125 + _E2E_BASE + "z " * 900
+    out = _DOTS * 200 + line + "\n" + _DOTS * 700
+    assert marker not in redact(out)
+    _e2e(tmp_path, out=out)
