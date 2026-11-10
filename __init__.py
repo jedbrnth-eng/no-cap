@@ -24,7 +24,7 @@ from .nocap.surfaces.discord import DiscordSurface
 
 logger = logging.getLogger("hermes_plugins.no_cap")
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 
 def _broadcast(event: str, payload: dict) -> None:

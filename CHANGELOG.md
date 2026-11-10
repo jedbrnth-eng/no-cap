@@ -4,7 +4,7 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
 [jedbrnth-eng/no-cap](https://github.com/jedbrnth-eng/no-cap/pulls?q=is%3Apr+is%3Amerged), by PR number
 (`gh pr list -R jedbrnth-eng/no-cap --state merged`).
 
-## Unreleased
+## 0.2.1
 
 - Security (judge review S1, S2, S3, S11, S12). S1: a RECEIPT-SHAPED line (a stamp, a quoted claim, then `call N`,
   `turn N` or `→`) counts as forged wherever it sits (blockquote, quotation marks, list, code span, fence), closing
