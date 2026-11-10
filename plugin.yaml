@@ -69,3 +69,19 @@ config_schema:
     type: dict
     default: {mode: suggest, min_evidence: 5, auto_after_caps: 0, window_days: 14, min_sample: 10, max_rules: 5}
     description: "Cap Coach. mode: off (no mining, no injection) | suggest (default: /cap coach scan drafts fixes) | auto-suggest-after-N-caps (also a one-line footer when a pattern reaches N caps; N from auto_after_caps, default min_evidence). min_evidence: caps of one pattern before a fix is drafted. window_days: baseline window frozen at approval. min_sample: replies needed on each side before a before/after rate is shown. max_rules: most rules injected per turn. Nothing applies without /cap coach approve <id>; approved coach rules reach the model only through pre_llm_call, labelled, and /cap coach revert <id> stops them."
+  obsidian_vault:
+    type: str
+    default: ""
+    description: "Obsidian lessons bridge (opt-in; empty = off, nothing read or written). Absolute path of an existing Obsidian vault. Each 🧢 CAP appends one redacted line to <vault>/<obsidian_folder>/<profile>.md, and the first 🧢 of a pattern adds one Agent Black Box mistake note (see obsidian_board). Writes stay inside the vault: no symlinks, no '..'. docs/OBSIDIAN.md."
+  obsidian_folder:
+    type: str
+    default: "No Cap"
+    description: "Vault-relative folder for the per-agent 🧢 notes (no '..', no leading dot, no absolute path)."
+  obsidian_board:
+    type: str
+    default: auto
+    description: "Agent Black Box board entries: auto (default: only when the vault has .agentbox.json or an 'Agent Black Box' folder), on, off. One ABB-format mistake note per agent and pattern, created once and never edited."
+  obsidian_learn:
+    type: bool
+    default: false
+    description: "Per-agent lessons (needs obsidian_vault too): pre_llm_call adds a labelled line with up to 3 built-in No Cap rules for the patterns this agent was stamped 🧢 on 2+ times, from No Cap's local store. Never reads text from the vault into the prompt."
