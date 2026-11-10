@@ -101,16 +101,10 @@ def one_line(s: Any, n: int = MAX_FIELD) -> str:
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
-PRE_REDACT = 2000  # characters kept before redact(): the stored field is 160, so this only bounds the work
-
-
 def field(s: Any) -> str:
-    """A stored field: flattened, bounded, redacted, then cut to MAX_FIELD. When the input is cut before redaction,
-    the partial last word is dropped too, so half a secret at the cut can never reach the note."""
-    flat = _SPACE_RE.sub(" ", _CTRL_RE.sub(" ", str(s or ""))).strip()
-    if len(flat) > PRE_REDACT:
-        flat = flat[:PRE_REDACT].rsplit(" ", 1)[0] + " …"
-    return one_line(redact(flat), MAX_FIELD)
+    """Redact the COMPLETE field before flattening or clipping it. A mask may need distant context (the @ after
+    a long URL password, a PEM end marker, a closing quote); a pre-redaction window could expose the kept prefix."""
+    return one_line(redact(str(s or "")), MAX_FIELD)
 
 
 def escape_md(s: str) -> str:

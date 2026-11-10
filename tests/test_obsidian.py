@@ -303,12 +303,21 @@ def test_secret_at_the_pre_redact_cut_is_dropped():
     bound must not ride along into the 160-char field."""
     secret = "ghp_" + "Z9y8X7w6V5u4T3s2R1q0P9o8N7m6L5k4J3i2"
     for cut in range(2, len(secret) - 1):
-        long_token = "sk-" + ("Ab1" * 700)[: obsidian.PRE_REDACT - 4 - cut]
+        long_token = "sk-" + ("Ab1" * 700)[: 2000 - 4 - cut]
         s = long_token + " " + secret
         out = obsidian.field(s)
         assert long_token[:12] not in out, out  # the long token itself is masked
         assert secret[:cut] not in out, (cut, out)
     assert len(obsidian.field("z " * 50_000)) <= obsidian.MAX_FIELD
+
+
+def test_field_redacts_url_password_even_when_at_sign_is_far_away():
+    password = "ordinary-" * 35  # within redact()'s supported URL-password length
+    # No whitespace: a pre-redaction cut would keep a truncated URL; masking the long token then pulls it forward.
+    uri = "sk-" + "Ab1" * 600 + "#postgres://demo:" + password + "@example.invalid/database"
+    out = obsidian.field(uri)
+    assert "ordinary-" not in out
+    assert "example.invalid" in out
 
 
 def test_non_utf8_note_is_kept_byte_for_byte(tmp_path):
