@@ -216,6 +216,16 @@ def test_sync_backfills_from_store(tmp_path):
     assert len(board_notes(v)) == 1
 
 
+def test_redacted_receipt_stays_idempotent_during_sync(tmp_path):
+    v = make_vault(tmp_path)
+    e = engine(tmp_path, v)
+    secret = "ghp_" + "Ab12" * 9
+    cap_turn(e, claim=f"All tests pass with token {secret}.")
+    result = e.obsidian.sync(e.store.records())
+    assert result["written"] == 0
+    assert len([l for l in note(v, "alpha").read_text().splitlines() if l.startswith("- ")]) == 1
+
+
 def test_receipt_id_is_stable():
     r = {"kind": "tests", "text": "All tests pass.", "claim": {"kind": "tests"}}
     assert obsidian.receipt_id("s", "t", r) == obsidian.receipt_id("s", "t", dict(r))
@@ -246,6 +256,35 @@ def test_concurrent_appends_lose_nothing(tmp_path):
     assert len(lines) == 24 and len(set(lines)) == 24
     assert len(board_notes(v)) == 1
     assert not [p for p in (v / "No Cap").iterdir() if p.name != "alpha.md"]  # no tmp files left
+
+
+def _process_append(vault, data, i):
+    bridge = obsidian.Bridge(lambda: Path(data), lambda k, d=None: str(vault) if k == "obsidian_vault" else d,
+                             lambda: "alpha")
+    r = {"kind": "tests", "verdict": "CAP", "text": "All tests pass.", "quote": FAIL_OUT,
+         "claim": {"kind": "tests"}}
+    assert bridge.record([r], session_id="parallel", turn_id=f"t{i}")["written"] == 1
+
+
+def test_separate_processes_serialize_appends(tmp_path):
+    import multiprocessing
+    v = make_vault(tmp_path)
+    ctx = multiprocessing.get_context("spawn")
+    children = [ctx.Process(target=_process_append, args=(v, tmp_path / "shared-data", i)) for i in range(6)]
+    for child in children:
+        child.start()
+    try:
+        for child in children:
+            child.join(timeout=20)
+            assert child.exitcode == 0
+    finally:
+        for child in children:
+            if child.is_alive():
+                child.terminate()
+                child.join(timeout=5)
+    lines = [line for line in note(v, "alpha").read_text().splitlines() if line.startswith("- ")]
+    assert len(lines) == len(set(lines)) == 6
+    assert len(board_notes(v)) == 1
 
 
 # ---- redaction / encoding -------------------------------------------------------------------------------------
@@ -416,3 +455,72 @@ def test_break_it_agent_forges_board_source_and_planted_symlink_ids(tmp_path):
     assert list(outside.iterdir()) == []
     assert len(list(m.glob("M-*.md"))) == 1  # the forged key suppresses a duplicate; nothing is overwritten
     assert note(v, "alpha").exists()
+
+# ---- race / identity hardening -------------------------------------------------------------------------------
+def test_agent_identifier_must_not_store_a_provider_secret():
+    secret = "ghp_" + "Ab12" * 9
+    assert obsidian.safe_agent(secret) is None
+
+
+def test_unknown_profile_records_do_not_teach_a_named_agent():
+    recs = [{"type": "reply", "ts": j, "model": "m", "receipts": [
+        {"kind": "tests", "verdict": "CAP", "claim": {"kind": "tests"}}]} for j in range(2)]
+    assert obsidian.lesson_text(recs, "alpha") is None
+
+
+def test_missing_cross_process_lock_fails_closed(tmp_path, monkeypatch):
+    v = make_vault(tmp_path, abb=False)
+    e = engine(tmp_path, v)
+
+    def deny(*a, **kw):
+        raise OSError("lock unavailable")
+
+    monkeypatch.setattr(obsidian.fcntl, "flock", deny)
+    assert "🧢" in cap_turn(e)
+    assert not note(v, "alpha").exists()
+
+
+def test_parent_swapped_for_symlink_during_append_never_writes_outside(tmp_path, monkeypatch):
+    v = make_vault(tmp_path, abb=False)
+    e = engine(tmp_path, v)
+    cap_turn(e, tid="t1")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    victim = outside / "alpha.md"
+    victim.write_text("DO NOT CHANGE", encoding="utf-8")
+    original = obsidian._replace
+    switched = []
+
+    def swap(path, data, mode, *a, **kw):
+        if not switched:
+            (v / "No Cap").rename(v / "original-notes")
+            os.symlink(outside, v / "No Cap")
+            switched.append(True)
+        return original(path, data, mode, *a, **kw)
+
+    monkeypatch.setattr(obsidian, "_replace", swap)
+    assert "🧢" in cap_turn(e, tid="t2")
+    assert victim.read_text() == "DO NOT CHANGE"
+    assert sorted(p.name for p in outside.iterdir()) == ["alpha.md"]
+
+
+def test_board_parent_swapped_during_create_never_writes_outside(tmp_path, monkeypatch):
+    v = make_vault(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    e = engine(tmp_path, v)
+    original = obsidian._write_new
+    switched = []
+
+    def swap(path, data, *a, **kw):
+        board = v / "Agent Black Box" / "Mistakes"
+        if board.exists() and not switched:
+            board.rename(v / "board-kept")
+            os.symlink(outside, board)
+            switched.append(True)
+        return original(path, data, *a, **kw)
+
+    monkeypatch.setattr(obsidian, "_write_new", swap)
+    assert "🧢" in cap_turn(e)
+    assert list(outside.iterdir()) == []
+

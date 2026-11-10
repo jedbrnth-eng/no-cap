@@ -47,7 +47,8 @@ an `obsidian://` link (it runs nothing). `hermes nocap doctor` shows the bridge 
   id reservation file `<mistakesFolder>/.ids/NNNN` (created exclusively, as ABB does). New files are 0600. A lock file
   `obsidian.lock` lives in No Cap's own data folder, not in the vault. Refused: a vault that is missing or relative, a
   folder with `..`, a hidden part or an absolute path, a symlinked folder or note (every open uses `O_NOFOLLOW` and the
-  resolved path must stay inside the vault), and a profile name that isn't letters, digits, `.`, `_` or `-`.
+  directory traversal and writes are pinned with POSIX directory descriptors, so a parent renamed to a symlink
+  cannot redirect them), and a profile name that isn't letters, digits, `.`, `_` or `-`.
 - **What a line holds:** date, pattern id, the claim, the contradicting evidence, the receipt id. Both text fields pass
   through `redact()` (cut to 2,000 characters first, dropping a half word at the cut so a split secret can't slip past,
   then cut to 160) and are Markdown-escaped, so a claim can't become a link, an embed, HTML or a block id. No other
@@ -64,3 +65,6 @@ an `obsidian://` link (it runs nothing). `hermes nocap doctor` shows the bridge 
   the full list is in the agent's note (linked from it).
 - 🤔 NO RECEIPT verdicts are not written: only direct contradictions are lessons.
 - A lesson needs 2 🧢 of the same pattern; one cap is a note, not yet a rule.
+- Writes require POSIX (`flock`, directory-relative operations). The bridge can stay off on Windows without breaking
+  No Cap; enabled bridge writes on Windows are refused. Windows is not tested.
+- Old local records without a valid profile are skipped, never guessed to belong to the current agent.
