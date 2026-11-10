@@ -53,8 +53,9 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
 - Redaction: a private key behind a secret-looking name (`private_key: -----BEGIN ...`, `TLS_KEY=...`) is masked
   whole; the KEY=value rule used to take only the `-----BEGIN` word and leave the key body. The CLI-password and
   URL-password rules are skipped by a plain substring test when their literal word (`curl`, `mysql`, `sshpass`,
-  `--pass`, `://`) is absent, so 0.2.1's new rules no longer add full regex passes to every call
-  (`tests/test_redaction.py`).
+  `--pass`, `://`) is absent, and the KEY=value and `token <v>` rules when the text holds no secret word at all, so
+  masking 100 KB of ordinary output is faster than in 0.2.0 despite the new rules. A differential test holds the
+  gated rules equal to the ungated ones (`tests/test_redaction.py`).
 
 ## 0.2.0 (2026-11-06)
 

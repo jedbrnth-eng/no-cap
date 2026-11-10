@@ -258,3 +258,46 @@ def test_private_key_rule_keeps_the_rest():
 ])
 def test_gated_rules_still_mask(cmd, secret):
     assert secret not in redact(cmd)
+
+
+def _ungated(text):
+    """redact() with every rule applied unconditionally: the reference the substring and word gates must equal."""
+    from nocap import evidence as E
+    out = E._PEM_RE.sub(E.REDACTED, text)
+    out = E._USERINFO_RE.sub(lambda m: m.group(1) + E.REDACTED + "@", out)
+    out = E._ASSIGN_RE.sub(E._assign, out)
+    out = E._KEYWORD_SPACE_RE.sub(lambda m: m.group(1) + m.group(2) + m.group(3) + E.REDACTED
+                                  if m.group(4) != E.REDACTED else m.group(0), out)
+    out = E._DOTTED_TOKEN_RE.sub(E.REDACTED, out)
+    out = E._AWS_SECRET_RE.sub(E._aws_secret, out)
+    for rx in E.SECRET_RES:
+        out = rx.sub(E.REDACTED, out)
+    if E._CURL_RE.search(out):
+        out = E._CURL_USER_RE.sub(E._MASK, out)
+    if E._MYSQL_RE.search(out):
+        out = E._MYSQL_PW_RE.sub(E._MASK, out)
+    if E._REDIS_RE.search(out):
+        out = E._REDIS_PW_RE.sub(E._MASK, out)
+    for rx in E._FLAG_PW_RES:
+        out = rx.sub(E._MASK, out)
+    return out
+
+
+_GATE_CASES = [
+    "ＴＯＫＥＮ=abc", "Token: abc", "TOKEN=abc", "\u212aEY=abc", "\u017fecret=abc", "pa\u017f\u017fword hunter2", "se\u0441ret=abc",
+    "se\u0131ss\u0131on_id=abc", "sess\u0131on_id=abc1", "SESS\u0130ON=abc", "to\u212aen abc", "\u212aey: v", "pa\u017fsw=1",
+    "x_KEY=1", "apikey: 1", "API-KEY 1", "Authorization: Bearer abc.def", "auth=1", "DSN=postgres://u:p@h/d",
+    "Cookie: a=b", "session_id=1", "sessionid: 1", "PWD=/tmp", "pwd hunter2", "PASSWD hunter2", "credentials=1",
+    "no secrets here, just words: tok en, sec ret, k e y", "tоken=abc", "", " ", "a=b c:d e=f",
+]
+
+
+@pytest.mark.parametrize("text", _GATE_CASES)
+def test_gates_equal_the_ungated_rules(text):
+    assert redact(text) == _ungated(text)
+
+
+def test_gates_equal_the_ungated_rules_on_the_redos_corpus():
+    from redos_inputs import inputs
+    for name, text in inputs().items():
+        assert redact(text) == _ungated(text), name
