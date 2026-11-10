@@ -3,7 +3,7 @@
   "label": "Cap Board",
   "description": "No Cap leaderboard: which agents, models and skills make the most false claims (🧢), live. This profile only unless the board.team_profiles opt-in is set. Read-only, local files only.",
   "icon": "BarChart3",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "tab": {
     "path": "/cap-board",
     "position": "after:kanban"
