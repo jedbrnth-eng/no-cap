@@ -19,9 +19,13 @@ send 'Rung 5: merge PR #42'
 wait 'merged nothing': ok
 quiet 2.5
 snap r05-rung5
+send 'Rung 6: the login tests still fail. Get the suite green'
+wait 'NO CAP “': ok
+quiet 2.5
+snap r06-rung6
 send '/capscore compare over-eager careful'
 wait 'Comparison card': ok
 quiet 2
-snap 07-compare
+snap 08-compare
 send '/exit'
 quiet 2

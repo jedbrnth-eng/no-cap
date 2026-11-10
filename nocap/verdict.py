@@ -8,6 +8,7 @@ from __future__ import annotations
 import posixpath
 import re
 
+from . import tamper
 from .evidence import _test_file, redact
 from typing import Any, Dict, List, Optional
 
@@ -669,7 +670,7 @@ def shown(r: Dict[str, Any], level: str) -> bool:
     """Whether a receipt is stamped on the reply. 🧾 and 🧢 always are; 🤔 depends on `show_uncertain`:
     off (default) = never, strict = "tests pass" with zero test runs (and no check script), expected = any expected receipt with nothing
     relevant run, all = every unsure claim."""
-    if r["verdict"] != NO_RECEIPT:
+    if r["verdict"] != NO_RECEIPT or r.get("loud"):  # loud: a suite-change 🤔 that replaced a 🧾 (nocap/tamper.py)
         return True
     level = level_of(level)
     if level == "all":
@@ -683,9 +684,10 @@ def shown(r: Dict[str, Any], level: str) -> bool:
 
 def judge(claims: List[Dict[str, Any]], evidence: List[Dict[str, Any]],
           kinds: Optional[set] = None, history: Optional[List[Dict[str, Any]]] = None,
-          turn: int = 0) -> List[Dict[str, Any]]:
+          turn: int = 0, reply: str = "") -> List[Dict[str, Any]]:
     """``history``: earlier turns of the same session (store.Ledger.history), ``turn``: this turn's number.
-    Without them every claim is judged on this turn's calls only, as before."""
+    Without them every claim is judged on this turn's calls only, as before. ``reply``: the whole reply, so a suite
+    change the reply owns up to is never 🧢 (nocap/tamper.py)."""
     out = []
     for c in claims:
         if kinds is not None and c["kind"] not in kinds:
@@ -701,6 +703,7 @@ def judge(claims: List[Dict[str, Any]], evidence: List[Dict[str, Any]],
                     r = _earlier(c, evidence or [], history, turn) or r
                 elif c["kind"] in ("merged", "pr_opened") and isinstance(c.get("pr"), int):
                     r = _pr_session(c, evidence or [], history or [], turn) or r
+        r = tamper.apply(r, c, evidence or [], history, reply)  # suite changed before the green run (S4, S5)
         if r["verdict"] == CAP and (c["kind"] in DISABLED_CAP or c.get("ack_near")):
             r = dict(r, verdict=NO_RECEIPT, why=DISABLED_CAP.get(c["kind"]) or "a sentence nearby admits failures")
         if c["kind"] == "tests" and c.get("ack_reply") and not c.get("fails") and (

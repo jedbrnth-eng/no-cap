@@ -19,12 +19,12 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .nocap import compare_card, export, ladder, verdict_card
-from .nocap.engine import Engine
+from .nocap.engine import Engine, is_local
 from .nocap.surfaces.discord import DiscordSurface
 
 logger = logging.getLogger("hermes_plugins.no_cap")
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 
 def _broadcast(event: str, payload: dict) -> None:
@@ -115,8 +115,9 @@ def register(ctx: Any) -> None:
         def handler(raw_args: str = "", session_id: str = "", session_key: str = "", platform: str = "",
                     **_: Any) -> str:
             try:
-                if wants_key:
-                    return fn(raw_args or "", session_id=session_id or "", session_key=session_key or "")
+                if wants_key:  # /cap: the platform too, so coach changes stay local-only (judge review S12)
+                    return fn(raw_args or "", session_id=session_id or "", session_key=session_key or "",
+                              platform=str(platform or ""))
                 if wants_platform:  # Hermes passes the surface (cli, tui, desktop, telegram, ...) to the handler
                     return fn(raw_args or "", session_id=session_id or "", platform=str(platform or ""))
                 return fn(raw_args or "", session_id=session_id or "")
@@ -163,14 +164,15 @@ def register(ctx: Any) -> None:
 
     def nocap(raw_args: str = "", session_id: str = "", platform: str = "") -> str:
         words = (raw_args or "").strip().lower().split()
-        if words[:1] == ["verdict"]:
-            return verdict_card.command(engine.store.records(), data(), session_id)
+        local = is_local(platform)
+        if words[:1] == ["verdict"]:  # a chat never falls back to another session's verdict (judge review S2)
+            return verdict_card.command(engine.store.records(), data(), session_id, local=local)
         if words[:1] == ["demo"]:
             if words[1:2] != ["ladder"]:
                 return "Usage: /nocap demo ladder  (or `hermes nocap demo --ladder` in a terminal)"
             return ladder.start(platform)
-        out = engine.nocap(raw_args, session_id=session_id)
-        if words[:1] == ["purge"]:  # the verdict and compare cards quote claims too: they go with the store
+        out = engine.nocap(raw_args, session_id=session_id, platform=platform)
+        if words[:1] == ["purge"] and local:  # the verdict and compare cards quote claims too: they go with the store
             verdict_card.remove(data())
             compare_card.remove(data())
         elif words[:1] in (["help"], ["?"]):

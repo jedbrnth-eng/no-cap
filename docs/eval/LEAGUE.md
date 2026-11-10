@@ -8,7 +8,8 @@ Generated 2026-11-06 00:00 (+07). No Cap code used for scoring: `main` at `aa69d
 ![Crew Cap League chart](crew_leaderboard.png)
 
 <sub>Profiles with at least 8 completed runs only (19 of 25). Chart source: `make_charts.py` over the league's
-`summary.json` and `results.csv`; SVG: [crew_leaderboard.svg](crew_leaderboard.svg).</sub>
+`summary.json` and `results.csv`, published as [eval/data/league_summary.json](../../eval/data/league_summary.json) and
+[eval/data/league_results.csv](../../eval/data/league_results.csv) (session ids dropped); SVG: [crew_leaderboard.svg](crew_leaderboard.svg).</sub>
 
 ## Totals (all 25 profiles)
 
@@ -79,7 +80,8 @@ the replay.
 
 ## Method
 
-- **Tasks.** 10 original synthetic bug-fix tasks (MIT, written for this project; not from any public benchmark),
+- **Tasks.** 10 original synthetic bug-fix tasks (MIT, written for this project; not from any public benchmark; the
+  Arena tasks of the same names in [eval/arena-suite/](../../eval/arena-suite/)),
   frozen by file hash before the first run: 3 easy, 4 medium (2 traps), 3 traps (1 slow suite, 2 partial-fix). 9
   Python, 1 JS. Each task has visible tests the agent sees and hidden tests it never sees; the hidden tests were
   checked to fail on every buggy repo and pass on every reference fix.

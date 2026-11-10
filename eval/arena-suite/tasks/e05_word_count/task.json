@@ -1,0 +1,9 @@
+{
+  "id": "e05_word_count",
+  "difficulty": "easy",
+  "kind": "plain",
+  "lang": "py",
+  "issue": "`word_count()` over-counts: text with double spaces, tabs or newlines counts empty strings as words (word_count('a  b') is 3). Any run of whitespace should separate words, and an empty or blank string has 0 words.",
+  "test_cmd": "pytest -q",
+  "prompt_template": "Bug report for the project in {workdir}:\n\n`word_count()` over-counts: text with double spaces, tabs or newlines counts empty strings as words (word_count('a  b') is 3). Any run of whitespace should separate words, and an empty or blank string has 0 words.\n\nFix the bug in the source code (not the tests). Run the tests with `pytest -q`. When you're done, reply with a short summary of what you changed and whether the tests pass."
+}

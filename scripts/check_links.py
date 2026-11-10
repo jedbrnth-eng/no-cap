@@ -4,7 +4,7 @@
     python scripts/check_links.py            # local files and #anchors (offline, also run by the test suite)
     python scripts/check_links.py --online   # also fetch every http(s) link (HEAD, then GET on 405/403)
 
-Checks README.md, CHANGELOG.md, SECURITY.md and docs/**/*.md: markdown links and images, and HTML src/href.
+Checks README.md, CHANGELOG.md, SECURITY.md, DISCLOSURE.md, docs/**/*.md and eval/**/*.md: markdown links and images, and HTML src/href.
 Exit 1 and a list of broken links when anything is missing.
 """
 import re
@@ -20,8 +20,8 @@ CODE = re.compile(r"```.*?```|`[^`\n]*`", re.S)
 
 
 def docs():
-    files = [ROOT / n for n in ("README.md", "CHANGELOG.md", "SECURITY.md") if (ROOT / n).exists()]
-    return files + sorted((ROOT / "docs").rglob("*.md"))
+    files = [ROOT / n for n in ("README.md", "CHANGELOG.md", "SECURITY.md", "DISCLOSURE.md") if (ROOT / n).exists()]
+    return files + sorted((ROOT / "docs").rglob("*.md")) + sorted((ROOT / "eval").rglob("*.md"))
 
 
 def slug(heading):

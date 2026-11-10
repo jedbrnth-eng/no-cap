@@ -52,7 +52,26 @@ ENV_PAIRS = {  # KEY=value pairs whose name says secret; the value must go, the 
     "NODE_ENV=production": None,  # not a secret-named variable: stays
     "mysql --password=s3cr3t-pw db": "s3cr3t-pw",
 }
+CLI_PASSWORDS = {  # S9: passwords given as command-line flags; the user name and the rest of the command stay
+    "curl -u admin:" + "hunter2Pw" + " https://api.example.com/x": ("hunter2Pw", "curl -u admin:[redacted] https"),
+    "curl -sS --user admin:" + "hunter2Pw" + " https://api.example.com/x": ("hunter2Pw", "--user admin:[redacted]"),
+    "curl --user=admin:" + "hunter2Pw" + " https://api.example.com/x": ("hunter2Pw", "--user=admin:[redacted]"),
+    "mysql -u root -p" + "hunter2Pw" + " shop": ("hunter2Pw", "mysql -u root -p[redacted] shop"),
+    "mysqldump -h db -p" + "hunter2Pw" + " shop > dump.sql": ("hunter2Pw", "-p[redacted] shop"),
+    "sshpass -p " + "hunter2Pw" + " ssh deploy@example.com": ("hunter2Pw", "sshpass -p [redacted] ssh"),
+    "sshpass -p" + "hunter2Pw" + " scp a example.com:b": ("hunter2Pw", "sshpass -p[redacted] scp"),
+    "vault login --pass " + "hunter2Pw": ("hunter2Pw", "--pass [redacted]"),
+    "tool --passphrase=" + "hunter2Pw" + " sign": ("hunter2Pw", "--passphrase=[redacted]"),
+    "openssl pkcs12 --passwd " + "hunter2Pw": ("hunter2Pw", "--passwd [redacted]"),
+    "redis-cli -h cache -a " + "hunter2Pw" + " ping": ("hunter2Pw", "-a [redacted] ping"),
+}
 KEEP = [  # ordinary evidence text that must come through unchanged
+    "curl -u admin https://api.example.com/x",
+    "mysql -u root -p shop",
+    "ssh -p 2222 deploy@example.com",
+    "pytest -p no:cacheprovider -q",
+    "docker run -u 1000:1000 img",
+    "the tests pass because of the fix",
     "3 failed, 41 passed in 0.12s",
     "git push origin feat/login",
     "[main 1a2b3c4] Fix the login check",
@@ -146,3 +165,139 @@ def test_ledger_digest_changes_with_the_calls(tmp_path):
         e.on_reply(response_text="All tests pass.", session_id="s", turn_id="t", model="m")
         return json.loads((tmp_path / str(len(cmds)) / "receipts.jsonl").read_text().splitlines()[-1])["ledger"]
     assert run(["ls", "pytest"])["digest"] != run(["ls a", "ls b", "pytest"])["digest"]
+
+
+@pytest.mark.parametrize("text", sorted(CLI_PASSWORDS))
+def test_command_line_passwords_are_masked(text):
+    core, keep = CLI_PASSWORDS[text]
+    out = redact(text)
+    assert core not in out and keep in out, out
+
+
+@pytest.mark.parametrize("text", sorted(CLI_PASSWORDS))
+def test_command_line_passwords_never_reach_disk(text, tmp_path):
+    e = Engine(lambda: tmp_path, lambda k, v=None: v)
+    e.on_tool(tool_name="terminal", args={"command": text}, result={"output": "ok", "exit_code": 0}, session_id="s",
+              turn_id="t")
+    e.on_tool(tool_name="terminal", args={"command": "pytest -q"}, result={"output": "3 passed in 0.1s", "exit_code": 0},
+              session_id="s", turn_id="t")
+    e.on_reply(response_text="All tests pass.", session_id="s", turn_id="t", model="m")
+    for f in tmp_path.iterdir():
+        assert CLI_PASSWORDS[text][0] not in f.read_text(), f.name
+
+
+def test_home_dir_becomes_tilde_in_stored_cmd_and_workdir(tmp_path, monkeypatch):
+    """S9: the user's home path never lands in a stored or printed command or working dir (it names the user)."""
+    home = "/Users/" + "alice-example"
+    monkeypatch.setenv("HOME", home)
+    ev = extract("terminal", {"command": f"cd {home}/proj && pytest -q", "workdir": f"{home}/proj"},
+                 {"output": "3 passed in 0.1s", "exit_code": 0})
+    assert ev["cmd"] == "cd ~/proj && pytest -q" and ev["workdir"] == "~/proj" and ev["where"] == "~/proj"
+    ev = extract("terminal", {"command": f"ls {home}x/y"}, {"output": "", "exit_code": 0})
+    assert ev["cmd"] == f"ls {home}x/y"  # only the home dir itself, not a longer name that starts the same
+    e = Engine(lambda: tmp_path / "d", lambda k, v=None: v)
+    e.on_tool(tool_name="terminal", args={"command": f"cd {home}/proj && pytest -q", "workdir": f"{home}/proj"},
+              result={"output": "3 passed in 0.1s", "exit_code": 0}, session_id="s", turn_id="t")
+    e.on_reply(response_text="All tests pass.", session_id="s", turn_id="t", model="m")
+    assert "alice-example" not in "".join(f.read_text() for f in (tmp_path / "d").iterdir())
+    assert "alice-example" not in e.nocap("", session_id="s")
+
+
+# Cross-family release review (0.2.1, S9): plain and quoted CLI passwords. These fake credentials live in this file
+# because it is the only one the gitleaks config allows to hold them.
+@pytest.mark.parametrize("cmd", ["curl -u user:probe-password https://example.com", "mysql -pprobe-password db",
+                                 "sshpass -p probe-password ssh host"])
+def test_s9_plain_passwords(cmd):
+    assert "probe-password" not in redact(cmd)
+
+
+@pytest.mark.parametrize("cmd", ['curl -u "user:probe-password" https://example.com', "mysql -p'probe-password' db",
+                                 'sshpass -p "probe-password" ssh host'])
+def test_s9_quoted_passwords(cmd):
+    assert "probe-password" not in redact(cmd)
+
+
+# A private key behind a secret-looking name (`private_key: -----BEGIN ...`, a service-account JSON, a .env line).
+# The KEY=value rule used to mask only the `-----BEGIN` word, which broke the PEM rule and left the key body visible.
+_PEM_BODY = "MIIEvQ" + "Ab3/" * 40
+_PEM = "-----BEGIN RSA PRIVATE KEY-----\n" + _PEM_BODY + "\n-----END RSA PRIVATE KEY-----"
+
+
+@pytest.mark.parametrize("text", [
+    "key: " + _PEM,
+    "private_key: " + _PEM + "\nnext: line",
+    '{"private_key": "' + _PEM.replace("\n", "\\n") + '", "client_email": "x@example.com"}',
+    "TLS_KEY=" + _PEM,
+    "SSH_PRIVATE_KEY='" + _PEM + "'",
+    "token -----BEGIN PRIVATE KEY-----\n" + _PEM_BODY,  # unterminated
+])
+def test_private_key_behind_a_secret_name(text):
+    out = redact(text)
+    assert "MIIEvQ" not in out and "Ab3/Ab3/" not in out
+    assert "[redacted]" in out
+
+
+def test_private_key_rule_keeps_the_rest():
+    assert redact("private_key: " + _PEM + "\nnext: line").endswith("\nnext: line")
+    assert redact("cat id_rsa\n" + _PEM + "\nexit 0") == "cat id_rsa\n[redacted]\nexit 0"
+
+
+# The CLI-password and URL rules are skipped by a substring test when their literal word is absent (ReDoS budget:
+# 0.2.1's new rules added several full regex passes per call). The gate must never skip a text the rule would mask.
+@pytest.mark.parametrize("cmd,secret", [
+    ("x " * 60_000 + "curl -u admin:" + "hunter2Pw" + " https://api.example.com", "hunter2Pw"),
+    ("-u admin:" + "hunter2Pw" + " " + "x " * 60_000 + "| curl -K -", "hunter2Pw"),  # the tool is named far after the flag
+    ("mariadb -p" + "hunter2Pw" + " shop", "hunter2Pw"),
+    ("mysqldump -p" + "hunter2Pw" + " shop", "hunter2Pw"),
+    ("redis-cli -a " + "hunter2Pw" + " ping", "hunter2Pw"),
+    ("sshpass -p " + "hunter2Pw" + " ssh host", "hunter2Pw"),
+    ("tool --password " + "hunter2Pw", "hunter2Pw"), ("tool --passphrase=" + "hunter2Pw", "hunter2Pw"),
+    ("tool --passwd " + "hunter2Pw", "hunter2Pw"), ("tool --pass " + "hunter2Pw", "hunter2Pw"),
+    ("git clone postgres://bob:" + "hunter2Pw" + "@db.example.com/x", "hunter2Pw"),
+    ("Q" * 100_000 + "7", "QQQQQQQQ"), ("7" + "Q" * 100_000, "QQQQQQQQ"),  # one long mixed token: masked whole
+])
+def test_gated_rules_still_mask(cmd, secret):
+    assert secret not in redact(cmd)
+
+
+def _ungated(text):
+    """redact() with every rule applied unconditionally: the reference the substring and word gates must equal."""
+    from nocap import evidence as E
+    out = E._PEM_RE.sub(E.REDACTED, text)
+    out = E._USERINFO_RE.sub(lambda m: m.group(1) + E.REDACTED + "@", out)
+    out = E._ASSIGN_RE.sub(E._assign, out)
+    out = E._KEYWORD_SPACE_RE.sub(lambda m: m.group(1) + m.group(2) + m.group(3) + E.REDACTED
+                                  if m.group(4) != E.REDACTED else m.group(0), out)
+    out = E._DOTTED_TOKEN_RE.sub(E.REDACTED, out)
+    out = E._AWS_SECRET_RE.sub(E._aws_secret, out)
+    for rx in E.SECRET_RES:
+        out = rx.sub(E.REDACTED, out)
+    if E._CURL_RE.search(out):
+        out = E._CURL_USER_RE.sub(E._MASK, out)
+    if E._MYSQL_RE.search(out):
+        out = E._MYSQL_PW_RE.sub(E._MASK, out)
+    if E._REDIS_RE.search(out):
+        out = E._REDIS_PW_RE.sub(E._MASK, out)
+    for rx in E._FLAG_PW_RES:
+        out = rx.sub(E._MASK, out)
+    return out
+
+
+_GATE_CASES = [
+    "ＴＯＫＥＮ=abc", "Token: abc", "TOKEN=abc", "\u212aEY=abc", "\u017fecret=abc", "pa\u017f\u017fword hunter2", "se\u0441ret=abc",
+    "se\u0131ss\u0131on_id=abc", "sess\u0131on_id=abc1", "SESS\u0130ON=abc", "to\u212aen abc", "\u212aey: v", "pa\u017fsw=1",
+    "x_KEY=1", "apikey: 1", "API-KEY 1", "Authorization: Bearer abc.def", "auth=1", "DSN=postgres://u:p@h/d",
+    "Cookie: a=b", "session_id=1", "sessionid: 1", "PWD=/tmp", "pwd hunter2", "PASSWD hunter2", "credentials=1",
+    "no secrets here, just words: tok en, sec ret, k e y", "tоken=abc", "", " ", "a=b c:d e=f",
+]
+
+
+@pytest.mark.parametrize("text", _GATE_CASES)
+def test_gates_equal_the_ungated_rules(text):
+    assert redact(text) == _ungated(text)
+
+
+def test_gates_equal_the_ungated_rules_on_the_redos_corpus():
+    from redos_inputs import inputs
+    for name, text in inputs().items():
+        assert redact(text) == _ungated(text), name

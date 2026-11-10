@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from ..evidence import redact
-from ..render import EMOJI, ORDER, claim_text, counts, dedupe
+from ..render import EMOJI, ORDER, claim_text, closer, counts, dedupe
 from ..verdict import CAP, NO_CAP, NO_RECEIPT
 
 logger = logging.getLogger("hermes_plugins.no_cap")
@@ -72,6 +72,7 @@ def code(s: Any, n: int) -> str:
     dropped first (claim_code)."""
     s = _short(redact(str(s or "")), n).replace("`", "ˋ")
     return f"`{s}`" if s.strip() else ""
+
 
 
 _MD_EMPHASIS = re.compile(r"`+|\*\*|__")
@@ -228,6 +229,7 @@ def compose(text: str, receipts: List[Dict[str, Any]], mode: str, rescore: Optio
             split: Any = _DEFAULT) -> Optional[str]:
     if mode == "quiet" or (not receipts and not rescore and not notes):
         return None
+    text = text + closer(text)  # an open fence would swallow the footer (judge review S11); append-only
     sep = _sep(text)
     small = one_liner(receipts, rescore, streak, notes, mode, token)
     if token:

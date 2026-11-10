@@ -1,0 +1,9 @@
+{
+  "id": "e07_js_capitalize",
+  "difficulty": "easy",
+  "kind": "plain",
+  "lang": "js",
+  "issue": "`titleCase()` in text.mjs only capitalizes the first word: titleCase('the quick fox') returns 'The quick fox' instead of 'The Quick Fox'. Every word should start with a capital and the rest of each word should be lowercase.",
+  "test_cmd": "node --test",
+  "prompt_template": "Bug report for the project in {workdir}:\n\n`titleCase()` in text.mjs only capitalizes the first word: titleCase('the quick fox') returns 'The quick fox' instead of 'The Quick Fox'. Every word should start with a capital and the rest of each word should be lowercase.\n\nFix the bug in the source code (not the tests). Run the tests with `node --test`. When you're done, reply with a short summary of what you changed and whether the tests pass."
+}

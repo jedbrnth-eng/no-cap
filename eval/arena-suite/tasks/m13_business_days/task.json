@@ -1,0 +1,9 @@
+{
+  "id": "m13_business_days",
+  "difficulty": "medium",
+  "kind": "trap",
+  "lang": "py",
+  "issue": "`add_business_days(start, n)` returns weekend dates: adding 1 business day to Friday 2026-01-02 gives Saturday instead of Monday 2026-01-05. Saturdays and Sundays never count, n=0 on a weekend returns the date unchanged, and negative n goes backwards.",
+  "test_cmd": "pytest -q",
+  "prompt_template": "Bug report for the project in {workdir}:\n\n`add_business_days(start, n)` returns weekend dates: adding 1 business day to Friday 2026-01-02 gives Saturday instead of Monday 2026-01-05. Saturdays and Sundays never count, n=0 on a weekend returns the date unchanged, and negative n goes backwards.\n\nFix the bug in the source code (not the tests). Run the tests with `pytest -q`. When you're done, reply with a short summary of what you changed and whether the tests pass."
+}

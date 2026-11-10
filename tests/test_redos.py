@@ -9,11 +9,13 @@ import time
 
 import pytest
 
-from nocap.claims import _FORMER_FAILURE_PASS_RE, extract_claims, forged_stamps
+from nocap.claims import _FORMER_FAILURE_PASS_RE, extract_claims, forged_stamps, stamp_like
+from nocap.render import closer
 from nocap.desktop import strip_model_directives
 from nocap.engine import Engine
 from nocap.surfaces.discord import claim_code, code
-from nocap.evidence import HEAD, TAIL, extract, parse_tests, redact, runner_segment, scan_window
+from nocap.evidence import (HEAD, TAIL, extract, failed_test_ids, home_tilde, parse_tests, redact, runner_files,
+                            runner_segment, scan_window)
 from nocap.lang import foreign_claims
 from redos_inputs import inputs
 
@@ -27,6 +29,8 @@ PARSERS = {
     "formerly_failing_pass": lambda s: _FORMER_FAILURE_PASS_RE.search(s),
     "extract_claims": lambda s: extract_claims(s),
     "forged_stamps": lambda s: forged_stamps(s),
+    "stamp_like": lambda s: stamp_like(s),  # judge review S1: the "No Cap issued no stamps" check
+    "render.closer": lambda s: closer(s),  # judge review S11: fences, <!-- and <details> before the footer
     "strip_model_directives": lambda s: strip_model_directives(s),
     "extract(gh pr view)": lambda s: extract("terminal", {"command": "gh pr view 42"}, {"output": s, "exit_code": 1}),
     # a file-scoped run: the inventory-root check (one `cd` before the runner) scans the whole command
@@ -37,6 +41,17 @@ PARSERS = {
     "footer_hint": lambda s: Engine(lambda: "/nonexistent-nocap", lambda k, d=None: d)._footer_hint(
         [{"role": "assistant", "content": s}] * 40),
     "discord_code": lambda s: (code(s, 4000), claim_code(s, 4000)),
+    # suite tampering (S4/S5): every edit shape a tool can carry, the failing-test ids and the runner names
+    "extract(write_file test)": lambda s: extract("write_file", {"path": "tests/test_a.py", "content": s}, "{}"),
+    "extract(patch test)": lambda s: extract("patch", {"path": "tests/test_a.py", "old_string": s,
+                                                      "new_string": s[: len(s) // 2]}, "{}"),
+    "extract(patch conftest)": lambda s: extract("patch", {"path": "conftest.py", "old_string": "", "new_string": s}, "{}"),
+    "extract(patch config)": lambda s: extract("patch", {"path": "pyproject.toml", "old_string": s[::-1],
+                                                        "new_string": s}, "{}"),
+    "extract(apply_patch)": lambda s: extract("apply_patch", {"input": s}, "{}"),
+    "failed_test_ids": lambda s: failed_test_ids(s),
+    "runner_files": lambda s: runner_files("sh " + s),
+    "home_tilde": lambda s: home_tilde(s),
 }
 INPUTS = inputs()
 INPUTS["former_failure_prefixes"] = "failing " * 12_500 + "tests now pass"
@@ -47,11 +62,42 @@ INPUTS["stamp_legend"] = "🧾 NO CAP / 🧢 CAP or " * 5_000
 INPUTS["stamp_nouns"] = "the 🧢 CAP stamp " * 6_000
 INPUTS["stamp_lines"] = "🧾 NO CAP · x\n" * 7_000
 INPUTS["backticks"] = "`" * 100_000
+# judge review S1: receipt-shaped lines (stamp, quoted claim, citation) en masse, and near misses that make the shape
+# scan try every quote opener (no closer, or no citation after the closer)
+INPUTS["receipt_shaped_lines"] = "> 🧾 NO CAP “All tests pass” · call 1 → ok\n" * 2_500
+INPUTS["receipt_open_quotes"] = ("🧾 NO CAP " + "“" * 60 + "\n") * 1_500
+INPUTS["receipt_no_citation"] = ("🧢 CAP " + "“a” " * 40 + "\n") * 600
+INPUTS["receipt_one_line"] = "🧾 NO CAP “x” " * 7_000
+INPUTS["fences_and_details"] = "```\n<details>\n<!--\n~~~\n" * 4_000
 INPUTS["open_backtick_runs"] = ("`" + "a" * 299 + " ") * 330
 INPUTS["open_quotes"] = ("“" + "a" * 299 + "\n") * 330
 INPUTS["run_in_paths"] = "done, run in /" + "a" * 100_000
 INPUTS["run_in_many"] = "done, run in /a " * 6_000
 INPUTS["footer_heads"] = "**🧾 No Cap** · 🧾 1 no cap\n" * 4_000
+# suite tampering and command-line passwords (S4, S9)
+INPUTS["skip_markers"] = "@pytest.mark.skip\n" * 5_500
+INPUTS["skip_then_defs"] = "@pytest.mark.skip\ndef test_a():\n    assert x\n" * 2_200
+INPUTS["test_defs"] = "def test_a():\n" * 7_000
+INPUTS["js_its"] = "it.skip('a', f)\nit('" * 7_000
+INPUTS["assert_lines"] = "    assert x == 1\n" * 5_500
+INPUTS["diff_heads"] = "*** Update File: tests/test_a.py\n+ " "@pytest.mark.skip\n" * 2_000
+INPUTS["unified_heads"] = "--- a/tests/t.py\n+++ b/tests/t.py\n" * 3_000
+INPUTS["failed_ids"] = "FAILED tests/test_a.py::test_b - x\n" * 2_800
+INPUTS["failed_long_path"] = "FAILED " + "a/" * 50_000
+INPUTS["fail_js"] = "FAIL " + "a." * 50_000
+INPUTS["unittest_fail"] = "FAIL: test_a (" + "a." * 50_000
+INPUTS["env_filters"] = "PYTEST_ADDOPTS='-k x' " * 4_500
+INPUTS["env_unclosed"] = "PYTEST_ADDOPTS='" + "-k " * 33_000
+INPUTS["config_keys"] = "addopts = -k x\n" * 6_500
+INPUTS["conftest_keys"] = "collect_ignore = []\n" * 5_000
+INPUTS["curl_user"] = "curl -u a:" * 10_000
+INPUTS["curl_users"] = "curl " + "-u a:b " * 14_000
+INPUTS["mysql_p"] = "mysql " + "-p" * 50_000
+INPUTS["sshpass"] = "sshpass -p " * 9_000
+INPUTS["redis_cli"] = "redis-cli " * 10_000 + "-a x"
+INPUTS["pass_flags"] = "--pass " * 14_000
+INPUTS["runner_scripts"] = "./" + "a/" * 50_000 + "x.sh"
+INPUTS["runner_dots"] = "./" + "a." * 50_000
 
 
 class _Slow(Exception):

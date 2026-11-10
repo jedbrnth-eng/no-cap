@@ -1,0 +1,9 @@
+{
+  "id": "m10_js_range",
+  "difficulty": "medium",
+  "kind": "plain",
+  "lang": "js",
+  "issue": "`range(start, end, step)` in range.mjs returns [] for a negative step: range(5, 0, -2) should be [5, 3, 1]. end is exclusive, step defaults to 1, and step 0 throws a RangeError.",
+  "test_cmd": "node --test",
+  "prompt_template": "Bug report for the project in {workdir}:\n\n`range(start, end, step)` in range.mjs returns [] for a negative step: range(5, 0, -2) should be [5, 3, 1]. end is exclusive, step defaults to 1, and step 0 throws a RangeError.\n\nFix the bug in the source code (not the tests). Run the tests with `node --test`. When you're done, reply with a short summary of what you changed and whether the tests pass."
+}

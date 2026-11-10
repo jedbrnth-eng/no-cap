@@ -34,5 +34,5 @@ def test_every_version_string_agrees():
     assert len(set(versions.values())) == 1, versions
 
 
-def test_version_is_0_2_0():
-    assert _plugin_yaml_version() == "0.2.0"
+def test_version_is_0_2_1():
+    assert _plugin_yaml_version() == "0.2.1"

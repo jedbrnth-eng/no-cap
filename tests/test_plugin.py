@@ -225,7 +225,7 @@ def test_nocap_command_shows_last_receipts(plugin):
 def test_purge(plugin):
     _, ctx = plugin
     reply(ctx, "All tests pass.")
-    out = ctx.commands["nocap"]("purge", session_id="s1")
+    out = ctx.commands["nocap"]("purge", session_id="s1", platform="cli")  # local-only (judge review S12)
     assert "removed" in out.lower()
     assert not (ctx.state.data_dir / "receipts.jsonl").exists()
 
@@ -238,10 +238,30 @@ def test_cap_self_verifies_file_and_skips_steer(tmp_path):
     (work / "docs" / "notes.md").write_text("hi")
     ctx.session_cwd = lambda: str(work)
     mod.register(ctx)
+    ctx.hooks["post_tool_call"](tool_name="terminal", args={"command": "ls"}, result=json.dumps({"output": "", "exit_code": 0}),
+                                session_id="s1", turn_id="t1", status="ok")
     reply(ctx, "Created `docs/notes.md`.")
     msg = ctx.commands["cap"]("", session_id="s1")
-    assert "🤔 → 🧾" in msg and "exists" in msg
+    assert "🤔 → 🧾" in msg and "exists" in msg and "after the session started" in msg
     assert ctx.injected == []
+
+
+def test_cap_does_not_vouch_for_a_file_older_than_the_session(tmp_path):
+    """S6: "I created README.md" for a README that was there before the session is not proven by existing."""
+    import os
+    mod = load_plugin()
+    ctx = FakeCtx(tmp_path)
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "README.md").write_text("old")
+    os.utime(work / "README.md", (1_000_000_000, 1_000_000_000))
+    ctx.session_cwd = lambda: str(work)
+    mod.register(ctx)
+    ctx.hooks["post_tool_call"](tool_name="terminal", args={"command": "ls"}, result=json.dumps({"output": "", "exit_code": 0}),
+                                session_id="s1", turn_id="t1", status="ok")
+    reply(ctx, "I created `README.md`.")
+    msg = ctx.commands["cap"]("", session_id="s1")
+    assert "🤔 → 🧾" not in msg
 
 
 def verify_hook(ctx, text, attempt=0, session="s1"):

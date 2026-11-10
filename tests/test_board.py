@@ -407,7 +407,7 @@ def test_cache_picks_up_appends_and_truncation(tmp_path, monkeypatch):
     assert B.build_board(srcs)["totals"]["replies"] == 1
     a.honest()
     assert B.build_board(srcs)["totals"]["replies"] == 2
-    a.ctx.commands["nocap"]("purge")
+    a.ctx.commands["nocap"]("purge", platform="cli")  # purge is local-only (judge review S12)
     assert B.build_board(B.discover_sources(root=root))["totals"]["replies"] == 0
     a.lie()
     assert B.build_board(B.discover_sources(root=root))["totals"]["replies"] == 1

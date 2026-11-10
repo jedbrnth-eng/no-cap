@@ -220,23 +220,77 @@ def _in_prose(t: str, m: "re.Match[str]", spans: List[Tuple[int, int]], k: int) 
     return False
 
 
-def forged_stamps(text: str) -> int:
-    """How many No Cap stamps the model wrote itself (copied or invented), in receipt position. A stamp the reply
-    explains or quotes (code, blockquote, quoted phrase, legend, the stamp as a noun) is not counted."""
-    if not isinstance(text, str):
-        return 0
-    raw = _inert(text[:MAX_SCAN])
-    t = unicodedata.normalize("NFKC", raw)
-    # invisible format characters (zero-width, soft hyphen, bidi controls) and combining marks (N̲O̲) are dropped,
-    # and Cyrillic / Greek lookalikes of N O C A P R E I T are read as Latin, so a homoglyph stamp is still a stamp
+def _norm_stamps(s: str) -> str:
+    """NFKC; invisible format characters (zero-width, soft hyphen, bidi controls) and combining marks (N̲O̲) dropped;
+    Cyrillic / Greek lookalikes of N O C A P R E I T read as Latin, so a homoglyph stamp is still a stamp. Newlines
+    are never added or removed, so line k of the result is line k of the input."""
+    t = unicodedata.normalize("NFKC", s)
     t = "".join(ch for ch in t if unicodedata.category(ch) not in ("Cf", "Mn", "Me")).translate(_CONFUSABLE)
     t = t.replace("*", "").replace("_", " ")
-    t = re.sub(r"[ \t\u00a0]+", " ", t)
+    return re.sub(r"[ \t\u00a0]+", " ", t)
+
+
+# A RECEIPT-SHAPED line (judge review S1): a stamp, then a quoted claim, then a citation (`call N`, `turn N` or `→`).
+# That is what a real receipt line looks like, so it is a forgery wherever it sits: a blockquote, quotation marks, a
+# list, a code span or a fence, or after a "noun" word ("🧾 NO CAP lines: “...” · call 1"). Only stamps WITHOUT a
+# quoted claim and a citation (a legend, `🧾 NO CAP` in a code span, "the 🧢 CAP stamp") stay exempt below.
+# The stamp is the worded one, or a bare emoji right before a quoted claim (the Discord footer: 🧾 `merged #7`).
+_SHAPE_STAMP_RE = re.compile(r"[🧾🧢🤔]\W{0,6}(?:N\W{0,3}O\W{0,3}C\W{0,3}A\W{0,3}P\b|C\W{0,3}A\W{0,3}P\b|"
+                             r"N\W{0,3}O\W{0,3}RECEIPT)|[🧾🧢🤔][ ]?(?=[“\"`‘])", re.I)
+_SHAPE_CITE_RE = re.compile(r"\b(?:call|turn) ?#?\d|→")
+_QUOTES = {"“": "”", "\"": "\"", "`": "`", "‘": "’"}  # not ': an apostrophe (don't, it's) is no quote
+_QUOTE_OPEN_RE = re.compile(r"[“\"`‘]")
+SHAPE_WINDOW = 400  # characters after a stamp looked at for the quote and the citation (keeps the scan linear)
+STAMP_LIKE_RE = re.compile(r"[🧾🧢🤔]\W{0,6}(?:N\W{0,3}O\W{0,3}C\W{0,3}A\W{0,3}P\b|C\W{0,3}A\W{0,3}P\b|"
+                           r"N\W{0,3}O\W{0,3}RECEIPT)|^[^\w\n]*Receipts[^\w\n]*$|^[^\w\n]*Receipts ?·", re.I | re.M)
+
+
+def _receipt_shaped(line: str) -> bool:
+    """A stamp, a closed quote that starts after it, and a citation after that quote, within SHAPE_WINDOW. Each step
+    is one bounded search, and at most 3 stamps and 3 quote openers are tried per line (linear; tests/test_redos.py)."""
+    for m in itertools.islice(_SHAPE_STAMP_RE.finditer(line), 3):
+        win = line[m.end():m.end() + SHAPE_WINDOW]
+        for q in itertools.islice(_QUOTE_OPEN_RE.finditer(win), 3):
+            j = win.find(_QUOTES[q.group(0)], q.end())
+            if j > q.end() and _SHAPE_CITE_RE.search(win, j + 1):
+                return True
+    return False
+
+
+def stamp_like(text: str) -> bool:
+    """The reply holds something that looks like a No Cap stamp or footer header, anywhere (quoted, coded, or not)."""
+    if not isinstance(text, str) or not text:
+        return False
+    return STAMP_LIKE_RE.search(_norm_stamps(text[:MAX_SCAN])) is not None
+
+
+def forged_stamps(text: str) -> int:
+    """How many No Cap stamps the model wrote itself (copied or invented). A receipt-shaped line counts wherever it
+    sits; any other stamp counts in receipt position only (a stamp the reply explains, quotes or codes, a legend, the
+    stamp as a noun, is not counted)."""
+    if not isinstance(text, str):
+        return 0
+    cut = text[:MAX_SCAN]
+    full = _norm_stamps(cut)  # normalized once; the inert copy below is blanked from it (newlines kept, lines align)
+    shaped, looked = set(), 0
+    for k, line in enumerate(full.split("\n")):
+        if len(shaped) >= MAX_FORGED or looked >= 2 * MAX_FORGED:
+            break  # bounded like the stamp count: a reply with this many stamp lines is a spoof either way
+        if _QUOTE_OPEN_RE.search(line) is None or _SHAPE_STAMP_RE.search(line) is None:
+            continue
+        looked += 1
+        if _receipt_shaped(line):
+            shaped.add(k)
+    raw = cut
+    t = re.sub(r"[ \t]{2,}", " ", _inert(full))  # blanked spans collapse, as before: the prose windows read the same
+    if shaped:
+        t = "\n".join("" if k in shaped else line for k, line in enumerate(t.split("\n")))  # counted once, above
     found = list(itertools.islice(STAMP_FORGED_RE.finditer(t), MAX_FORGED))  # bounded: the count only feeds a warning
     spans = [m.span() for m in found]
     stamps = sum(1 for k, m in enumerate(found) if not _in_prose(t, m, spans, k))
     if re.search(r"[\u202e\u2067]", raw):  # right-to-left override: "PAC ON" is shown as "NO CAP"
         stamps += len(re.findall(r"(?<!`)[🧾🧢🤔📜🎓]\W{0,6}P\W{0,3}A\W{0,3}C\b", t, re.I))
+    stamps = min(MAX_FORGED, stamps + len(shaped))
     return stamps or len(re.findall(r"^[^\w\n]*Receipts[^\w\n]*$|^[^\w\n]*Receipts[ \t]*·", t, re.M))
 
 

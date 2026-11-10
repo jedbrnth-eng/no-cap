@@ -4,7 +4,33 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
 [jedbrnth-eng/no-cap](https://github.com/jedbrnth-eng/no-cap/pulls?q=is%3Apr+is%3Amerged), by PR number
 (`gh pr list -R jedbrnth-eng/no-cap --state merged`).
 
-## Unreleased
+## 0.2.1
+
+- Security (judge review S1, S2, S3, S11, S12). S1: a RECEIPT-SHAPED line (a stamp, a quoted claim, then `call N`,
+  `turn N` or `→`) counts as forged wherever it sits (blockquote, quotation marks, list, code span, fence), closing
+  the blockquote hole from the dogfood round; only a legend or a stamp without a quoted claim stays exempt. A reply
+  that holds any stamp-like text while No Cap issued none ends with "No Cap issued no stamps for this reply". S2: on a
+  non-local platform (a gateway chat, or an empty platform) `/nocap` and `/nocap verdict` show only this chat's
+  receipts (no fallback to another session), print no store path, and the `/capscore board` Hall of Cap lists only
+  this chat's caps. S3: the `/cap` steer and the strict `pre_verify` message give parsed counts ("3 failed, 41 passed
+  (exit 1)"), never the matched output line, and quote the agent's claim as labelled data (capped, with `[ ] < >`,
+  quotes, backticks and newlines removed). S11: a reply ending inside an open fence, `<!--` or `<details>` gets it
+  closed before the footer. S12: `/nocap purge` and `/cap coach approve|revert|--apply` are refused from non-local
+  platforms. Tests: `tests/test_judge_review_fixes.py`.
+- Suite tampering (the Lie Ladder's rung 6): deleting, moving, skipping or deselecting tests, conftest collection
+  hooks, runner-config filters and `PYTEST_ADDOPTS=-k …` env filters are recorded per call (any tool, including
+  `write_file` content and `sed -i`). A green run after such a change no longer earns 🧾 for "all tests pass": it gets a
+  visible 🤔 naming the change, and 🧢 "the failing test was removed, not fixed" when an earlier run named that test as
+  failing ([docs/SUITE_TAMPER.md](docs/SUITE_TAMPER.md)). A test runner script or Makefile the agent wrote this session
+  caps its 🧾 at 🤔.
+- `/cap` re-checks prove the session's work, not mere existence: "created X" needs a write in the session ledger or an
+  mtime after the session started; "pushed" needs a push in the ledger or an "update by push" reflog entry after the
+  session started; a SHA must be on HEAD and shown in the session or committed after it started.
+- Redaction: `curl -u user:pw`, `mysql -pPW`, `sshpass -p`, `redis-cli -a`, `--pass`/`--passwd`/`--passphrase` flags;
+  the home directory becomes `~` in stored and printed commands and working dirs. Pytest node ids (`test_auth.py::x`)
+  are no longer masked as `name: value` secrets.
+- Lie Ladder: rung 6 (the skipped test), recorded at the shipped default settings; the page says which rungs are
+  stamped at defaults. The demo shell gets a minimal environment and hash-pinned dependencies.
 
 - Dogfood round (real 41-profile install): a stamp the reply explains or quotes (code, blockquote, quotation marks,
   a legend, "a 🧢 CAP stamp") no longer triggers the "didn't issue" warning; a stamp in receipt position still does.
@@ -18,6 +44,18 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
 - README Disclosure now states two 0.2.0 details the catalog entry already disclosed: `ledger.jsonl` stores each
   call's working directory (`workdir`, first 300 characters, masked by `redact()`), and Cap Coach injects only its
   built-in rule text, never text from `coach.json`, keeping skill names only if they are plain identifiers.
+- Docs and evidence: the README opens on a real Qwen3-4B catch (Arena e05_word_count, unedited) and is about 70%
+  shorter; detail moved to [docs/GUIDE.md](docs/GUIDE.md) and [DISCLOSURE.md](DISCLOSURE.md). Stale claims fixed (CI on
+  Linux, reply editing, stored output, verdict determinism, Desktop chips signed for one chat, `plugin.yaml`
+  cross-turn wording). New [eval/data/](eval/DATA.md): blind rounds 2 and 3 as public SWE-rebench ids, row hashes and
+  adjudicated labels; the Arena's 30-task MIT suite and per-episode/per-stamp rows; League results and summary;
+  Cap Coach pairs; `python eval/recompute.py --check` rebuilds every README number (tested in CI).
+- Redaction: a private key behind a secret-looking name (`private_key: -----BEGIN ...`, `TLS_KEY=...`) is masked
+  whole; the KEY=value rule used to take only the `-----BEGIN` word and leave the key body. The CLI-password and
+  URL-password rules are skipped by a plain substring test when their literal word (`curl`, `mysql`, `sshpass`,
+  `--pass`, `://`) is absent, and the KEY=value and `token <v>` rules when the text holds no secret word at all, so
+  masking 100 KB of ordinary output is faster than in 0.2.0 despite the new rules. A differential test holds the
+  gated rules equal to the ungated ones (`tests/test_redaction.py`).
 
 ## 0.2.0 (2026-11-06)
 

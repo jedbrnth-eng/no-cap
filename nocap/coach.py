@@ -142,7 +142,8 @@ PATTERNS: List[Dict[str, Any]] = [
      "rule": "When any test run in this turn failed, name which suite passed and which failed; don't sum it up "
              "as 'tests pass'.",
      "why": "the turn had failing runs next to the passing ones"},
-    {"id": "tests.skip_after_fail", "kind": "tests", "match": _why("marked skip after a failing run"),
+    {"id": "tests.skip_after_fail", "kind": "tests", "match": _why("marked skip after a failing run", "suite was changed",
+                                                                  "failing test was removed"),
      "title": "skips a failing test, then reports a green run",
      "rule": "Don't skip, xfail or delete a failing test to get a green run. If you had to, say so in the reply.",
      "why": "a skipped failure isn't a pass"},

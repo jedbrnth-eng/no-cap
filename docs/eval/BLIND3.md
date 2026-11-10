@@ -1,7 +1,9 @@
 # Blind real-run sample, round 3 (`01a1fab`)
 
 A third blind evaluation on a fresh sample of public SWE-rebench agent runs that no earlier round, label file or test
-had seen. Only method and aggregate counts are published here: no claim text, no run text.
+had seen. No claim text or run text is copied here; the run ids, row hashes, both raters' labels and the adjudicated
+label of every item are in [eval/data/blind3_items.csv](../../eval/data/blind3_items.csv) (columns:
+[eval/DATA.md](../../eval/DATA.md)), and `python eval/recompute.py` rebuilds the numbers below.
 
 **Quote this:** 🧾 precision 0.92 (92/100, 95% CI 0.85–0.96) on a fresh blind sample of public SWE-rebench runs at
 01a1fab, two raters (Claude, Gemini 3.8 Flash; kappa 0.66), adjudicated. No 🧢 appeared on unseen runs in round 3, so
