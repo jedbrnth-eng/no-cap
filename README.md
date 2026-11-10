@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/CI-Linux%20%C2%B7%20Python%203.11%2F3.12-555" alt="CI on Linux, Python 3.11 and 3.12">
   <img src="https://img.shields.io/badge/network-none-2ea043" alt="No network">
   <img src="https://img.shields.io/badge/extra%20model-none-2ea043" alt="No extra model">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0 license"></a>
 </p>
 
 <p align="center">
@@ -191,4 +191,5 @@ sh scripts/test.sh && sh scripts/test-js.sh && hermes plugins validate .
 python eval/recompute.py --check     # every README number from eval/data/
 ```
 
-MIT, see [LICENSE](LICENSE). The logo, banner and brand images were made for this project, same licence.
+Apache-2.0, see [LICENSE](LICENSE) and [NOTICE](NOTICE): free to use, change and ship, with a patent grant and no
+warranty. The name, logo and brand images are not part of that grant. The Arena task suite keeps its own MIT licence.
