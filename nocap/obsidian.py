@@ -11,7 +11,9 @@ What it writes, only inside the vault the user named (never creates the vault it
   <mistakesFolder>/.ids/NNNN             (agent, pattern), created the first time and never edited afterwards; the
                                          id is reserved exactly as ABB does it (exclusive create in .ids)
 Every write is confined to the vault: relative folders only, no `..`, no hidden parts, no symlinked folder or note,
-O_NOFOLLOW on every open, temp file + os.replace for the agent note, and a lock in No Cap's own data dir.
+the vault held by one descriptor opened component by component with O_NOFOLLOW (an ancestor swapped for a symlink
+is refused), every later open relative to it, temp file + os.replace for the agent note, and an flock on the
+destination folder itself, so two Hermes homes writing into one vault serialize. An unknown profile writes nothing.
 
 What it reads back into the prompt: NOTHING from the vault. A vault note is writable by the user, by other tools
 and by the agent itself, so prose from it would be an injection path. The lesson line is built from No Cap's local
@@ -47,9 +49,9 @@ MAX_NOTE_BYTES = 4 * 1024 * 1024
 MAX_CONFIG_BYTES = 64 * 1024
 LEARN_MIN_CAPS = 2
 LEARN_MAX_RULES = 3
-LOCK_FILE = "obsidian.lock"
 BOARD_MODES = ("auto", "on", "off")
 HEADER_SCAN = 4096  # bytes of a board note read to find its source key
+BOARD_OPEN_MAX = 32  # board notes opened per cap write (only those named like the pattern)
 
 _AGENT_RE = re.compile(r"[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
 _PART_RE = re.compile(r"[^\x00-\x1f\x7f/\\:*?\"<>|]{1,80}")
@@ -217,10 +219,49 @@ def _dir(root: str, parts: List[str], create: bool = True) -> Path:
 
 
 @contextmanager
-def _pinned_dir(root: str, parts: List[str], create: bool = True):
-    """Pin each directory with openat(O_NOFOLLOW). A concurrent rename or symlink swap cannot redirect a write:
-    all later operations use the pinned directory fd, never a re-resolved absolute path."""
-    fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+def _vault_fd(real: str):
+    """The resolved vault held by one descriptor, opened ONE component at a time from `/` with O_NOFOLLOW. `real` is
+    a realpath, so it has no symlink in it: if any ancestor was swapped for a symlink after it was resolved, an open
+    fails and the write is refused, instead of following the swap out of the vault. Every later open is relative to
+    this descriptor. (A symlink the user configured in obsidian_vault itself was resolved by vault() and is used.)"""
+    if not os.path.isabs(real):
+        raise Refused(f"vault path {real!r} is not absolute")
+    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in Path(real).parts[1:]:
+            try:
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            except OSError as exc:
+                raise Refused(f"vault path changed while opening it (at {part!r}: {exc.strerror}); not written")
+            os.close(fd)
+            fd = child
+    except BaseException:
+        os.close(fd)
+        raise
+    try:
+        yield fd
+    finally:
+        os.close(fd)
+
+
+@contextmanager
+def _flock(fd: int):
+    """Exclusive lock on a pinned destination folder, shared by every Hermes home and thread writing into it (an
+    flock on its own open file description). Fails closed: no lock, no write."""
+    if fcntl is None:
+        raise Refused("Obsidian writes require POSIX directory handles and flock")
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    try:
+        yield fd
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+@contextmanager
+def _pinned_dir(base_fd: int, parts: List[str], create: bool = True):
+    """Pin each directory with openat(O_NOFOLLOW) below the held vault descriptor. A concurrent rename or symlink
+    swap cannot redirect a write: all later operations use the pinned directory fd, never an absolute path."""
+    fd = os.dup(base_fd)
     try:
         for part in parts:
             if create:
@@ -284,8 +325,14 @@ def _replace(path: Path, data: bytes, mode: int, dir_fd: Optional[int] = None) -
         raise
 
 
+def _title(pid: str) -> str:
+    t = BY_ID[pid]["title"]
+    return t[:1].upper() + t[1:]
+
+
 def note_header(agent: str) -> bytes:
-    return redact(f"---\ntype: nocap-lessons\nagent: {agent}\n---\n\n# {agent}: claims No Cap stamped 🧢 CAP\n\n"
+    # agent JSON-quoted: a profile named 123, null or true stays a string in YAML (and in ABB's unquote)
+    return redact(f"---\ntype: nocap-lessons\nagent: {json.dumps(agent)}\n---\n\n# {agent}: claims No Cap stamped 🧢 CAP\n\n"
             "Written by the No Cap plugin: one line per 🧢 CAP verdict (a claim the tool output in the same turn "
             "contradicted), redacted. The lessons this agent is given come from No Cap's own store and built-in "
             "rules, never from this note.\n\n").encode("utf-8")
@@ -295,11 +342,11 @@ def board_note(n: int, agent: str, pid: str, date: str, claim: str, evidence: st
     """(file name, text) of one Agent Black Box mistake note, the same layout ABB's toMarkdown writes."""
     p = BY_ID[pid]
     mid = f"M-{n:04d}"
-    title = p["title"][:1].upper() + p["title"][1:]
+    title = _title(pid)
     q = lambda s: json.dumps(s, ensure_ascii=False)  # noqa: E731 - JSON-quoted, as ABB writes it
     what = (f"No Cap stamped 🧢 CAP: the agent claimed “{escape_md(field(claim))}”, and the tool output "
             f"in the same turn said “{escape_md(field(evidence))}”.")
-    fm = ["---", f"id: {mid}", f"title: {q(title)}", f"date: {date}", f"agent: {agent}", "severity: high",
+    fm = ["---", f"id: {mid}", f"title: {q(title)}", f"date: {date}", f"agent: {q(agent)}", "severity: high",
           "status: open", f"tags: {q(['nocap', 'cap', p['kind']])}",
           f"related: [{q(log_link)}]", f"source: {q(f'nocap:{agent}:{pid}')}", f"updated: {date}",
           "type: agent-mistake", "agentbox-format: 2", "---", "", f"# {mid} {title}", ""]
@@ -319,7 +366,6 @@ class Bridge:
         self.data_dir = data_dir
         self.setting = setting
         self.agent = agent
-        self._lock = threading.Lock()
         self.last_error = ""
 
     # -- settings --
@@ -356,7 +402,7 @@ class Bridge:
 
     def who(self) -> Optional[str]:
         try:
-            return safe_agent(self.agent() or "default")
+            return safe_agent(self.agent())  # unknown or empty identity: None, never a fallback to "default"
         except Exception:
             return None
 
@@ -378,15 +424,18 @@ class Bridge:
             raise Refused(f"obsidian_folder must be a plain vault-relative folder, got {self.folder()!r}")
         return _dir(root, parts, create)
 
-    def board_parts(self, root: str) -> Optional[List[str]]:
-        """ABB's mistakes folder (from .agentbox.json, else ABB's default), or None when the board is off."""
+    def board_parts(self, vfd: int) -> Optional[List[str]]:
+        """ABB's mistakes folder (from .agentbox.json, else ABB's default), or None when the board is off. Read
+        relative to the held vault descriptor `vfd`."""
         mode = self.board_mode()
         if mode == "off":
             return None
-        with _pinned_dir(root, [], create=False) as root_fd:
-            raw = _read_nofollow(Path(ABB_CONFIG), MAX_CONFIG_BYTES, dir_fd=root_fd)
-        has_abb = raw is not None or os.path.isdir(Path(root) / ABB_DATA)
-        if mode == "auto" and not has_abb:
+        raw = _read_nofollow(Path(ABB_CONFIG), MAX_CONFIG_BYTES, dir_fd=vfd)
+        try:
+            has_data = stat.S_ISDIR(os.stat(ABB_DATA, dir_fd=vfd, follow_symlinks=False).st_mode)
+        except FileNotFoundError:
+            has_data = False
+        if mode == "auto" and raw is None and not has_data:
             return None
         cfg: Dict[str, Any] = {}
         if raw is not None:
@@ -403,44 +452,11 @@ class Bridge:
         return parts
 
     def board_dir(self, root: str, create: bool = True) -> Optional[Path]:
-        parts = self.board_parts(root)
+        with _vault_fd(root) as vfd:
+            parts = self.board_parts(vfd)
         return _dir(root, parts, create) if parts is not None else None
 
     # -- writing --
-    def _locked(self):
-        bridge = self
-
-        class _L:
-            def __enter__(self_inner):
-                if fcntl is None:
-                    raise Refused("Obsidian writes require POSIX directory handles and flock")
-                bridge._lock.acquire()
-                self_inner.fd = None
-                try:
-                    d = Path(bridge.data_dir())
-                    d.mkdir(mode=0o700, parents=True, exist_ok=True)
-                    self_inner.fd = os.open(d / LOCK_FILE, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
-                    fcntl.flock(self_inner.fd, fcntl.LOCK_EX)
-                except OSError:
-                    if self_inner.fd is not None:
-                        os.close(self_inner.fd)
-                    bridge._lock.release()
-                    raise  # fail closed: a thread lock alone cannot make a multi-process append safe
-                return self_inner
-
-            def __exit__(self_inner, *exc):
-                try:
-                    if self_inner.fd is not None:
-                        try:
-                            if fcntl is not None:
-                                fcntl.flock(self_inner.fd, fcntl.LOCK_UN)
-                        finally:
-                            os.close(self_inner.fd)
-                finally:
-                    bridge._lock.release()
-                return False
-        return _L()
-
     def record(self, receipts: List[Dict[str, Any]], session_id: str = "", turn_id: str = "",
                ts: Optional[float] = None, agent: Optional[str] = None) -> Dict[str, Any]:
         """Append one line per 🧢 in `receipts` to the agent's note, and the first board note per pattern."""
@@ -452,39 +468,41 @@ class Bridge:
         who = safe_agent(agent) if agent is not None else self.who()
         if not who:
             out["skipped"] = "agent name refused"
-            self.last_error = "agent name refused (letters, digits, . _ - only)"
+            self.last_error = "agent unknown or name refused (letters, digits, . _ - only); nothing attributed"
             return out
         try:
             root = self.vault()
             parts = safe_folder(self.folder())
             if parts is None:
                 raise Refused("obsidian_folder must be a plain vault-relative folder")
-            with self._locked(), _pinned_dir(root, parts) as note_fd:
-                path = Path(f"{who}.md")
-                old = _read_nofollow(path, MAX_NOTE_BYTES, dir_fd=note_fd)
-                buf = old if old is not None else note_header(who)
-                date = _date(ts if ts is not None else time.time())
-                firsts: Dict[str, Dict[str, Any]] = {}
-                for r in caps:
-                    rid = receipt_id(session_id, turn_id, r)
-                    pid = pattern_of(r)
-                    if pid in BY_ID:
-                        firsts.setdefault(pid, r)
-                    if re.search(rb"(?m) \^nc-" + rid.encode() + rb"\r?$", buf):
-                        continue
-                    if buf and not buf.endswith(b"\n"):
-                        buf += b"\n"
-                    buf += (entry_line(date, pid, _claim(r), _evidence(r), rid) + "\n").encode("utf-8", "replace")
-                    out["written"] += 1
-                if out["written"]:
-                    if len(buf) > MAX_NOTE_BYTES:
-                        raise Refused("agent note would exceed the size limit")
-                    mode = (os.stat(path, dir_fd=note_fd, follow_symlinks=False).st_mode & 0o777) if old is not None else 0o600
-                    _replace(path, buf, mode, dir_fd=note_fd)
-                link = "/".join(safe_folder(self.folder()) or [DEFAULT_FOLDER]) + f"/{who}"
+            with _vault_fd(root) as vfd:
+                with _pinned_dir(vfd, parts) as note_fd, _flock(note_fd):  # one lock per destination folder
+                    path = Path(f"{who}.md")
+                    old = _read_nofollow(path, MAX_NOTE_BYTES, dir_fd=note_fd)
+                    buf = old if old is not None else note_header(who)
+                    date = _date(ts if ts is not None else time.time())
+                    firsts: Dict[str, Dict[str, Any]] = {}
+                    for r in caps:
+                        rid = receipt_id(session_id, turn_id, r)
+                        pid = pattern_of(r)
+                        if pid in BY_ID:
+                            firsts.setdefault(pid, r)
+                        if re.search(rb"(?m) \^nc-" + rid.encode() + rb"\r?$", buf):
+                            continue
+                        if buf and not buf.endswith(b"\n"):
+                            buf += b"\n"
+                        buf += (entry_line(date, pid, _claim(r), _evidence(r), rid) + "\n").encode("utf-8", "replace")
+                        out["written"] += 1
+                    if out["written"]:
+                        if len(buf) > MAX_NOTE_BYTES:
+                            raise Refused("agent note would exceed the size limit")
+                        mode = ((os.stat(path, dir_fd=note_fd, follow_symlinks=False).st_mode & 0o777)
+                                if old is not None else 0o600)
+                        _replace(path, buf, mode, dir_fd=note_fd)
+                link = "/".join(parts) + f"/{who}"
                 for pid, r in firsts.items():
                     try:
-                        made = self._board(root, who, pid, date, r, link)
+                        made = self._board(vfd, who, pid, date, r, link)
                     except (Refused, OSError) as exc:
                         self.last_error = f"board: {exc}"
                         continue
@@ -496,25 +514,32 @@ class Bridge:
             self.last_error = str(exc)
         return out
 
-    def _board(self, root: str, who: str, pid: str, date: str, r: Dict[str, Any], link: str) -> Optional[str]:
-        parts = self.board_parts(root)
+    def _board(self, vfd: int, who: str, pid: str, date: str, r: Dict[str, Any], link: str) -> Optional[str]:
+        parts = self.board_parts(vfd)
         if parts is None:
             return None
-        with _pinned_dir(root, parts) as board_fd:
+        with _pinned_dir(vfd, parts) as board_fd, _flock(board_fd):
             return self._board_at(board_fd, who, pid, date, r, link)
 
     def _board_at(self, board_fd: int, who: str, pid: str, date: str,
                   r: Dict[str, Any], link: str) -> Optional[str]:
+        """Bounded: the folder is LISTED (names only) to find the next id, but only notes named like this pattern's
+        own title (`M-NNNN <slug>.md`) are opened, at most BOARD_OPEN_MAX, to find an existing source key."""
         src = f'source: "nocap:{who}:{pid}"'.encode()
+        tail = f" {_slug(_title(pid))}.md"
         top = 0
+        candidates: List[str] = []
         for entry in os.scandir(board_fd):
             m = _BOARD_NAME_RE.match(entry.name)
             if m:
                 top = max(top, int(m.group(1)))
-            if not entry.name.endswith(".md") or not entry.is_file(follow_symlinks=False):
-                continue
+                if entry.name.endswith(tail):
+                    candidates.append(entry.name)
+        if len(candidates) > BOARD_OPEN_MAX:
+            raise Refused(f"over {BOARD_OPEN_MAX} board notes named {tail.strip()!r}; not scanning them all")
+        for name in candidates:
             try:
-                fd = os.open(entry.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=board_fd)
+                fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=board_fd)
                 with os.fdopen(fd, "rb") as fh:
                     if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
                         continue

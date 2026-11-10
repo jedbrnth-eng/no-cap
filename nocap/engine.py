@@ -126,7 +126,7 @@ class Engine:
         self.coach = Coach(data_dir, setting, lambda: self.store.records(), self.home, inject)  # nocap/coach.py
         self.cwd = cwd or (lambda: "")
         self.profile = board.profile_name  # who this turn runs as, recorded with each reply for the Cap Board
-        self.obsidian = obsidian.Bridge(data_dir, setting, lambda: self.profile() or "default")  # nocap/obsidian.py
+        self.obsidian = obsidian.Bridge(data_dir, setting, lambda: self.profile())  # unknown profile: no attribution
         self.store = Store(data_dir, lambda: setting("retention_days", 30))
         self.ledger = Ledger(data_dir, lambda: setting("retention_days", 30))  # cross-turn receipts, per session
         self._turns: "OrderedDict[Tuple[str, str], List[Dict[str, Any]]]" = OrderedDict()
@@ -174,6 +174,8 @@ class Engine:
 
     def _with_lessons(self, got: Optional[Dict[str, str]], model: str) -> Optional[Dict[str, str]]:
         """Obsidian lessons bridge: this agent's recurring 🧢 patterns as built-in rule lines (fail open)."""
+        if not self.obsidian.learn_on():  # off: no store read, no Coach lookup
+            return got
         try:
             skip = {str(p.get("pattern") or "") for p in self.coach.active_rules(model)}
             text = self.obsidian.lessons(self.store.records(), exclude=skip)

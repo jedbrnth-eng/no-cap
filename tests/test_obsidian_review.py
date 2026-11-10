@@ -212,3 +212,68 @@ def test_b7_yaml_profile_is_still_a_string(name):
     assert yaml.safe_load(head)["agent"] == name
     _, text = O.board_note(1, name, "tests.failed_run", "2026-11-10", "c", "e", "No Cap/" + name)
     assert yaml.safe_load(text.split("---")[1])["agent"] == name
+
+
+# ---- break-it: the fixes under harder versions of the same attacks ---------------------------------------------
+def _own_store_append(vault, data, i):
+    cfg = {"obsidian_vault": str(vault), "obsidian_board": "on"}
+    got = O.Bridge(lambda: Path(data), lambda k, d=None: cfg.get(k, d), lambda: "alpha").record([R], "p", f"t{i}")
+    assert got["written"] == 1, got
+
+
+def test_break_it_eight_processes_eight_stores_one_vault(tmp_path):
+    """B3 for real: eight processes, each with its OWN data dir (eight Hermes homes), append to one note."""
+    import multiprocessing
+    v = tmp_path / "vault"
+    (v / "Agent Black Box").mkdir(parents=True)
+    ctx = multiprocessing.get_context("spawn")
+    kids = [ctx.Process(target=_own_store_append, args=(v, tmp_path / f"data{i}", i)) for i in range(8)]
+    for k in kids:
+        k.start()
+    try:
+        for k in kids:
+            k.join(timeout=30)
+            assert k.exitcode == 0
+    finally:
+        for k in kids:
+            if k.is_alive():
+                k.terminate()
+                k.join(timeout=5)
+    lines = [l for l in (v / "No Cap" / "alpha.md").read_text(encoding="utf-8").splitlines() if l.startswith("- ")]
+    assert len(lines) == len(set(lines)) == 8
+    assert len(list((v / "Agent Black Box" / "Mistakes").glob("M-*.md"))) == 1  # board dedupe holds across stores
+
+
+def test_break_it_grandparent_swap_and_swap_back_to_same_tree(tmp_path):
+    """B1: swap a GRANDparent, and separately swap an ancestor for a symlink to the very same tree. Both refused:
+    once resolved, the vault path must be walked without any symlink, whatever the link points at."""
+    gp = tmp_path / "gp"
+    (gp / "parent" / "vault").mkdir(parents=True)
+    outside = tmp_path / "outside"
+    (outside / "parent" / "vault").mkdir(parents=True)
+    b = bridge(tmp_path / "data", cfg_for(gp / "parent" / "vault"))
+    orig = b.vault
+
+    def race_gp():
+        root = orig()
+        gp.rename(tmp_path / "kept")
+        gp.symlink_to(outside, target_is_directory=True)
+        return root
+
+    b.vault = race_gp
+    assert b.record([R], "s", "t")["written"] == 0
+    assert list(outside.rglob("*.md")) == []
+    gp.unlink()
+    (tmp_path / "kept").rename(gp)
+    b.vault = orig
+    assert b.record([R], "s", "t")["written"] == 1  # untouched path: writes again
+
+    def race_same():
+        root = orig()
+        (tmp_path / "kept2").symlink_to(gp / "parent", target_is_directory=True)
+        (gp / "parent").rename(tmp_path / "real-parent")
+        (tmp_path / "kept2").rename(gp / "parent")
+        return root
+
+    b.vault = race_same
+    assert b.record([R], "s", "t2")["written"] == 0
