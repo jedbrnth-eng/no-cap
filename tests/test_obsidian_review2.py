@@ -397,3 +397,101 @@ def test_r3_off_creates_no_cache_and_reads_no_store(tmp_path, cfg):
         mp.setattr(O, "open", spy, raising=False)
         assert e.on_turn_start(session_id="s", model="m") is None
     assert opened == [] and not (tmp_path / "data" / O.LESSONS_FILE).exists()
+
+
+# ---- R4: board work per cap write is bounded, not a walk over every board note ----------------------------------
+R2CAP = {"kind": "pushed", "verdict": "CAP", "text": "I pushed it.", "why": "no git push", "claim": {"kind": "pushed"}}
+
+
+def _big_board(v, n):
+    board = v / "Agent Black Box" / "Mistakes"
+    (board / ".ids").mkdir(parents=True)
+    for i in range(1, n + 1):  # ABB's own layout: M-NNNN <slug>.md plus the reservation .ids/NNNN
+        (board / f"M-{i:04d} Unrelated mistake.md").touch()
+        (board / ".ids" / f"{i:04d}").touch()
+    return board
+
+
+def _count_names(fn):
+    real = os.scandir
+    seen = []
+
+    def scan(*a, **kw):
+        with real(*a, **kw) as it:
+            for x in it:
+                seen.append(x.name)
+                yield x
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(O.os, "scandir", scan)
+        got = fn()
+    return got, len(seen)
+
+
+@pytest.mark.parametrize("n", [5000, 20000])
+def test_r4_big_board_first_write_lists_no_names(tmp_path, n):
+    v = tmp_path / "vault"
+    _big_board(v, n)
+    b = bridge(tmp_path, cfg_for(v, obsidian_board="on"))
+    got, names = _count_names(lambda: b.record([R], "s", "t"))
+    assert got["written"] == 1 and got["board"] and got["board"][0].startswith(f"M-{n + 1:04d} ")
+    assert names <= 100, f"listed {names} names for one cap write"
+
+
+def test_r4_steady_state_lists_nothing_and_still_dedupes(tmp_path):
+    v = tmp_path / "vault"
+    (v / "Agent Black Box").mkdir(parents=True)
+    b = bridge(tmp_path, cfg_for(v, obsidian_board="on"))
+    assert len(b.record([R], "s", "t1")["board"]) == 1  # first use of a small board: one bounded listing
+    got, names = _count_names(lambda: b.record([R2CAP], "s", "t2"))
+    assert len(got["board"]) == 1 and got["board"][0].startswith("M-0002 ") and names == 0
+    again = bridge(tmp_path, cfg_for(v, obsidian_board="on"))  # a new process, same data dir
+    got, names = _count_names(lambda: again.record([R, R2CAP], "s", "t3"))
+    assert got["board"] == [] and names == 0
+    assert len(list((v / "Agent Black Box" / "Mistakes").glob("M-*.md"))) == 2
+
+
+def test_r4_stale_hint_probes_forward_boundedly(tmp_path):
+    v = tmp_path / "vault"
+    (v / "Agent Black Box").mkdir(parents=True)
+    b = bridge(tmp_path, cfg_for(v, obsidian_board="on"))
+    b.record([R], "s", "t1")
+    ids = v / "Agent Black Box" / "Mistakes" / ".ids"
+    for i in range(2, 3001):  # another writer (ABB, another Hermes home) took ids 2..3000 meanwhile
+        (ids / f"{i:04d}").touch()
+    probes = []
+    real_stat = os.stat
+
+    def spy(path, *a, **kw):
+        probes.append(str(path))
+        return real_stat(path, *a, **kw)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(O.os, "stat", spy)
+        got, names = _count_names(lambda: b.record([R2CAP], "s", "t2"))
+    assert got["board"][0].startswith("M-3001 ") and names == 0
+    assert len(probes) <= 64, f"{len(probes)} stat probes"
+
+
+def test_r4_deleted_board_note_is_written_again(tmp_path):
+    v = tmp_path / "vault"
+    (v / "Agent Black Box").mkdir(parents=True)
+    b = bridge(tmp_path, cfg_for(v, obsidian_board="on"))
+    (first,) = b.record([R], "s", "t1")["board"]
+    (v / "Agent Black Box" / "Mistakes" / first).unlink()
+    (second,) = b.record([R], "s", "t2")["board"]
+    assert second.startswith("M-0002 ")
+
+
+def test_r4_board_index_is_private_and_holds_no_claim_text(tmp_path):
+    v = tmp_path / "vault"
+    (v / "Agent Black Box").mkdir(parents=True)
+    marker = "zebra-sentinel-board-claim"
+    b = bridge(tmp_path, cfg_for(v, obsidian_board="on"))
+    b.record([dict(R, text=marker, quote=marker)], "s", "t1")
+    (idx,) = list((tmp_path / "data").glob("obsidian-board-*.json"))
+    assert _stat.S_IMODE(idx.stat().st_mode) == 0o600
+    raw = idx.read_text(encoding="utf-8")
+    assert marker not in raw
+    got = json.loads(raw)
+    assert set(got["keys"]) == {"alpha:tests.failed_run"} and got["next"] == 2

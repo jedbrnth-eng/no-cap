@@ -63,6 +63,11 @@ LEARN_MAX_READ = 8 * 1024 * 1024  # store bytes read per pre_llm_call at most, w
 LEARN_TAIL = 64  # bytes before the cached offset compared each turn: a store rewritten in place is rebuilt
 MAX_CACHE_BYTES = 256 * 1024
 MAX_CACHE_AGENTS = 256
+SCAN_DIR_BYTES = 64 * 1024  # a board folder is listed (once, on its first write) only when its size is this or less
+SCAN_MAX = 4096  # and then at most this many names
+INDEX_OPEN_MAX = 128  # board notes opened in all when an index is seeded (BOARD_OPEN_MAX for the current pattern)
+MAX_INDEX_KEYS = 4096
+ID_TRIES = 32  # exclusive creates per board write; each miss re-probes with _free_id
 
 _AGENT_RE = re.compile(r"[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
 _PART_RE = re.compile(r"[^\x00-\x1f\x7f/\\:*?\"<>|]{1,80}")
@@ -596,6 +601,146 @@ def lesson_counts(store: Path, cache: Path) -> Dict[str, Dict[str, int]]:
     return c["counts"] if c["done"] or not c["prev"] else c["prev"]
 
 
+# ---- the board index (review 2, R4) ------------------------------------------------------------------------------
+def _id_taken(ids_fd: int, n: int) -> bool:
+    try:
+        os.stat(f"{n:04d}", dir_fd=ids_fd, follow_symlinks=False)
+        return True
+    except FileNotFoundError:
+        return False
+
+
+def _free_id(ids_fd: int, n: int) -> int:
+    """The first id from n on that has no .ids reservation, by galloping then bisecting stat probes: about
+    2*log2(k) probes to skip k taken ids. Reservations are dense (ABB and No Cap never delete them); a gap below the
+    newest id can be found first, which is still a free id. The exclusive create after this is the real guard."""
+    if not _id_taken(ids_fd, n):
+        return n
+    lo, step = n, 1
+    while _id_taken(ids_fd, n + step):
+        lo = n + step
+        step *= 2
+        if step > 1 << 30:
+            raise Refused("no free board id found")
+    hi = n + step
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        if _id_taken(ids_fd, mid):
+            lo = mid
+        else:
+            hi = mid
+    return hi
+
+
+def _load_index(path: Path) -> Optional[Dict[str, Any]]:
+    try:
+        raw = _read_nofollow(path, MAX_CACHE_BYTES)
+        got = json.loads(raw.decode("utf-8")) if raw else None
+    except (Refused, OSError, ValueError, UnicodeDecodeError):
+        return None
+    if not isinstance(got, dict) or got.get("v") != 1 or not isinstance(got.get("keys"), dict):
+        return None
+    try:
+        nxt = int(got.get("next") or 1)
+    except (TypeError, ValueError):
+        return None
+    keys = {k: v for k, v in list(got["keys"].items())[:MAX_INDEX_KEYS]
+            if isinstance(k, str) and isinstance(v, str) and _BOARD_NAME_RE.match(v) and "/" not in v
+            and not v.startswith(".")}
+    return {"v": 1, "next": max(1, nxt), "keys": keys}
+
+
+def _save_index(path: Path, idx: Dict[str, Any]) -> None:
+    """0600 in the plugin data dir: agent:pattern -> note file name, and the next id hint. No claim text."""
+    try:
+        os.makedirs(path.parent, mode=0o700, exist_ok=True)
+        body = json.dumps({"v": 1, "next": idx["next"], "keys": idx["keys"]}, sort_keys=True).encode()
+        tmp = path.with_name(f".{path.name}.{os.getpid()}-{threading.get_ident()}.tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+        try:
+            if os.fstat(fd).st_mode & 0o077:
+                os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(body)
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+    except OSError:
+        pass  # the index is an optimisation: without it the next write seeds again (bounded)
+
+
+def _small_names(dir_fd: int, st: os.stat_result) -> Optional[List[str]]:
+    """The folder's names when it is small (SCAN_DIR_BYTES, SCAN_MAX names), else None, so a listing never grows
+    with the board. A folder whose size says nothing (some file systems report 0) is still cut at SCAN_MAX."""
+    if st.st_size > SCAN_DIR_BYTES:
+        return None
+    names: List[str] = []
+    for entry in os.scandir(dir_fd):
+        names.append(entry.name)
+        if len(names) > SCAN_MAX:
+            return None
+    return names
+
+
+_SLUG_PID = {f" {_slug(_title(p))}.md": p for p in BY_ID}
+
+
+def _seed_index(board_fd: int, st: os.stat_result, pid: str) -> Dict[str, Any]:
+    """First write to a board with no index here. A small board is listed once: the highest M-NNNN and .ids number
+    give the next id, and notes named like a pattern's title (`M-NNNN <slug>.md`, at most BOARD_OPEN_MAX for the
+    current pattern and INDEX_OPEN_MAX in all) are opened for their `source: "nocap:<agent>:<pattern>"` key. A big
+    board is not listed: the id comes from _free_id's probes and only notes this index records are known."""
+    idx: Dict[str, Any] = {"v": 1, "next": 1, "keys": {}}
+    names = _small_names(board_fd, st)
+    if names is None:
+        return idx
+    top = 0
+    cands: List[Tuple[str, str]] = []
+    for name in names:
+        m = _BOARD_NAME_RE.match(name)
+        if not m:
+            continue
+        top = max(top, int(m.group(1)))
+        tail = name[name.find(" "):] if " " in name else ""
+        if tail in _SLUG_PID:
+            cands.append((_SLUG_PID[tail], name))
+    if sum(1 for p, _ in cands if p == pid) > BOARD_OPEN_MAX:
+        raise Refused(f"over {BOARD_OPEN_MAX} board notes named like {pid!r}; not scanning them all")
+    cands.sort(key=lambda c: (c[0] != pid, c[1]))  # this pattern's notes first
+    for p, name in cands[:INDEX_OPEN_MAX]:
+        try:
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=board_fd)
+            with os.fdopen(fd, "rb") as fh:
+                if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
+                    continue
+                head = fh.read(HEADER_SCAN)
+        except OSError:
+            continue
+        front = head.split(b"\n---", 1)[0]
+        for m in re.finditer(rb'(?m)^source: "nocap:([a-z0-9._-]{1,64}):' + re.escape(p.encode()) + rb'"\r?$', front):
+            who = m.group(1).decode()
+            if safe_agent(who) == who:
+                idx["keys"].setdefault(f"{who}:{p}", name)
+    try:
+        ids_fd = os.open(".ids", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=board_fd)
+    except OSError:
+        ids_fd = -1
+    if ids_fd >= 0:
+        try:
+            for name in _small_names(ids_fd, os.fstat(ids_fd)) or []:
+                m = _IDS_NAME_RE.fullmatch(name)
+                if m:
+                    top = max(top, int(m.group(1)))
+        finally:
+            os.close(ids_fd)
+    idx["next"] = top + 1
+    return idx
+
+
 # ---- the bridge ------------------------------------------------------------------------------------------------
 class Bridge:
     def __init__(self, data_dir: Callable[[], Path], setting: Callable[[str, Any], Any], agent: Callable[[], str]):
@@ -814,31 +959,28 @@ class Bridge:
 
     def _board_at(self, board_fd: int, who: str, pid: str, date: str,
                   r: Dict[str, Any], link: str, check: Callable[..., None] = lambda *a: None) -> Optional[str]:
-        """Bounded: the folder is LISTED (names only) to find the next id, but only notes named like this pattern's
-        own title (`M-NNNN <slug>.md`) are opened, at most BOARD_OPEN_MAX, to find an existing source key."""
-        src = f'source: "nocap:{who}:{pid}"'.encode()
-        tail = f" {_slug(_title(pid))}.md"
-        top = 0
-        candidates: List[str] = []
-        for entry in os.scandir(board_fd):
-            m = _BOARD_NAME_RE.match(entry.name)
-            if m:
-                top = max(top, int(m.group(1)))
-                if entry.name.endswith(tail):
-                    candidates.append(entry.name)
-        if len(candidates) > BOARD_OPEN_MAX:
-            raise Refused(f"over {BOARD_OPEN_MAX} board notes named {tail.strip()!r}; not scanning them all")
-        for name in candidates:
+        """Bounded per write, whatever the board's size (review 2, R4). No Cap keeps its own index of the board notes
+        IT wrote (agent:pattern -> file name) and the next id hint, in the plugin data dir. A known note is one stat.
+        A new id is the hint, taken with an exclusive create in .ids (the collision guard, as ABB does it), probed
+        forward by galloping stat probes when taken. Only the first write to a board without an index lists the
+        folder, and only a small one (folder size <= SCAN_DIR_BYTES, at most SCAN_MAX names): a big board is never
+        listed, its id comes from the probes."""
+        st = os.fstat(board_fd)
+        idx_path = Path(self.data_dir()) / f"obsidian-board-{st.st_dev}-{st.st_ino}.json"
+        idx = _load_index(idx_path)
+        if idx is None:
+            idx = _seed_index(board_fd, st, pid)
+        key = f"{who}:{pid}"
+        known = idx["keys"].get(key)
+        if known:
             try:
-                fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=board_fd)
-                with os.fdopen(fd, "rb") as fh:
-                    if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
-                        continue
-                    head = fh.read(HEADER_SCAN)
+                kst = os.stat(known, dir_fd=board_fd, follow_symlinks=False)
+                if stat.S_ISREG(kst.st_mode):
+                    _save_index(idx_path, idx)
+                    return None  # an existing source key suppresses duplicates, but is never trusted as a rule
             except OSError:
-                continue
-            if src in head.split(b"\n---", 1)[0]:
-                return None  # an existing source key suppresses duplicates, but is never trusted as a rule
+                pass
+            del idx["keys"][key]  # deleted or renamed by the user: a fresh note, as before
         # Open .ids relative to the already pinned board directory, even if an attacker renames its parent.
         check()
         try:
@@ -848,16 +990,12 @@ class Bridge:
         ids_fd = os.open(".ids", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=board_fd)
         ids_id = [_ident(ids_fd)]
         try:
-            for entry in os.scandir(ids_fd):
-                m = _IDS_NAME_RE.fullmatch(entry.name)
-                if m:
-                    top = max(top, int(m.group(1)))
-            n = top + 1
-            for _ in range(100):
+            n = _free_id(ids_fd, max(1, idx["next"]))
+            for _ in range(ID_TRIES):
                 try:
                     _write_new(Path(f"{n:04d}"), b"", dir_fd=ids_fd, check=lambda: check([".ids"], ids_id))
                 except FileExistsError:
-                    n += 1
+                    n = _free_id(ids_fd, n + 1)
                     continue
                 name, text = board_note(n, who, pid, date, _claim(r), _evidence(r), link)
                 try:
@@ -865,8 +1003,11 @@ class Bridge:
                 except FileExistsError:
                     n += 1
                     continue
+                idx["next"] = n + 1
+                idx["keys"][key] = name
+                _save_index(idx_path, idx)
                 return name
-            raise Refused("could not reserve a board id after 100 tries")
+            raise Refused(f"could not reserve a board id after {ID_TRIES} tries")
         finally:
             os.close(ids_fd)
 
