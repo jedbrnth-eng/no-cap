@@ -56,6 +56,13 @@ LOCK_BUDGET = 0.12  # seconds one record() call may wait for destination locks I
 LOCK_PAUSE = (0.002, 0.004, 0.008, 0.016, 0.032)  # pauses between non-blocking lock tries
 PENDING_MAX = 64  # exports skipped on a busy folder, kept in memory for the next write (sync covers the rest)
 PENDING_FLUSH = 4  # skipped exports retried per write, so one turn's work stays bounded
+LESSONS_FILE = "obsidian-lessons.json"  # per-agent 🧢 pattern counts (ids and numbers only), in the plugin data dir
+LEARN_CPU = 0.015  # seconds of CPU one pre_llm_call may spend catching the cache up with the store
+LEARN_BLOCK = 256 * 1024  # store bytes read per step while catching up
+LEARN_MAX_READ = 8 * 1024 * 1024  # store bytes read per pre_llm_call at most, whatever the CPU clock says
+LEARN_TAIL = 64  # bytes before the cached offset compared each turn: a store rewritten in place is rebuilt
+MAX_CACHE_BYTES = 256 * 1024
+MAX_CACHE_AGENTS = 256
 
 _AGENT_RE = re.compile(r"[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
 _PART_RE = re.compile(r"[^\x00-\x1f\x7f/\\:*?\"<>|]{1,80}")
@@ -177,6 +184,39 @@ def lesson_text(records: Iterable[Dict[str, Any]], agent: str, exclude: Iterable
     for g in mine(mine_recs):
         if g["pattern"] in BY_ID and g.get("caps"):
             caps[g["pattern"]] = caps.get(g["pattern"], 0) + int(g["caps"])
+    return lesson_from_counts(caps, who, exclude, min_caps, max_rules)
+
+
+def capped_patterns(rec: Any) -> Tuple[str, List[str]]:
+    """(agent key, the patterns this ONE stored record adds a 🧢 to), exactly as coach.mine counts it for
+    lesson_text: replies with receipts only, one count per pattern per reply, decided by the first receipt of that
+    pattern. Counts add up across records, so the lessons cache can be built one appended line at a time."""
+    if not isinstance(rec, dict) or rec.get("type", "reply") != "reply" or not rec.get("receipts"):
+        return "", []
+    try:
+        if float(rec.get("ts", 0) or 0) < 0:
+            return "", []
+    except (TypeError, ValueError):
+        return "", []
+    who = str(rec.get("profile") or "").strip().lower()
+    if not who or safe_agent(who) != who or not isinstance(rec["receipts"], list):
+        return "", []
+    seen, out = set(), []
+    for x in rec["receipts"]:
+        if not isinstance(x, dict):
+            continue
+        pid = classify(x)
+        if not pid or pid in seen:
+            continue
+        seen.add(pid)
+        if pid in BY_ID and x.get("verdict") == CAP:
+            out.append(pid)
+    return who, out
+
+
+def lesson_from_counts(caps: Dict[str, int], who: str, exclude: Iterable[str] = (),
+                       min_caps: int = LEARN_MIN_CAPS, max_rules: int = LEARN_MAX_RULES) -> Optional[str]:
+    caps = {p: int(n) for p, n in (caps or {}).items() if p in BY_ID and isinstance(n, int) and n > 0}
     skip = set(exclude or ())
     top = sorted(((n, p) for p, n in caps.items() if n >= max(1, min_caps) and p not in skip), key=lambda x: (-x[0], x[1]))
     top = top[: max(0, max_rules)]
@@ -425,6 +465,135 @@ def board_note(n: int, agent: str, pid: str, date: str, claim: str, evidence: st
         fm += [f"## {head}"] + ([body] if body else []) + [""]
     fm += ["## Related", f"[[{log_link}]]", ""]
     return f"{mid} {_slug(title)}.md", redact("\n".join(fm))
+
+
+# ---- the lessons cache (review 2, R3) ----------------------------------------------------------------------------
+def _cpu() -> float:
+    try:
+        return time.thread_time()
+    except (AttributeError, OSError):  # pragma: no cover - platforms without a per-thread clock
+        return time.process_time()
+
+
+def _load_cache(path: Path) -> Optional[Dict[str, Any]]:
+    try:
+        raw = _read_nofollow(path, MAX_CACHE_BYTES)
+        got = json.loads(raw.decode("utf-8")) if raw else None
+    except (Refused, OSError, ValueError, UnicodeDecodeError):
+        return None
+    if not isinstance(got, dict) or got.get("v") != 1:
+        return None
+    try:
+        out = {"v": 1, "dev": int(got["dev"]), "ino": int(got["ino"]), "offset": int(got["offset"]),
+               "tail": bytes.fromhex(str(got["tail"])), "done": bool(got["done"]),
+               "counts": _clean_counts(got["counts"]), "prev": _clean_counts(got["prev"]) if got.get("prev") else None}
+    except (KeyError, TypeError, ValueError):
+        return None
+    return out if out["offset"] >= 0 else None
+
+
+def _clean_counts(c: Any) -> Dict[str, Dict[str, int]]:
+    if not isinstance(c, dict):
+        raise ValueError("counts")
+    out: Dict[str, Dict[str, int]] = {}
+    for who, pats in list(c.items())[:MAX_CACHE_AGENTS]:
+        if isinstance(who, str) and safe_agent(who) == who and isinstance(pats, dict):
+            out[who] = {p: int(n) for p, n in pats.items() if p in BY_ID and isinstance(n, int) and n > 0}
+    return out
+
+
+def _save_cache(path: Path, c: Dict[str, Any]) -> None:
+    """0600, temp file + os.replace in the plugin's own data folder. Agent names, pattern ids and counts only."""
+    body = json.dumps({"v": 1, "dev": c["dev"], "ino": c["ino"], "offset": c["offset"], "tail": c["tail"].hex(),
+                       "done": c["done"], "counts": c["counts"], "prev": c["prev"]}, sort_keys=True).encode()
+    tmp = path.with_name(f".{path.name}.{os.getpid()}-{threading.get_ident()}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    try:
+        if os.fstat(fd).st_mode & 0o077:
+            os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(body)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _tally(block: bytes, counts: Dict[str, Dict[str, int]]) -> None:
+    for line in block.split(b"\n"):
+        if b'"CAP"' not in line:  # a record without a 🧢 receipt adds nothing: no parse
+            continue
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        who, pids = capped_patterns(rec)
+        if not pids or (who not in counts and len(counts) >= MAX_CACHE_AGENTS):
+            continue
+        mine_ = counts.setdefault(who, {})
+        for pid in pids:
+            mine_[pid] = mine_.get(pid, 0) + 1
+
+
+def lesson_counts(store: Path, cache: Path) -> Dict[str, Dict[str, int]]:
+    """Per-agent 🧢 pattern counts of the receipt store, from a small cache that is caught up with what was
+    appended since the last call, under a CPU budget (LEARN_CPU) and a read cap (LEARN_MAX_READ). The store is
+    never parsed whole in one call: a new, replaced, truncated or rewritten store is rebuilt over the next calls,
+    showing the last complete counts meanwhile (or the partial counts, which only grow, when there are none)."""
+    c = _load_cache(cache)
+    try:
+        fh = open(store, "rb")
+    except FileNotFoundError:  # purged: the caps went with it
+        if c is not None:
+            try:
+                os.unlink(cache)
+            except OSError:
+                pass
+        return {}
+    with fh:
+        st = os.fstat(fh.fileno())
+        stale = c is None or (c["dev"], c["ino"]) != (st.st_dev, st.st_ino) or st.st_size < c["offset"]
+        if not stale and c["offset"]:
+            n = min(LEARN_TAIL, c["offset"])
+            fh.seek(c["offset"] - n)
+            stale = fh.read(n) != c["tail"][-n:]
+        if stale:
+            prev = (c["counts"] if c["done"] else c["prev"]) if c else None
+            c = {"v": 1, "dev": st.st_dev, "ino": st.st_ino, "offset": 0, "tail": b"", "done": False,
+                 "counts": {}, "prev": prev or None}
+        changed = stale
+        if c["offset"] < st.st_size:
+            fh.seek(c["offset"])
+            start, read, rest, eof = _cpu(), 0, b"", False
+            while True:
+                block = fh.read(LEARN_BLOCK)
+                if not block:
+                    eof = True
+                    break
+                read += len(block)
+                data = rest + block
+                cut = data.rfind(b"\n") + 1
+                if cut:
+                    _tally(data[:cut], c["counts"])
+                    c["tail"] = (c["tail"] + data[:cut])[-LEARN_TAIL:]
+                    c["offset"] += cut
+                    changed = True
+                rest = data[cut:]
+                if _cpu() - start > LEARN_CPU or read >= LEARN_MAX_READ:
+                    break
+            if eof and not c["done"]:
+                c["done"], c["prev"], changed = True, None, True
+        elif not c["done"]:
+            c["done"], c["prev"], changed = True, None, True
+        if changed:
+            try:
+                _save_cache(cache, c)
+            except OSError:
+                pass  # the cache is an optimisation: next turn catches up from the last saved point
+    return c["counts"] if c["done"] or not c["prev"] else c["prev"]
 
 
 # ---- the bridge ------------------------------------------------------------------------------------------------
@@ -722,6 +891,16 @@ class Bridge:
         return total
 
     # -- learning --
+    def lessons_cached(self, store: Path, exclude: Iterable[str] = ()) -> Optional[str]:
+        """pre_llm_call's lesson line, from the lessons cache (R3): bounded work per turn, whatever the store size."""
+        if not self.learn_on():
+            return None
+        who = self.who()
+        if not who:
+            return None
+        counts = lesson_counts(Path(store), Path(self.data_dir()) / LESSONS_FILE)
+        return lesson_from_counts(counts.get(who, {}), who, exclude)
+
     def lessons(self, records: Iterable[Dict[str, Any]], exclude: Iterable[str] = ()) -> Optional[str]:
         if not self.learn_on():
             return None

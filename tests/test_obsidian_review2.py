@@ -223,3 +223,177 @@ def test_r2_an_unmoved_destination_still_writes(tmp_path):
     b = bridge(tmp_path, cfg_for(link, obsidian_board="on"))
     got = b.record([R], "s", "t")
     assert got["written"] == 1 and len(got["board"]) == 1
+
+
+# ---- R3: pre_llm_call reads a small cache, never the whole store ------------------------------------------------
+import json  # noqa: E402
+import random  # noqa: E402
+import stat as _stat  # noqa: E402
+
+from nocap.coach import BY_ID  # noqa: E402
+
+REC = {"type": "reply", "profile": "alpha", "model": "m", "ts": 1.0, "receipts": [R]}
+
+
+def _store_of(tmp_path, size, rec=REC):
+    d = tmp_path / "data"
+    d.mkdir(exist_ok=True)
+    line = (json.dumps(rec) + "\n").encode()
+    n = size // len(line)
+    (d / "receipts.jsonl").write_bytes(line * n + b" " * (size - n * len(line)))
+    return d / "receipts.jsonl"
+
+
+def _turn_cpu_ms(e):
+    t0 = time.process_time()
+    got = e.on_turn_start(session_id="s", model="m")
+    return (time.process_time() - t0) * 1000, got
+
+
+def test_r3_enabled_turn_start_cpu_is_bounded_on_a_50MB_store(tmp_path):
+    v = tmp_path / "vault"
+    v.mkdir()
+    e = make_engine(tmp_path, cfg_for(v))
+    _store_of(tmp_path, 50_000_000)
+    for i in range(3):
+        cpu, got = _turn_cpu_ms(e)
+        assert cpu <= 50, f"turn {i}: pre_llm_call CPU {cpu:.1f} ms on a 50 MB store"
+        assert got and BY_ID["tests.failed_run"]["rule"] in got["context"]
+
+
+def test_r3_turn_start_never_reads_the_whole_store(tmp_path):
+    v = tmp_path / "vault"
+    v.mkdir()
+    e = make_engine(tmp_path, cfg_for(v))
+    _store_of(tmp_path, 300_000)
+    e.store.records = lambda: (_ for _ in ()).throw(AssertionError("pre_llm_call parsed the whole store"))
+    assert e.on_turn_start(session_id="s", model="m")  # first turn builds the cache (bounded)
+    read = []
+    real_open = open
+
+    class Counting:
+        def __init__(self, fh):
+            self.fh = fh
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            self.fh.close()
+
+        def __getattr__(self, k):
+            return getattr(self.fh, k)
+
+        def read(self, n=-1):
+            b = self.fh.read(n)
+            read.append(len(b))
+            return b
+
+    def spy(path, mode="r", *a, **kw):
+        fh = real_open(path, mode, *a, **kw)
+        return Counting(fh) if str(path).endswith("receipts.jsonl") else fh
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(O, "open", spy, raising=False)
+        for _ in range(3):
+            assert e.on_turn_start(session_id="s", model="m")
+    assert sum(read) <= 3 * 1024, f"read {sum(read)} store bytes over 3 turns with nothing appended"
+
+
+def test_r3_appended_caps_are_counted_incrementally(tmp_path):
+    v = tmp_path / "vault"
+    v.mkdir()
+    e = make_engine(tmp_path, cfg_for(v))
+    assert e.on_turn_start(session_id="s", model="m") is None  # empty store, no lesson
+    _cap_reply(e, "t1")
+    assert e.on_turn_start(session_id="s", model="m") is None  # one cap is not yet a lesson
+    _cap_reply(e, "t2")
+    got = e.on_turn_start(session_id="s", model="m")
+    assert got and "(tests.failed_run, 2× 🧢)" in got["context"]
+
+
+def _random_records(seed, n=400):
+    rnd = random.Random(seed)
+    kinds = [("tests", ""), ("pushed", "no git push"), ("merged", "no merge"), ("committed", "no git commit"),
+             ("deployed", ""), ("number", "")]
+    out = []
+    for i in range(n):
+        rec = {"type": rnd.choice(["reply", "reply", "reply", "turn"]), "ts": float(i),
+               "profile": rnd.choice(["alpha", "Alpha ", "bravo", "", None, "default"]), "model": rnd.choice("mn"),
+               "receipts": []}
+        for _ in range(rnd.randint(0, 3)):
+            kind, why = rnd.choice(kinds)
+            rec["receipts"].append({"kind": kind, "verdict": rnd.choice(["CAP", "NO_RECEIPT", "NO_CAP"]),
+                                    "why": why, "claim": {"kind": kind, "fails": rnd.random() < 0.2}})
+        out.append(rec)
+    return out
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3])
+def test_r3_cached_lessons_equal_a_full_mine(tmp_path, seed):
+    v = tmp_path / "vault"
+    v.mkdir()
+    recs = _random_records(seed)
+    d = tmp_path / "data"
+    d.mkdir()
+    (d / "receipts.jsonl").write_text("".join(json.dumps(r) + "\n" for r in recs), encoding="utf-8")
+    for who in ("alpha", "bravo", "default"):
+        b = bridge(tmp_path, cfg_for(v), agent=who)
+        assert b.lessons_cached(d / "receipts.jsonl") == O.lesson_text(recs, who), who
+
+
+def test_r3_cache_file_is_private_and_holds_no_claim_text(tmp_path):
+    v = tmp_path / "vault"
+    v.mkdir()
+    e = make_engine(tmp_path, cfg_for(v))
+    marker = "zebra-sentinel-claim-text"
+    rec = dict(REC, receipts=[dict(R, text=marker, quote=marker, claim={"kind": "tests", "frag": marker})])
+    _store_of(tmp_path, 20_000, rec)
+    assert e.on_turn_start(session_id="s", model="m")
+    cache = tmp_path / "data" / O.LESSONS_FILE
+    assert _stat.S_IMODE(cache.stat().st_mode) == 0o600
+    raw = cache.read_text(encoding="utf-8")
+    assert marker not in raw
+    got = json.loads(raw)
+    assert set(got["counts"]) == {"alpha"} and set(got["counts"]["alpha"]) <= set(BY_ID)
+
+
+def test_r3_purge_and_replace_rebuild_the_cache(tmp_path):
+    v = tmp_path / "vault"
+    v.mkdir()
+    e = make_engine(tmp_path, cfg_for(v))
+    _cap_reply(e, "t1")
+    _cap_reply(e, "t2")
+    assert e.on_turn_start(session_id="s", model="m")
+    assert "Removed" in e.nocap("purge", platform="cli")
+    assert e.on_turn_start(session_id="s", model="m") is None  # the caps went with the store
+    _cap_reply(e, "t3")
+    assert e.on_turn_start(session_id="s", model="m") is None  # one cap after the purge, not three
+    # a store replaced in place (prune): rebuilt from the new file, not added onto the old counts
+    store = tmp_path / "data" / "receipts.jsonl"
+    keep = store.read_bytes()
+    tmp = store.with_suffix(".x")
+    tmp.write_bytes(keep + keep)
+    os.replace(tmp, store)
+    for _ in range(3):
+        got = e.on_turn_start(session_id="s", model="m")
+    assert got and "(tests.failed_run, 2× 🧢)" in got["context"]
+
+
+@pytest.mark.parametrize("cfg", [{"obsidian_vault": ""}, {"obsidian_learn": False}])
+def test_r3_off_creates_no_cache_and_reads_no_store(tmp_path, cfg):
+    v = tmp_path / "vault"
+    v.mkdir()
+    e = make_engine(tmp_path, {**cfg_for(v), **cfg})
+    _store_of(tmp_path, 5_000)
+    real_open = open
+    opened = []
+
+    def spy(path, *a, **kw):
+        opened.append(str(path))
+        return real_open(path, *a, **kw)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(O, "open", spy, raising=False)
+        assert e.on_turn_start(session_id="s", model="m") is None
+    assert opened == [] and not (tmp_path / "data" / O.LESSONS_FILE).exists()
