@@ -121,10 +121,36 @@ A prompt can ask a model to be honest; it can't make the model check itself.
 - **It sees the suite change.** Skip, delete or deselect a failing test, re-run and say “all tests pass”: that green
   run no longer earns 🧾. It gets a 🤔 naming the change, and 🧢 when an earlier run named that test as failing
   ([docs/SUITE_TAMPER.md](docs/SUITE_TAMPER.md)).
-- **It remembers.** A local store powers `/capscore`, the Cap Board dashboard tab and Cap Coach.
+- **It remembers.** A local store powers `/capscore`, the Cap Board dashboard tab and Cap Coach, and (opt-in) turns
+  each 🧢 into an Obsidian lesson the agent is reminded of ([below](#agents-that-learn-from-their-caps-obsidian-opt-in)).
 
 🧾 trusts the tools' output, not the agent: a local agent with a shell runs as you and can always fake output or
 edit local files. Run untrusted agents in a sandbox. See [DISCLOSURE.md](DISCLOSURE.md) and [SECURITY.md](SECURITY.md).
+
+## Agents that learn from their caps (Obsidian, opt-in)
+
+Point No Cap at an Obsidian vault and every 🧢 becomes a lesson that agent keeps:
+
+1. **A note per agent.** Each 🧢 adds one redacted line to `<vault>/No Cap/<profile>.md`: the date, the pattern,
+   the claim and the output that contradicted it, with a block id so the same receipt is never written twice.
+2. **A mistakes board.** The first time an agent caps on a pattern, No Cap files one mistake note
+   (`M-NNNN <title>.md`, with frontmatter for agent, severity, status and tags) in the vault's mistakes board, so you
+   can triage it, mark it fixed and link it like any other note. The format is the one the Agent Black Box Obsidian
+   plugin uses.
+3. **The lesson comes back.** With `obsidian_learn: true`, each turn of that agent starts with a labelled line
+   holding up to 3 of No Cap's built-in rules for the patterns it was capped on at least twice. Agent A's caps never
+   reach agent B, and nothing is read back from the vault into the prompt: a note anyone can edit would be an
+   injection path.
+
+```sh
+hermes config set plugins.entries.no-cap.settings.obsidian_vault "/path/to/your vault"
+hermes config set plugins.entries.no-cap.settings.obsidian_learn true    # optional
+hermes nocap obsidian sync     # backfill the caps already in the store
+```
+
+Off by default; with `obsidian_vault` empty nothing in any vault is read or written. Writes stay inside the vault you
+name (symlink-safe, locked, never blocks a reply). Whether the lesson line changes a model's behaviour has **not**
+been measured yet. Setup, settings and the full disclosure: [docs/OBSIDIAN.md](docs/OBSIDIAN.md).
 
 ## Commands
 
@@ -137,6 +163,7 @@ edit local files. Run untrusted agents in a sandbox. See [DISCLOSURE.md](DISCLOS
 | `/cap coach scan` · `approve <id>` · `revert <id>` | mine caps, approve a fix, stop it ([Cap Coach](docs/GUIDE.md#cap-coach)) |
 | `/nocap doctor` · `battery` · `purge` | setup checks · 113-case synthetic battery · delete the store |
 | `hermes nocap demo --ladder` | the Lie Ladder in a throwaway home (scripted model) |
+| `hermes nocap obsidian status` · `sync` · `open` | the Obsidian bridge: state · backfill caps · this agent's note |
 
 Each has a `hermes nocap …` form. Settings (`mode`, `show_uncertain`, `cross_turn`, …): [docs/GUIDE.md](docs/GUIDE.md#settings).
 
