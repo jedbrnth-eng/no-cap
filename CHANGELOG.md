@@ -4,7 +4,10 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
 [jedbrnth-eng/no-cap](https://github.com/jedbrnth-eng/no-cap/pulls?q=is%3Apr+is%3Amerged), by PR number
 (`gh pr list -R jedbrnth-eng/no-cap --state merged`).
 
-## 0.3.0 (unreleased)
+## 0.3.0
+
+- Release: the Obsidian lessons bridge below ships, opt-in and off by default. README section "Agents that learn from
+  their caps" and the `hermes nocap obsidian` commands row; version strings bumped together.
 
 - Obsidian lessons bridge, opt-in (`obsidian_vault`, empty = off; nothing read or written). On each 🧢 verdict, one
   redacted line for that agent (Hermes profile) goes to `<vault>/<folder>/<agent>.md`, plus an Agent Black Box
