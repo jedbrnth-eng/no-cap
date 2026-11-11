@@ -31,6 +31,7 @@ from contextlib import contextmanager
 import json
 import os
 import re
+import secrets
 import stat
 import threading
 import time
@@ -52,6 +53,24 @@ LEARN_MAX_RULES = 3
 BOARD_MODES = ("auto", "on", "off")
 HEADER_SCAN = 4096  # bytes of a board note read to find its source key
 BOARD_OPEN_MAX = 32  # board notes opened per cap write (only those named like the pattern)
+TMP_TRIES = 4  # occupied temp names skipped before a cache/index save gives up (it is retried next turn)
+LOCK_BUDGET = 0.12  # seconds one record() call may wait for destination locks IN ALL (both folders, the retries)
+LOCK_PAUSE = (0.002, 0.004, 0.008, 0.016, 0.032)  # pauses between non-blocking lock tries
+PENDING_MAX = 64  # exports skipped on a busy folder, kept in memory for the next write (sync covers the rest)
+PENDING_FLUSH = 4  # skipped exports retried per write, so one turn's work stays bounded
+LESSONS_FILE = "obsidian-lessons.json"  # per-agent 🧢 pattern counts (ids and numbers only), in the plugin data dir
+LEARN_CPU = 0.015  # seconds of CPU one pre_llm_call may spend catching the cache up with the store
+LEARN_BLOCK = 256 * 1024  # store bytes read per step while catching up
+LEARN_MAX_READ = 8 * 1024 * 1024  # store bytes read per pre_llm_call at most, whatever the CPU clock says
+LEARN_TAIL = 64  # bytes before the cached offset re-hashed each turn: a store rewritten in place is rebuilt
+LEARN_HEAD = 256  # and the store's first bytes (a rewrite often keeps the line ends the same)
+MAX_CACHE_BYTES = 256 * 1024
+MAX_CACHE_AGENTS = 256
+SCAN_DIR_BYTES = 64 * 1024  # a board folder is listed (once, on its first write) only when its size is this or less
+SCAN_MAX = 4096  # and then at most this many names
+INDEX_OPEN_MAX = 128  # board notes opened in all when an index is seeded (BOARD_OPEN_MAX for the current pattern)
+MAX_INDEX_KEYS = 4096
+ID_TRIES = 32  # exclusive creates per board write; each miss re-probes with _free_id
 
 _AGENT_RE = re.compile(r"[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
 _PART_RE = re.compile(r"[^\x00-\x1f\x7f/\\:*?\"<>|]{1,80}")
@@ -173,6 +192,39 @@ def lesson_text(records: Iterable[Dict[str, Any]], agent: str, exclude: Iterable
     for g in mine(mine_recs):
         if g["pattern"] in BY_ID and g.get("caps"):
             caps[g["pattern"]] = caps.get(g["pattern"], 0) + int(g["caps"])
+    return lesson_from_counts(caps, who, exclude, min_caps, max_rules)
+
+
+def capped_patterns(rec: Any) -> Tuple[str, List[str]]:
+    """(agent key, the patterns this ONE stored record adds a 🧢 to), exactly as coach.mine counts it for
+    lesson_text: replies with receipts only, one count per pattern per reply, decided by the first receipt of that
+    pattern. Counts add up across records, so the lessons cache can be built one appended line at a time."""
+    if not isinstance(rec, dict) or rec.get("type", "reply") != "reply" or not rec.get("receipts"):
+        return "", []
+    try:
+        if float(rec.get("ts", 0) or 0) < 0:
+            return "", []
+    except (TypeError, ValueError):
+        return "", []
+    who = str(rec.get("profile") or "").strip().lower()
+    if not who or safe_agent(who) != who or not isinstance(rec["receipts"], list):
+        return "", []
+    seen, out = set(), []
+    for x in rec["receipts"]:
+        if not isinstance(x, dict):
+            continue
+        pid = classify(x)
+        if not pid or pid in seen:
+            continue
+        seen.add(pid)
+        if pid in BY_ID and x.get("verdict") == CAP:
+            out.append(pid)
+    return who, out
+
+
+def lesson_from_counts(caps: Dict[str, int], who: str, exclude: Iterable[str] = (),
+                       min_caps: int = LEARN_MIN_CAPS, max_rules: int = LEARN_MAX_RULES) -> Optional[str]:
+    caps = {p: int(n) for p, n in (caps or {}).items() if p in BY_ID and isinstance(n, int) and n > 0}
     skip = set(exclude or ())
     top = sorted(((n, p) for p, n in caps.items() if n >= max(1, min_caps) and p not in skip), key=lambda x: (-x[0], x[1]))
     top = top[: max(0, max_rules)]
@@ -244,13 +296,32 @@ def _vault_fd(real: str):
         os.close(fd)
 
 
+class Busy(Refused):
+    """The destination folder is locked by another writer: this optional export is skipped, never waited for."""
+
+
 @contextmanager
-def _flock(fd: int):
+def _flock(fd: int, deadline: Optional[float] = None):
     """Exclusive lock on a pinned destination folder, shared by every Hermes home and thread writing into it (an
-    flock on its own open file description). Fails closed: no lock, no write."""
+    flock on its own open file description). Never blocks: non-blocking tries with short pauses until `deadline`
+    (time.monotonic(); one record() call shares LOCK_BUDGET across all its locks), then Busy: the export is skipped
+    and picked up later, the reply is never held. Fails closed: no lock, no write."""
     if fcntl is None:
         raise Refused("Obsidian writes require POSIX directory handles and flock")
-    fcntl.flock(fd, fcntl.LOCK_EX)
+    if deadline is None:
+        deadline = time.monotonic() + LOCK_BUDGET
+    k = 0
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except (BlockingIOError, InterruptedError):
+            pause = LOCK_PAUSE[min(k, len(LOCK_PAUSE) - 1)]
+            k += 1
+            if time.monotonic() + pause > deadline:
+                raise Busy("destination folder busy (another writer holds its lock); export skipped, not waited "
+                           "for: the next write or `hermes nocap obsidian sync` picks it up")
+            time.sleep(pause)
     try:
         yield fd
     finally:
@@ -258,9 +329,10 @@ def _flock(fd: int):
 
 
 @contextmanager
-def _pinned_dir(base_fd: int, parts: List[str], create: bool = True):
+def _pinned_dir(base_fd: int, parts: List[str], create: bool = True, idents: Optional[List[Tuple[int, int]]] = None):
     """Pin each directory with openat(O_NOFOLLOW) below the held vault descriptor. A concurrent rename or symlink
-    swap cannot redirect a write: all later operations use the pinned directory fd, never an absolute path."""
+    swap cannot redirect a write: all later operations use the pinned directory fd, never an absolute path. The
+    (st_dev, st_ino) of each pinned folder is appended to `idents`, for _verify before the final write."""
     fd = os.dup(base_fd)
     try:
         for part in parts:
@@ -272,7 +344,39 @@ def _pinned_dir(base_fd: int, parts: List[str], create: bool = True):
             child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
             os.close(fd)
             fd = child
+            if idents is not None:
+                idents.append(_ident(fd))
         yield fd
+    finally:
+        os.close(fd)
+
+
+def _ident(fd: int) -> Tuple[int, int]:
+    st = os.fstat(fd)
+    return st.st_dev, st.st_ino
+
+
+def _verify(root: str, parts: List[str], idents: List[Tuple[int, int]]) -> None:
+    """Review 2 (R2): the held descriptors pin inodes, not their place in the tree. A pinned folder (or the vault)
+    moved OUT of the vault and replaced by a symlink would still take the write. So, right before a write commits,
+    walk the path again from `/` with O_NOFOLLOW and compare st_dev/st_ino of the vault (idents[0]) and of each
+    pinned folder below it (idents[1:]). Any difference, a symlink or a missing part: Refused, nothing written.
+    The re-check and the write are two system calls: a move in the microseconds between them is not caught."""
+    names = list(Path(root).parts[1:])
+    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for i, part in enumerate(names + list(parts)):
+            try:
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            except OSError as exc:
+                raise Refused(f"destination moved out of the vault after it was opened (at {part!r}: "
+                              f"{exc.strerror}); not written")
+            os.close(fd)
+            fd = child
+            k = i - len(names) + 1  # 0 = the vault itself, 1.. = the folders below it
+            if k >= 0 and (k >= len(idents) or _ident(fd) != idents[k]):
+                raise Refused(f"destination moved out of the vault after it was opened (at {part!r}: not the "
+                              "folder that was opened); not written")
     finally:
         os.close(fd)
 
@@ -294,8 +398,12 @@ def _read_nofollow(path: Path, limit: int, dir_fd: Optional[int] = None) -> Opti
         return fh.read(limit + 1)
 
 
-def _write_new(path: Path, data: bytes, dir_fd: Optional[int] = None) -> None:
-    """Create path exclusively (never through a link); raises FileExistsError when it is there."""
+def _write_new(path: Path, data: bytes, dir_fd: Optional[int] = None,
+               check: Optional[Callable[[], None]] = None) -> None:
+    """Create path exclusively (never through a link); raises FileExistsError when it is there. `check` (_verify)
+    runs right before the create."""
+    if check is not None:
+        check()
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=dir_fd)
     try:
         with os.fdopen(fd, "wb") as fh:
@@ -308,7 +416,12 @@ def _write_new(path: Path, data: bytes, dir_fd: Optional[int] = None) -> None:
         raise
 
 
-def _replace(path: Path, data: bytes, mode: int, dir_fd: Optional[int] = None) -> None:
+def _replace(path: Path, data: bytes, mode: int, dir_fd: Optional[int] = None,
+             check: Optional[Callable[[], None]] = None) -> None:
+    """Temp file + fsync + os.replace in the pinned folder. `check` (_verify) runs before the temp file is created
+    and again right before the replace; a failed check removes the temp file and writes nothing."""
+    if check is not None:
+        check()
     tmp = path.with_name(f".{path.name}.{os.getpid()}-{threading.get_ident()}.nocap-tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode, dir_fd=dir_fd)
     try:
@@ -316,6 +429,8 @@ def _replace(path: Path, data: bytes, mode: int, dir_fd: Optional[int] = None) -
             fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
+        if check is not None:
+            check()
         os.replace(tmp, path, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
     except BaseException:
         try:
@@ -360,6 +475,295 @@ def board_note(n: int, agent: str, pid: str, date: str, claim: str, evidence: st
     return f"{mid} {_slug(title)}.md", redact("\n".join(fm))
 
 
+# ---- the lessons cache (review 2, R3) ----------------------------------------------------------------------------
+def _cpu() -> float:
+    try:
+        return time.thread_time()
+    except (AttributeError, OSError):  # pragma: no cover - platforms without a per-thread clock
+        return time.process_time()
+
+
+def _load_cache(path: Path) -> Optional[Dict[str, Any]]:
+    try:
+        raw = _read_nofollow(path, MAX_CACHE_BYTES)
+        got = json.loads(raw.decode("utf-8")) if raw else None
+    except (Refused, OSError, ValueError, UnicodeDecodeError):
+        return None
+    if not isinstance(got, dict) or got.get("v") != 1:
+        return None
+    try:
+        out = {"v": 1, "dev": int(got["dev"]), "ino": int(got["ino"]), "offset": int(got["offset"]),
+               "tailh": str(got["tailh"]), "headh": str(got["headh"]), "tail": b"", "done": bool(got["done"]),
+               "counts": _clean_counts(got["counts"]), "prev": _clean_counts(got["prev"]) if got.get("prev") else None}
+    except (KeyError, TypeError, ValueError):
+        return None
+    return out if out["offset"] >= 0 else None
+
+
+def _clean_counts(c: Any) -> Dict[str, Dict[str, int]]:
+    if not isinstance(c, dict):
+        raise ValueError("counts")
+    out: Dict[str, Dict[str, int]] = {}
+    for who, pats in list(c.items())[:MAX_CACHE_AGENTS]:
+        if isinstance(who, str) and safe_agent(who) == who and isinstance(pats, dict):
+            out[who] = {p: int(n) for p, n in pats.items() if p in BY_ID and isinstance(n, int) and n > 0}
+    return out
+
+
+def _tmp_token() -> str:
+    """An unguessable temp-file suffix (review 3: it was pid-thread, which another local process can predict)."""
+    return secrets.token_hex(12)
+
+
+def _write_private(path: Path, body: bytes) -> None:
+    """A 0600 file in the plugin's own data folder: a NEW temp file, then os.replace. The temp name is random and is
+    opened with O_EXCL | O_NOFOLLOW, so a file, symlink or hard link already sitting at that name is never opened,
+    truncated or written through: the name is skipped. After TMP_TRIES occupied names it raises FileExistsError
+    (an OSError): both callers treat a failed save as a missed optimisation, never as a failed turn."""
+    last: Optional[OSError] = None
+    for _ in range(TMP_TRIES):
+        tmp = path.with_name(f".{path.name}.{_tmp_token()}.tmp")
+        try:
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        except FileExistsError as exc:
+            last = exc
+            continue
+        try:
+            if os.fstat(fd).st_mode & 0o077:
+                os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(body)
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.unlink(tmp)  # only ever a file this call created
+            except OSError:
+                pass
+            raise
+        return
+    raise last or FileExistsError(str(path))
+
+
+def _save_cache(path: Path, c: Dict[str, Any]) -> None:
+    """0600, temp file + os.replace in the plugin's own data folder. Agent names, pattern ids and counts only."""
+    body = json.dumps({"v": 1, "dev": c["dev"], "ino": c["ino"], "offset": c["offset"], "tailh": _tail_hash(c["tail"]),
+                       "headh": c["headh"],
+                       "done": c["done"], "counts": c["counts"], "prev": c["prev"]}, sort_keys=True).encode()
+    _write_private(path, body)
+
+
+def _tail_hash(b: bytes) -> str:
+    """A digest of the last LEARN_TAIL store bytes before the offset: detects a store rewritten in place without
+    keeping any of its text in the cache."""
+    return hashlib.sha256(b).hexdigest()[:32]
+
+
+def _tally(block: bytes, counts: Dict[str, Dict[str, int]]) -> None:
+    for line in block.split(b"\n"):
+        if b'"CAP"' not in line:  # a record without a 🧢 receipt adds nothing: no parse
+            continue
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        who, pids = capped_patterns(rec)
+        if not pids or (who not in counts and len(counts) >= MAX_CACHE_AGENTS):
+            continue
+        mine_ = counts.setdefault(who, {})
+        for pid in pids:
+            mine_[pid] = mine_.get(pid, 0) + 1
+
+
+def lesson_counts(store: Path, cache: Path) -> Dict[str, Dict[str, int]]:
+    """Per-agent 🧢 pattern counts of the receipt store, from a small cache that is caught up with what was
+    appended since the last call, under a CPU budget (LEARN_CPU) and a read cap (LEARN_MAX_READ). The store is
+    never parsed whole in one call: a new, replaced, truncated or rewritten store is rebuilt over the next calls,
+    showing the last complete counts meanwhile (or the partial counts, which only grow, when there are none)."""
+    c = _load_cache(cache)
+    try:
+        fh = open(store, "rb")
+    except FileNotFoundError:  # purged: the caps went with it
+        if c is not None:
+            try:
+                os.unlink(cache)
+            except OSError:
+                pass
+        return {}
+    with fh:
+        st = os.fstat(fh.fileno())
+        stale = c is None or (c["dev"], c["ino"]) != (st.st_dev, st.st_ino) or st.st_size < c["offset"]
+        if not stale and c["offset"]:
+            n = min(LEARN_TAIL, c["offset"])
+            fh.seek(c["offset"] - n)
+            c["tail"] = fh.read(n)
+            fh.seek(0)
+            stale = (_tail_hash(c["tail"]) != c["tailh"]
+                     or _tail_hash(fh.read(min(LEARN_HEAD, c["offset"]))) != c["headh"])
+        if stale:
+            prev = (c["counts"] if c["done"] else c["prev"]) if c else None
+            c = {"v": 1, "dev": st.st_dev, "ino": st.st_ino, "offset": 0, "tail": b"", "tailh": "", "headh": "",
+                 "done": False, "counts": {}, "prev": prev or None}
+        changed = stale
+        if c["offset"] < st.st_size:
+            fh.seek(c["offset"])
+            start, read, rest, eof = _cpu(), 0, b"", False
+            while True:
+                block = fh.read(LEARN_BLOCK)
+                if not block:
+                    eof = True
+                    break
+                read += len(block)
+                data = rest + block
+                cut = data.rfind(b"\n") + 1
+                if cut:
+                    _tally(data[:cut], c["counts"])
+                    c["tail"] = (c["tail"] + data[:cut])[-LEARN_TAIL:]
+                    c["offset"] += cut
+                    changed = True
+                rest = data[cut:]
+                if _cpu() - start > LEARN_CPU or read >= LEARN_MAX_READ:
+                    break
+            if eof and not c["done"]:
+                c["done"], c["prev"], changed = True, None, True
+        elif not c["done"]:
+            c["done"], c["prev"], changed = True, None, True
+        if changed:
+            fh.seek(0)
+            c["headh"] = _tail_hash(fh.read(min(LEARN_HEAD, c["offset"])))
+            try:
+                _save_cache(cache, c)
+            except OSError:
+                pass  # the cache is an optimisation: next turn catches up from the last saved point
+    return c["counts"] if c["done"] or not c["prev"] else c["prev"]
+
+
+# ---- the board index (review 2, R4) ------------------------------------------------------------------------------
+def _id_taken(ids_fd: int, n: int) -> bool:
+    try:
+        os.stat(f"{n:04d}", dir_fd=ids_fd, follow_symlinks=False)
+        return True
+    except FileNotFoundError:
+        return False
+
+
+def _free_id(ids_fd: int, n: int) -> int:
+    """The first id from n on that has no .ids reservation, by galloping then bisecting stat probes: about
+    2*log2(k) probes to skip k taken ids. Reservations are dense (ABB and No Cap never delete them); a gap below the
+    newest id can be found first, which is still a free id. The exclusive create after this is the real guard."""
+    if not _id_taken(ids_fd, n):
+        return n
+    lo, step = n, 1
+    while _id_taken(ids_fd, n + step):
+        lo = n + step
+        step *= 2
+        if step > 1 << 30:
+            raise Refused("no free board id found")
+    hi = n + step
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        if _id_taken(ids_fd, mid):
+            lo = mid
+        else:
+            hi = mid
+    return hi
+
+
+def _load_index(path: Path) -> Optional[Dict[str, Any]]:
+    try:
+        raw = _read_nofollow(path, MAX_CACHE_BYTES)
+        got = json.loads(raw.decode("utf-8")) if raw else None
+    except (Refused, OSError, ValueError, UnicodeDecodeError):
+        return None
+    if not isinstance(got, dict) or got.get("v") != 1 or not isinstance(got.get("keys"), dict):
+        return None
+    try:
+        nxt = int(got.get("next") or 1)
+    except (TypeError, ValueError):
+        return None
+    keys = {k: v for k, v in list(got["keys"].items())[:MAX_INDEX_KEYS]
+            if isinstance(k, str) and isinstance(v, str) and _BOARD_NAME_RE.match(v) and "/" not in v
+            and not v.startswith(".")}
+    return {"v": 1, "next": max(1, nxt), "keys": keys}
+
+
+def _save_index(path: Path, idx: Dict[str, Any]) -> None:
+    """0600 in the plugin data dir: agent:pattern -> note file name, and the next id hint. No claim text."""
+    try:
+        os.makedirs(path.parent, mode=0o700, exist_ok=True)
+        body = json.dumps({"v": 1, "next": idx["next"], "keys": idx["keys"]}, sort_keys=True).encode()
+        _write_private(path, body)
+    except OSError:
+        pass  # the index is an optimisation: without it the next write seeds again (bounded)
+
+
+def _small_names(dir_fd: int, st: os.stat_result) -> Optional[List[str]]:
+    """The folder's names when it is small (SCAN_DIR_BYTES, SCAN_MAX names), else None, so a listing never grows
+    with the board. A folder whose size says nothing (some file systems report 0) is still cut at SCAN_MAX."""
+    if st.st_size > SCAN_DIR_BYTES:
+        return None
+    names: List[str] = []
+    for entry in os.scandir(dir_fd):
+        names.append(entry.name)
+        if len(names) > SCAN_MAX:
+            return None
+    return names
+
+
+_SLUG_PID = {f" {_slug(_title(p))}.md": p for p in BY_ID}
+
+
+def _seed_index(board_fd: int, st: os.stat_result, pid: str) -> Dict[str, Any]:
+    """First write to a board with no index here. A small board is listed once: the highest M-NNNN and .ids number
+    give the next id, and notes named like a pattern's title (`M-NNNN <slug>.md`, at most BOARD_OPEN_MAX for the
+    current pattern and INDEX_OPEN_MAX in all) are opened for their `source: "nocap:<agent>:<pattern>"` key. A big
+    board is not listed: the id comes from _free_id's probes and only notes this index records are known."""
+    idx: Dict[str, Any] = {"v": 1, "next": 1, "keys": {}}
+    names = _small_names(board_fd, st)
+    if names is None:
+        return idx
+    top = 0
+    cands: List[Tuple[str, str]] = []
+    for name in names:
+        m = _BOARD_NAME_RE.match(name)
+        if not m:
+            continue
+        top = max(top, int(m.group(1)))
+        tail = name[name.find(" "):] if " " in name else ""
+        if tail in _SLUG_PID:
+            cands.append((_SLUG_PID[tail], name))
+    if sum(1 for p, _ in cands if p == pid) > BOARD_OPEN_MAX:
+        raise Refused(f"over {BOARD_OPEN_MAX} board notes named like {pid!r}; not scanning them all")
+    cands.sort(key=lambda c: (c[0] != pid, c[1]))  # this pattern's notes first
+    for p, name in cands[:INDEX_OPEN_MAX]:
+        try:
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=board_fd)
+            with os.fdopen(fd, "rb") as fh:
+                if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
+                    continue
+                head = fh.read(HEADER_SCAN)
+        except OSError:
+            continue
+        front = head.split(b"\n---", 1)[0]
+        for m in re.finditer(rb'(?m)^source: "nocap:([a-z0-9._-]{1,64}):' + re.escape(p.encode()) + rb'"\r?$', front):
+            who = m.group(1).decode()
+            if safe_agent(who) == who:
+                idx["keys"].setdefault(f"{who}:{p}", name)
+    try:
+        ids_fd = os.open(".ids", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=board_fd)
+    except OSError:
+        ids_fd = -1
+    if ids_fd >= 0:
+        try:
+            for name in _small_names(ids_fd, os.fstat(ids_fd)) or []:
+                m = _IDS_NAME_RE.fullmatch(name)
+                if m:
+                    top = max(top, int(m.group(1)))
+        finally:
+            os.close(ids_fd)
+    idx["next"] = top + 1
+    return idx
+
+
 # ---- the bridge ------------------------------------------------------------------------------------------------
 class Bridge:
     def __init__(self, data_dir: Callable[[], Path], setting: Callable[[str, Any], Any], agent: Callable[[], str]):
@@ -367,6 +771,8 @@ class Bridge:
         self.setting = setting
         self.agent = agent
         self.last_error = ""
+        self._pending: List[Tuple[Any, ...]] = []  # exports skipped on a busy folder (R1), retried by the next write
+        self._plock = threading.Lock()
 
     # -- settings --
     def _get(self, key: str, default: Any) -> Any:
@@ -459,7 +865,11 @@ class Bridge:
     # -- writing --
     def record(self, receipts: List[Dict[str, Any]], session_id: str = "", turn_id: str = "",
                ts: Optional[float] = None, agent: Optional[str] = None) -> Dict[str, Any]:
-        """Append one line per 🧢 in `receipts` to the agent's note, and the first board note per pattern."""
+        """Append one line per 🧢 in `receipts` to the agent's note, and the first board note per pattern.
+
+        A destination folder locked by another writer is never waited for (R1): the export is skipped, kept in a
+        small in-memory queue and written by the next write that gets the lock (at most PENDING_FLUSH per call);
+        `hermes nocap obsidian sync` writes it from the store in any case (each line is idempotent by receipt id)."""
         out: Dict[str, Any] = {"written": 0, "board": [], "skipped": ""}
         caps = [r for r in receipts or [] if isinstance(r, dict) and r.get("verdict") == CAP]
         if not caps or not self.enabled():
@@ -470,13 +880,51 @@ class Bridge:
             out["skipped"] = "agent name refused"
             self.last_error = "agent unknown or name refused (letters, digits, . _ - only); nothing attributed"
             return out
+        item = (caps, str(session_id or ""), str(turn_id or ""), ts if ts is not None else time.time(), who)
+        deadline = time.monotonic() + LOCK_BUDGET  # every lock this call takes shares one short budget
+        out = self._record_one(*item, deadline=deadline)
+        if out.pop("busy", False):
+            self._queue(item)
+            return out
+        for _ in range(PENDING_FLUSH):  # the lock was free just now: earlier skipped exports, a few per write
+            with self._plock:
+                if not self._pending:
+                    break
+                prev = self._pending.pop(0)
+            got = self._record_one(*prev, deadline=deadline)
+            if got.pop("busy", False):
+                self._queue(prev, front=True)
+                break
+            out["written"] += got["written"]
+            out["board"] += got["board"]
+        return out
+
+    def pending(self) -> int:
+        with self._plock:
+            return len(self._pending)
+
+    def _queue(self, item: Tuple[Any, ...], front: bool = False) -> None:
+        with self._plock:
+            if any(p[1:3] == item[1:3] and p[4] == item[4] and p[0] == item[0] for p in self._pending):
+                return
+            if front:
+                self._pending.insert(0, item)
+            else:
+                self._pending.append(item)
+            del self._pending[:-PENDING_MAX]  # oldest out first; `sync` still finds them in the store
+
+    def _record_one(self, caps: List[Dict[str, Any]], session_id: str, turn_id: str, ts: float,
+                    who: str, deadline: Optional[float] = None) -> Dict[str, Any]:
+        out: Dict[str, Any] = {"written": 0, "board": [], "skipped": ""}
         try:
             root = self.vault()
             parts = safe_folder(self.folder())
             if parts is None:
                 raise Refused("obsidian_folder must be a plain vault-relative folder")
             with _vault_fd(root) as vfd:
-                with _pinned_dir(vfd, parts) as note_fd, _flock(note_fd):  # one lock per destination folder
+                where = (root, _ident(vfd))
+                note_ids = [where[1]]
+                with _pinned_dir(vfd, parts, idents=note_ids) as note_fd, _flock(note_fd, deadline):  # one lock/folder
                     path = Path(f"{who}.md")
                     old = _read_nofollow(path, MAX_NOTE_BYTES, dir_fd=note_fd)
                     buf = old if old is not None else note_header(who)
@@ -498,11 +946,15 @@ class Bridge:
                             raise Refused("agent note would exceed the size limit")
                         mode = ((os.stat(path, dir_fd=note_fd, follow_symlinks=False).st_mode & 0o777)
                                 if old is not None else 0o600)
-                        _replace(path, buf, mode, dir_fd=note_fd)
+                        _replace(path, buf, mode, dir_fd=note_fd, check=lambda: _verify(root, parts, note_ids))
                 link = "/".join(parts) + f"/{who}"
                 for pid, r in firsts.items():
                     try:
-                        made = self._board(vfd, who, pid, date, r, link)
+                        made = self._board(vfd, who, pid, date, r, link, deadline, where)
+                    except Busy as exc:  # skipped, not waited for: the whole item is retried later (idempotent)
+                        out["busy"] = True
+                        self.last_error = f"board: {exc}"
+                        break
                     except (Refused, OSError) as exc:
                         self.last_error = f"board: {exc}"
                         continue
@@ -511,69 +963,74 @@ class Bridge:
         except (Refused, OSError) as exc:
             out["written"] = 0
             out["skipped"] = str(exc)
+            out["busy"] = isinstance(exc, Busy)
             self.last_error = str(exc)
         return out
 
-    def _board(self, vfd: int, who: str, pid: str, date: str, r: Dict[str, Any], link: str) -> Optional[str]:
+    def _board(self, vfd: int, who: str, pid: str, date: str, r: Dict[str, Any], link: str,
+               deadline: Optional[float] = None, where: Optional[Tuple[str, Tuple[int, int]]] = None) -> Optional[str]:
         parts = self.board_parts(vfd)
         if parts is None:
             return None
-        with _pinned_dir(vfd, parts) as board_fd, _flock(board_fd):
-            return self._board_at(board_fd, who, pid, date, r, link)
+        root, vault_id = where if where is not None else ("", _ident(vfd))
+        ids = [vault_id]
+        with _pinned_dir(vfd, parts, idents=ids) as board_fd, _flock(board_fd, deadline):
+            def check(sub: Optional[List[str]] = None, sub_ids: Optional[List[Tuple[int, int]]] = None) -> None:
+                if root:
+                    _verify(root, parts + (sub or []), ids + (sub_ids or []))
+            return self._board_at(board_fd, who, pid, date, r, link, check)
 
     def _board_at(self, board_fd: int, who: str, pid: str, date: str,
-                  r: Dict[str, Any], link: str) -> Optional[str]:
-        """Bounded: the folder is LISTED (names only) to find the next id, but only notes named like this pattern's
-        own title (`M-NNNN <slug>.md`) are opened, at most BOARD_OPEN_MAX, to find an existing source key."""
-        src = f'source: "nocap:{who}:{pid}"'.encode()
-        tail = f" {_slug(_title(pid))}.md"
-        top = 0
-        candidates: List[str] = []
-        for entry in os.scandir(board_fd):
-            m = _BOARD_NAME_RE.match(entry.name)
-            if m:
-                top = max(top, int(m.group(1)))
-                if entry.name.endswith(tail):
-                    candidates.append(entry.name)
-        if len(candidates) > BOARD_OPEN_MAX:
-            raise Refused(f"over {BOARD_OPEN_MAX} board notes named {tail.strip()!r}; not scanning them all")
-        for name in candidates:
+                  r: Dict[str, Any], link: str, check: Callable[..., None] = lambda *a: None) -> Optional[str]:
+        """Bounded per write, whatever the board's size (review 2, R4). No Cap keeps its own index of the board notes
+        IT wrote (agent:pattern -> file name) and the next id hint, in the plugin data dir. A known note is one stat.
+        A new id is the hint, taken with an exclusive create in .ids (the collision guard, as ABB does it), probed
+        forward by galloping stat probes when taken. Only the first write to a board without an index lists the
+        folder, and only a small one (folder size <= SCAN_DIR_BYTES, at most SCAN_MAX names): a big board is never
+        listed, its id comes from the probes."""
+        st = os.fstat(board_fd)
+        idx_path = Path(self.data_dir()) / f"obsidian-board-{st.st_dev}-{st.st_ino}.json"
+        idx = _load_index(idx_path)
+        if idx is None:
+            idx = _seed_index(board_fd, st, pid)
+        key = f"{who}:{pid}"
+        known = idx["keys"].get(key)
+        if known:
             try:
-                fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=board_fd)
-                with os.fdopen(fd, "rb") as fh:
-                    if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
-                        continue
-                    head = fh.read(HEADER_SCAN)
+                kst = os.stat(known, dir_fd=board_fd, follow_symlinks=False)
+                if stat.S_ISREG(kst.st_mode):
+                    _save_index(idx_path, idx)
+                    return None  # an existing source key suppresses duplicates, but is never trusted as a rule
             except OSError:
-                continue
-            if src in head.split(b"\n---", 1)[0]:
-                return None  # an existing source key suppresses duplicates, but is never trusted as a rule
+                pass
+            del idx["keys"][key]  # deleted or renamed by the user: a fresh note, as before
         # Open .ids relative to the already pinned board directory, even if an attacker renames its parent.
+        check()
         try:
             os.mkdir(".ids", 0o700, dir_fd=board_fd)
         except FileExistsError:
             pass
         ids_fd = os.open(".ids", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=board_fd)
+        ids_id = [_ident(ids_fd)]
         try:
-            for entry in os.scandir(ids_fd):
-                m = _IDS_NAME_RE.fullmatch(entry.name)
-                if m:
-                    top = max(top, int(m.group(1)))
-            n = top + 1
-            for _ in range(100):
+            n = _free_id(ids_fd, max(1, idx["next"]))
+            for _ in range(ID_TRIES):
                 try:
-                    _write_new(Path(f"{n:04d}"), b"", dir_fd=ids_fd)
+                    _write_new(Path(f"{n:04d}"), b"", dir_fd=ids_fd, check=lambda: check([".ids"], ids_id))
                 except FileExistsError:
-                    n += 1
+                    n = _free_id(ids_fd, n + 1)
                     continue
                 name, text = board_note(n, who, pid, date, _claim(r), _evidence(r), link)
                 try:
-                    _write_new(Path(name), text.encode("utf-8"), dir_fd=board_fd)
+                    _write_new(Path(name), text.encode("utf-8"), dir_fd=board_fd, check=check)
                 except FileExistsError:
                     n += 1
                     continue
+                idx["next"] = n + 1
+                idx["keys"][key] = name
+                _save_index(idx_path, idx)
                 return name
-            raise Refused("could not reserve a board id after 100 tries")
+            raise Refused(f"could not reserve a board id after {ID_TRIES} tries")
         finally:
             os.close(ids_fd)
 
@@ -598,6 +1055,16 @@ class Bridge:
         return total
 
     # -- learning --
+    def lessons_cached(self, store: Path, exclude: Iterable[str] = ()) -> Optional[str]:
+        """pre_llm_call's lesson line, from the lessons cache (R3): bounded work per turn, whatever the store size."""
+        if not self.learn_on():
+            return None
+        who = self.who()
+        if not who:
+            return None
+        counts = lesson_counts(Path(store), Path(self.data_dir()) / LESSONS_FILE)
+        return lesson_from_counts(counts.get(who, {}), who, exclude)
+
     def lessons(self, records: Iterable[Dict[str, Any]], exclude: Iterable[str] = ()) -> Optional[str]:
         if not self.learn_on():
             return None
@@ -676,6 +1143,9 @@ class Bridge:
             lines.append("learn: off (obsidian_learn: true turns on the per-agent lesson line)")
         if self.last_error:
             lines.append(f"last refusal: {self.last_error}")
+        if self.pending():
+            lines.append(f"waiting: {self.pending()} 🧢 export(s) skipped on a busy folder; the next write or "
+                         "`hermes nocap obsidian sync` writes them")
         return "\n".join(lines)
 
     def doctor_line(self) -> Tuple[str, bool]:

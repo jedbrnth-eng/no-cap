@@ -50,10 +50,29 @@ an `obsidian://` link (it runs nothing). `hermes nocap doctor` shows the bridge 
   missing or relative, a folder with `..`, a hidden part or an absolute path, a symlinked folder or note, and a
   profile name that isn't letters, digits, `.`, `_` or `-`. An unknown or empty profile writes nothing and gets no
   lesson (it is never filed under `default`).
+- **A busy folder never holds a reply:** the lock is tried without blocking, with short pauses, for at most 120 ms per
+  write in all (both folders). When another writer still holds it, that export is skipped, not waited for: the reply
+  goes out, the skipped 🧢 waits in memory (at most 64) and the next write that gets the lock writes it (at most 4
+  per write), and `hermes nocap obsidian sync` writes it from the store in any case (every line is idempotent by its
+  receipt id). `status` shows how many are waiting. Cost: a line can land a turn late, or only at `sync` if Hermes
+  exits first.
+- **New files in No Cap's own data folder** (next to `receipts.jsonl`, 0600, a new randomly named temp file opened with `O_EXCL` + `os.replace`, so a file or link
+  already at the temp name is never written through):
+  `obsidian-lessons.json`, the lesson cache (per agent: pattern id -> 🧢 count, plus the store's inode, the byte offset
+  counted up to and hashes of the store's first 256 bytes and the 64 before that offset; no claim, evidence or reply text), only with `obsidian_learn: true`, removed by
+  `/nocap purge`; and `obsidian-board-<dev>-<inode>.json` per board folder, No Cap's index of the board notes it wrote
+  or found (`<agent>:<pattern>` -> file name) and the next id hint, only with the board on.
 - **Symlinks and the vault path:** a symlink you put in the configured `obsidian_vault` path itself (say, the vault
   lives on another disk) is allowed: it is resolved at the start of each write. From then on the vault is held by one
   descriptor, opened one path component at a time with `O_NOFOLLOW`, and every later open is relative to it. If any
   ancestor of the resolved vault is swapped for a symlink in between, that write is refused instead of following it.
+  A held descriptor pins a folder, not its place in the tree, so right before each write commits (before the temp
+  file, again right before `os.replace`, and before each exclusive board or `.ids` create) the path is walked again
+  from `/` with `O_NOFOLLOW` and the device and inode of the vault and of every pinned folder are compared. A folder
+  (or the vault) moved out of the vault, with or without a symlink left in its place, gets nothing: the write is
+  refused and reported as skipped. **Residual race:** the re-check and the write are two system calls; a move in the
+  microseconds between them is not caught. Closing that needs OS support (a rename bound to a verified path) that
+  POSIX doesn't offer. Someone who can move folders in your vault can also edit any note in it directly.
 - **What a line holds:** date, pattern id, the claim, the contradicting evidence, the receipt id. Both text fields pass
   through `redact()` in FULL before flattening or clipping (a redaction rule can need distant context, such as the
   `@` after a long URL password), then cut to 160 and Markdown-escaped. A claim can't become a link, an embed,
@@ -64,11 +83,18 @@ an `obsidian://` link (it runs nothing). `hermes nocap doctor` shows the bridge 
   exports nothing the local store doesn't already hold, so it doesn't make that worse, but it can't mask a fragment
   `redact()` can't recognise either.
 - **New `pre_llm_call` line** (only with `obsidian_learn: true`): `[No Cap lessons for agent <profile>: ...]` plus up to
-  3 of No Cap's built-in rules. Rules already live as approved Cap Coach rules are not repeated.
-- **Reads:** the vault's `.agentbox.json` (a folder name, validated); on a 🧢 write, this agent's note, the NAMES in
-  the board folder (to find the next id) and the first 4 KB of at most 32 board notes named like this pattern's
-  title (to find an existing `source:` key; other notes are never opened); for `status`, the No Cap notes. None
-  of it reaches the model. With the feature off, `pre_llm_call` reads nothing, not even No Cap's own store.
+  3 of No Cap's built-in rules. Rules already live as approved Cap Coach rules are not repeated. Each turn reads
+  `obsidian-lessons.json` and only the store bytes appended since it was last brought up to date, under a 15 ms CPU
+  budget and an 8 MB read cap, so the turn's cost doesn't grow with the store. A new, replaced (pruned), truncated or
+  rewritten store is counted again over the next turns, a step per turn: meanwhile the line uses the last complete
+  counts (or, on the very first build, the counts so far, which only grow). After `/nocap purge` it is empty.
+- **Reads:** the vault's `.agentbox.json` (a folder name, validated); on a 🧢 write, this agent's note and, for the
+  board, one `stat` of the note the index knows, or stat probes of `.ids/NNNN` to find a free id (about 2·log2 of the
+  ids skipped). Only the FIRST write to a board this Hermes home has no index for lists the folder, and only a small
+  one (directory size up to 64 KiB, at most 4096 names): it reads the highest id and the first 4 KB of the notes named
+  like a pattern's title (at most 32 for this pattern, 128 in all) for their `source:` key. A big board is never
+  listed. For `status`, the No Cap notes and the board's names. None of it reaches the model. With the feature off,
+  `pre_llm_call` reads nothing, not even No Cap's own store, and no cache file is made.
 - **No network, no subprocess, no new dependency.** `open` prints a link; it doesn't launch Obsidian.
 
 ## What is not done
@@ -80,5 +106,11 @@ an `obsidian://` link (it runs nothing). `hermes nocap doctor` shows the bridge 
 - Writes require POSIX (`flock`, directory-relative operations). The bridge can stay off on Windows without breaking
   No Cap; enabled bridge writes on Windows are refused. Windows is not tested.
 - Old local records without a valid profile are skipped, never guessed to belong to the current agent.
-- A board note you rename by hand is no longer recognised as No Cap's (only `M-NNNN <title>.md` names are
-  opened), so the next 🧢 on that pattern adds one fresh board note.
+- A board note you rename or delete by hand is no longer recognised as No Cap's, so the next 🧢 on that pattern adds
+  one fresh board note.
+- The board index is per Hermes home. On a big board (never listed) or after the index exists, a board note for the
+  same agent and pattern written by ANOTHER Hermes home (or by an older No Cap without the index) is not seen, so that
+  agent can get one more board note for the pattern. Ids stay unique among `.ids` reservations (the exclusive create
+  is the guard, as in ABB); a note made by hand with an `M-NNNN` id but no `.ids/NNNN` reservation can share its id.
+- Lessons and the per-turn budget: on a very large store the first lesson line after a purge, prune or a new install
+  can take a few turns to reach its full counts.

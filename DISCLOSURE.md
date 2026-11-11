@@ -106,6 +106,12 @@ local to the machine Hermes runs on; there is no network use unless you turn on 
   stub on the first free port in 8765-8799 on 127.0.0.1, and uses `uv` to fetch pyte, Pillow and pytest into a
   throwaway venv (that fetch is the one network use, and it is the demo's, not the plugin's).
   <!-- verify-at-merge: W2 S10 (Ladder demo minimal env, pinned deps) -->
+- **Obsidian lessons bridge (off unless `obsidian_vault` is set):** writes only inside the vault you name (one
+  redacted line per 🧢 in `<folder>/<profile>.md`, and Agent Black Box board notes plus `.ids` reservations), and two
+  small files in this store folder (`0600`, atomic write, no claim text): `obsidian-lessons.json` (per-agent 🧢 counts
+  by pattern id, with `obsidian_learn: true`; `/nocap purge` deletes it) and `obsidian-board-<dev>-<inode>.json` (the
+  board notes it wrote and the next id). Nothing is read from the vault into the prompt. Details, limits and the
+  residual race: `docs/OBSIDIAN.md`.
 - **Cards and exports it writes:** `/nocap verdict` writes `verdict.svg`/`verdict.png` and `/capscore compare` writes
   `compare.svg`/`compare.png` in its own store folder (they quote claims and cited commands, already redacted; `/nocap
   purge` deletes them with the store). `hermes nocap export --out` and `hermes nocap metrics --file` write the file you

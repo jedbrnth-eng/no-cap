@@ -62,7 +62,8 @@ class Store:
     def purge(self) -> int:
         with self._lock:
             n = len(self.records())
-            for name in (FILE, LEDGER_FILE, "scorecard.png", "scorecard.svg"):
+            # obsidian-lessons.json: the Obsidian bridge's per-agent 🧢 counts (nocap/obsidian.py LESSONS_FILE)
+            for name in (FILE, LEDGER_FILE, "scorecard.png", "scorecard.svg", "obsidian-lessons.json"):
                 try:
                     os.remove(Path(self._dir()) / name)
                 except FileNotFoundError:

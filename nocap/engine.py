@@ -180,7 +180,7 @@ class Engine:
             return got
         try:
             skip = {str(p.get("pattern") or "") for p in self.coach.active_rules(model)}
-            text = self.obsidian.lessons(self.store.records(), exclude=skip)
+            text = self.obsidian.lessons_cached(self.store.path, exclude=skip)  # a small cache, not the store
         except Exception:
             text = None
         if not text:
