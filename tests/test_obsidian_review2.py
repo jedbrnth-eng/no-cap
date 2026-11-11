@@ -154,3 +154,72 @@ def test_r1_lock_wait_is_bounded_per_call(tmp_path):
         c.release()
     assert got["written"] == 0 and "busy" in got["skipped"]
     assert wall < 0.25
+
+
+# ---- R2: a pinned folder moved out of the vault (path replaced by a symlink) gets no new write -------------------
+def _swap_out(src, outside, name):
+    """Move src to outside/name and leave a symlink to `outside` where it was."""
+    outside.mkdir(exist_ok=True)
+    src.rename(outside / name)
+    src.symlink_to(outside, target_is_directory=True)
+
+
+def _files(d):
+    return sorted(str(p.relative_to(d)) for p in Path(d).rglob("*") if p.is_file() or p.is_symlink())
+
+
+@pytest.mark.parametrize("what", ["folder", "vault"])
+def test_r2_note_folder_or_vault_moved_after_pinning_gets_no_line(tmp_path, what):
+    v = tmp_path / "vault"
+    v.mkdir()
+    b = bridge(tmp_path, cfg_for(v))
+    assert b.record([R], "s", "old")["written"] == 1
+    outside = tmp_path / "outside"
+    original = O._replace
+
+    def move(path, data, mode, **kw):
+        _swap_out(v / "No Cap" if what == "folder" else v, outside, "moved")
+        return original(path, data, mode, **kw)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(O, "_replace", move)
+        got = b.record([R], "s", "new")
+    moved_note = outside / "moved" / ("alpha.md" if what == "folder" else "No Cap/alpha.md")
+    assert entries(moved_note) == 1, "a new line went to the folder moved outside the vault"
+    assert got["written"] == 0 and "moved" in got["skipped"]
+    assert not [f for f in _files(outside) if "nocap-tmp" in f]  # no temp file left behind either
+
+
+@pytest.mark.parametrize("what", ["board", "ids"])
+def test_r2_board_or_ids_folder_moved_after_pinning_gets_no_file(tmp_path, what):
+    v = tmp_path / "vault"
+    board = v / "Agent Black Box" / "Mistakes"
+    (board / ".ids").mkdir(parents=True)
+    b = bridge(tmp_path, cfg_for(v, obsidian_board="on"))
+    outside = tmp_path / "outside"
+    original = O._write_new
+    moved = []
+
+    def move(path, data, dir_fd=None, **kw):
+        if not moved:
+            moved.append(1)
+            _swap_out(board if what == "board" else board / ".ids", outside, "moved")
+        return original(path, data, dir_fd=dir_fd, **kw)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(O, "_write_new", move)
+        got = b.record([R], "s", "t")
+    assert _files(outside) == [], f"board write landed outside the vault: {_files(outside)}"
+    assert got["board"] == [] and "moved" in b.last_error
+    assert entries(v / "No Cap" / "alpha.md") == 1  # the note folder did not move: its line landed
+
+
+def test_r2_an_unmoved_destination_still_writes(tmp_path):
+    """Control: the re-check passes when nothing moved (a configured symlinked vault path included)."""
+    real = tmp_path / "real"
+    (real / "Agent Black Box").mkdir(parents=True)
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+    b = bridge(tmp_path, cfg_for(link, obsidian_board="on"))
+    got = b.record([R], "s", "t")
+    assert got["written"] == 1 and len(got["board"]) == 1

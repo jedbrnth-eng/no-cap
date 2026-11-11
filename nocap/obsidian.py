@@ -281,9 +281,10 @@ def _flock(fd: int, deadline: Optional[float] = None):
 
 
 @contextmanager
-def _pinned_dir(base_fd: int, parts: List[str], create: bool = True):
+def _pinned_dir(base_fd: int, parts: List[str], create: bool = True, idents: Optional[List[Tuple[int, int]]] = None):
     """Pin each directory with openat(O_NOFOLLOW) below the held vault descriptor. A concurrent rename or symlink
-    swap cannot redirect a write: all later operations use the pinned directory fd, never an absolute path."""
+    swap cannot redirect a write: all later operations use the pinned directory fd, never an absolute path. The
+    (st_dev, st_ino) of each pinned folder is appended to `idents`, for _verify before the final write."""
     fd = os.dup(base_fd)
     try:
         for part in parts:
@@ -295,7 +296,39 @@ def _pinned_dir(base_fd: int, parts: List[str], create: bool = True):
             child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
             os.close(fd)
             fd = child
+            if idents is not None:
+                idents.append(_ident(fd))
         yield fd
+    finally:
+        os.close(fd)
+
+
+def _ident(fd: int) -> Tuple[int, int]:
+    st = os.fstat(fd)
+    return st.st_dev, st.st_ino
+
+
+def _verify(root: str, parts: List[str], idents: List[Tuple[int, int]]) -> None:
+    """Review 2 (R2): the held descriptors pin inodes, not their place in the tree. A pinned folder (or the vault)
+    moved OUT of the vault and replaced by a symlink would still take the write. So, right before a write commits,
+    walk the path again from `/` with O_NOFOLLOW and compare st_dev/st_ino of the vault (idents[0]) and of each
+    pinned folder below it (idents[1:]). Any difference, a symlink or a missing part: Refused, nothing written.
+    The re-check and the write are two system calls: a move in the microseconds between them is not caught."""
+    names = list(Path(root).parts[1:])
+    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for i, part in enumerate(names + list(parts)):
+            try:
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            except OSError as exc:
+                raise Refused(f"destination moved out of the vault after it was opened (at {part!r}: "
+                              f"{exc.strerror}); not written")
+            os.close(fd)
+            fd = child
+            k = i - len(names) + 1  # 0 = the vault itself, 1.. = the folders below it
+            if k >= 0 and (k >= len(idents) or _ident(fd) != idents[k]):
+                raise Refused(f"destination moved out of the vault after it was opened (at {part!r}: not the "
+                              "folder that was opened); not written")
     finally:
         os.close(fd)
 
@@ -317,8 +350,12 @@ def _read_nofollow(path: Path, limit: int, dir_fd: Optional[int] = None) -> Opti
         return fh.read(limit + 1)
 
 
-def _write_new(path: Path, data: bytes, dir_fd: Optional[int] = None) -> None:
-    """Create path exclusively (never through a link); raises FileExistsError when it is there."""
+def _write_new(path: Path, data: bytes, dir_fd: Optional[int] = None,
+               check: Optional[Callable[[], None]] = None) -> None:
+    """Create path exclusively (never through a link); raises FileExistsError when it is there. `check` (_verify)
+    runs right before the create."""
+    if check is not None:
+        check()
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=dir_fd)
     try:
         with os.fdopen(fd, "wb") as fh:
@@ -331,7 +368,12 @@ def _write_new(path: Path, data: bytes, dir_fd: Optional[int] = None) -> None:
         raise
 
 
-def _replace(path: Path, data: bytes, mode: int, dir_fd: Optional[int] = None) -> None:
+def _replace(path: Path, data: bytes, mode: int, dir_fd: Optional[int] = None,
+             check: Optional[Callable[[], None]] = None) -> None:
+    """Temp file + fsync + os.replace in the pinned folder. `check` (_verify) runs before the temp file is created
+    and again right before the replace; a failed check removes the temp file and writes nothing."""
+    if check is not None:
+        check()
     tmp = path.with_name(f".{path.name}.{os.getpid()}-{threading.get_ident()}.nocap-tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode, dir_fd=dir_fd)
     try:
@@ -339,6 +381,8 @@ def _replace(path: Path, data: bytes, mode: int, dir_fd: Optional[int] = None) -
             fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
+        if check is not None:
+            check()
         os.replace(tmp, path, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
     except BaseException:
         try:
@@ -541,7 +585,9 @@ class Bridge:
             if parts is None:
                 raise Refused("obsidian_folder must be a plain vault-relative folder")
             with _vault_fd(root) as vfd:
-                with _pinned_dir(vfd, parts) as note_fd, _flock(note_fd, deadline):  # one lock per destination folder
+                where = (root, _ident(vfd))
+                note_ids = [where[1]]
+                with _pinned_dir(vfd, parts, idents=note_ids) as note_fd, _flock(note_fd, deadline):  # one lock/folder
                     path = Path(f"{who}.md")
                     old = _read_nofollow(path, MAX_NOTE_BYTES, dir_fd=note_fd)
                     buf = old if old is not None else note_header(who)
@@ -563,11 +609,11 @@ class Bridge:
                             raise Refused("agent note would exceed the size limit")
                         mode = ((os.stat(path, dir_fd=note_fd, follow_symlinks=False).st_mode & 0o777)
                                 if old is not None else 0o600)
-                        _replace(path, buf, mode, dir_fd=note_fd)
+                        _replace(path, buf, mode, dir_fd=note_fd, check=lambda: _verify(root, parts, note_ids))
                 link = "/".join(parts) + f"/{who}"
                 for pid, r in firsts.items():
                     try:
-                        made = self._board(vfd, who, pid, date, r, link, deadline)
+                        made = self._board(vfd, who, pid, date, r, link, deadline, where)
                     except Busy as exc:  # skipped, not waited for: the whole item is retried later (idempotent)
                         out["busy"] = True
                         self.last_error = f"board: {exc}"
@@ -585,15 +631,20 @@ class Bridge:
         return out
 
     def _board(self, vfd: int, who: str, pid: str, date: str, r: Dict[str, Any], link: str,
-               deadline: Optional[float] = None) -> Optional[str]:
+               deadline: Optional[float] = None, where: Optional[Tuple[str, Tuple[int, int]]] = None) -> Optional[str]:
         parts = self.board_parts(vfd)
         if parts is None:
             return None
-        with _pinned_dir(vfd, parts) as board_fd, _flock(board_fd, deadline):
-            return self._board_at(board_fd, who, pid, date, r, link)
+        root, vault_id = where if where is not None else ("", _ident(vfd))
+        ids = [vault_id]
+        with _pinned_dir(vfd, parts, idents=ids) as board_fd, _flock(board_fd, deadline):
+            def check(sub: Optional[List[str]] = None, sub_ids: Optional[List[Tuple[int, int]]] = None) -> None:
+                if root:
+                    _verify(root, parts + (sub or []), ids + (sub_ids or []))
+            return self._board_at(board_fd, who, pid, date, r, link, check)
 
     def _board_at(self, board_fd: int, who: str, pid: str, date: str,
-                  r: Dict[str, Any], link: str) -> Optional[str]:
+                  r: Dict[str, Any], link: str, check: Callable[..., None] = lambda *a: None) -> Optional[str]:
         """Bounded: the folder is LISTED (names only) to find the next id, but only notes named like this pattern's
         own title (`M-NNNN <slug>.md`) are opened, at most BOARD_OPEN_MAX, to find an existing source key."""
         src = f'source: "nocap:{who}:{pid}"'.encode()
@@ -620,11 +671,13 @@ class Bridge:
             if src in head.split(b"\n---", 1)[0]:
                 return None  # an existing source key suppresses duplicates, but is never trusted as a rule
         # Open .ids relative to the already pinned board directory, even if an attacker renames its parent.
+        check()
         try:
             os.mkdir(".ids", 0o700, dir_fd=board_fd)
         except FileExistsError:
             pass
         ids_fd = os.open(".ids", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=board_fd)
+        ids_id = [_ident(ids_fd)]
         try:
             for entry in os.scandir(ids_fd):
                 m = _IDS_NAME_RE.fullmatch(entry.name)
@@ -633,13 +686,13 @@ class Bridge:
             n = top + 1
             for _ in range(100):
                 try:
-                    _write_new(Path(f"{n:04d}"), b"", dir_fd=ids_fd)
+                    _write_new(Path(f"{n:04d}"), b"", dir_fd=ids_fd, check=lambda: check([".ids"], ids_id))
                 except FileExistsError:
                     n += 1
                     continue
                 name, text = board_note(n, who, pid, date, _claim(r), _evidence(r), link)
                 try:
-                    _write_new(Path(name), text.encode("utf-8"), dir_fd=board_fd)
+                    _write_new(Path(name), text.encode("utf-8"), dir_fd=board_fd, check=check)
                 except FileExistsError:
                     n += 1
                     continue
