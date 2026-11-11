@@ -510,3 +510,73 @@ def test_r3_store_rewritten_in_place_is_rebuilt(tmp_path):
     for _ in range(3):
         got = e.on_turn_start(session_id="s", model="m")
     assert got is None
+
+
+# ---- review 3: the cache and index temp files -----------------------------------------------------------------------
+# The reviewer planted a hard link at the (then predictable, pid-thread) temp name inside the plugin data folder,
+# pointing at a file outside it. The writer opened it with O_TRUNC and overwrote the outside file.
+import threading as _threading  # noqa: E402
+
+VICTIM = "UNCHANGED-SYNTHETIC-VICTIM"
+
+
+def _plant(tmp_path, final: Path, name: str) -> Path:
+    outside = tmp_path / "outside"
+    outside.mkdir(exist_ok=True)
+    victim = outside / f"victim-{name.strip('.')}"
+    victim.write_text(VICTIM)
+    final.parent.mkdir(parents=True, exist_ok=True)
+    os.link(victim, final.with_name(name))
+    return victim
+
+
+def _old_name(final: Path) -> str:
+    return f".{final.name}.{os.getpid()}-{_threading.get_ident()}.tmp"
+
+
+def test_r5_lessons_cache_temp_never_overwrites_a_planted_hardlink(tmp_path, monkeypatch):
+    v = tmp_path / "vault"
+    v.mkdir()
+    e = make_engine(tmp_path, cfg_for(v))
+    _store_of(tmp_path, 20_000, REC)
+    cache = tmp_path / "data" / O.LESSONS_FILE
+    old = _plant(tmp_path, cache, _old_name(cache))  # the name the reviewer predicted
+    monkeypatch.setattr(O, "_tmp_token", iter(["aaaa", "bbbb", "cccc"]).__next__, raising=False)
+    taken = _plant(tmp_path, cache, f".{cache.name}.aaaa.tmp")  # and a collision on the first random name
+    assert e.on_turn_start(session_id="s", model="m")
+    assert old.read_text() == VICTIM and taken.read_text() == VICTIM
+    assert json.loads(cache.read_text(encoding="utf-8"))["counts"]  # an occupied name is skipped, the cache is still saved
+    assert _stat.S_IMODE(cache.stat().st_mode) == 0o600
+    assert not cache.with_name(f".{cache.name}.bbbb.tmp").exists()  # no temp file left behind
+
+
+def test_r5_board_index_temp_never_overwrites_a_planted_hardlink(tmp_path, monkeypatch):
+    v = tmp_path / "vault"
+    (v / "Agent Black Box").mkdir(parents=True)
+    b = bridge(tmp_path, cfg_for(v, obsidian_board="on"))
+    b.record([dict(R)], "s", "t1")
+    (idx,) = list((tmp_path / "data").glob("obsidian-board-*.json"))
+    old = _plant(tmp_path, idx, _old_name(idx))
+    monkeypatch.setattr(O, "_tmp_token", iter(["aaaa", "bbbb", "cccc", "dddd"]).__next__, raising=False)
+    taken = _plant(tmp_path, idx, f".{idx.name}.aaaa.tmp")
+    got = b.record([dict(R, pattern="pushed.no_push", kind="pushed")], "s", "t2")
+    assert old.read_text() == VICTIM and taken.read_text() == VICTIM
+    assert len(json.loads(idx.read_text(encoding="utf-8"))["keys"]) == 2, got
+    assert _stat.S_IMODE(idx.stat().st_mode) == 0o600
+
+
+def test_r5_every_temp_name_taken_fails_closed_and_the_turn_goes_on(tmp_path, monkeypatch):
+    v = tmp_path / "vault"
+    v.mkdir()
+    e = make_engine(tmp_path, cfg_for(v))
+    _store_of(tmp_path, 20_000, REC)
+    cache = tmp_path / "data" / O.LESSONS_FILE
+    monkeypatch.setattr(O, "_tmp_token", lambda: "same", raising=False)
+    victim = _plant(tmp_path, cache, f".{cache.name}.same.tmp")
+    e.on_turn_start(session_id="s", model="m")  # must not raise: the cache is an optimisation
+    assert victim.read_text() == VICTIM and not cache.exists()
+
+
+def test_r5_temp_names_are_random_not_pid_and_thread():
+    a, b = O._tmp_token(), O._tmp_token()
+    assert a != b and len(a) >= 16 and str(os.getpid()) not in (a, b)

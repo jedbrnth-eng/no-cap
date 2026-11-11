@@ -23,6 +23,11 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
   appended store bytes under a 15 ms CPU budget, instead of parsing the whole store every turn. R4: board writes use
   No Cap's own index (`obsidian-board-<dev>-<inode>.json`) and the next-id hint with exclusive creates and stat probes;
   a big board folder is never listed. Tests: `tests/test_obsidian_review2.py`.
+- Obsidian bridge, third review (Sol): the lesson cache and the board index were written through a temp file whose
+  name another local process could predict (pid-thread) and that was opened with `O_TRUNC`, so a hard link planted at
+  that name in No Cap's data folder got overwritten. The temp name is now random and opened with
+  `O_EXCL | O_NOFOLLOW`: an occupied name is skipped, never opened; after 4 occupied names the save is dropped and
+  retried next turn. Tests: `tests/test_obsidian_review2.py` (`test_r5_*`).
 
 ## 0.2.1
 

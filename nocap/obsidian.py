@@ -31,6 +31,7 @@ from contextlib import contextmanager
 import json
 import os
 import re
+import secrets
 import stat
 import threading
 import time
@@ -52,6 +53,7 @@ LEARN_MAX_RULES = 3
 BOARD_MODES = ("auto", "on", "off")
 HEADER_SCAN = 4096  # bytes of a board note read to find its source key
 BOARD_OPEN_MAX = 32  # board notes opened per cap write (only those named like the pattern)
+TMP_TRIES = 4  # occupied temp names skipped before a cache/index save gives up (it is retried next turn)
 LOCK_BUDGET = 0.12  # seconds one record() call may wait for destination locks IN ALL (both folders, the retries)
 LOCK_PAUSE = (0.002, 0.004, 0.008, 0.016, 0.032)  # pauses between non-blocking lock tries
 PENDING_MAX = 64  # exports skipped on a busy folder, kept in memory for the next write (sync covers the rest)
@@ -508,25 +510,46 @@ def _clean_counts(c: Any) -> Dict[str, Dict[str, int]]:
     return out
 
 
+def _tmp_token() -> str:
+    """An unguessable temp-file suffix (review 3: it was pid-thread, which another local process can predict)."""
+    return secrets.token_hex(12)
+
+
+def _write_private(path: Path, body: bytes) -> None:
+    """A 0600 file in the plugin's own data folder: a NEW temp file, then os.replace. The temp name is random and is
+    opened with O_EXCL | O_NOFOLLOW, so a file, symlink or hard link already sitting at that name is never opened,
+    truncated or written through: the name is skipped. After TMP_TRIES occupied names it raises FileExistsError
+    (an OSError): both callers treat a failed save as a missed optimisation, never as a failed turn."""
+    last: Optional[OSError] = None
+    for _ in range(TMP_TRIES):
+        tmp = path.with_name(f".{path.name}.{_tmp_token()}.tmp")
+        try:
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        except FileExistsError as exc:
+            last = exc
+            continue
+        try:
+            if os.fstat(fd).st_mode & 0o077:
+                os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(body)
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.unlink(tmp)  # only ever a file this call created
+            except OSError:
+                pass
+            raise
+        return
+    raise last or FileExistsError(str(path))
+
+
 def _save_cache(path: Path, c: Dict[str, Any]) -> None:
     """0600, temp file + os.replace in the plugin's own data folder. Agent names, pattern ids and counts only."""
     body = json.dumps({"v": 1, "dev": c["dev"], "ino": c["ino"], "offset": c["offset"], "tailh": _tail_hash(c["tail"]),
                        "headh": c["headh"],
                        "done": c["done"], "counts": c["counts"], "prev": c["prev"]}, sort_keys=True).encode()
-    tmp = path.with_name(f".{path.name}.{os.getpid()}-{threading.get_ident()}.tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
-    try:
-        if os.fstat(fd).st_mode & 0o077:
-            os.fchmod(fd, 0o600)
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(body)
-        os.replace(tmp, path)
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+    _write_private(path, body)
 
 
 def _tail_hash(b: bytes) -> str:
@@ -668,20 +691,7 @@ def _save_index(path: Path, idx: Dict[str, Any]) -> None:
     try:
         os.makedirs(path.parent, mode=0o700, exist_ok=True)
         body = json.dumps({"v": 1, "next": idx["next"], "keys": idx["keys"]}, sort_keys=True).encode()
-        tmp = path.with_name(f".{path.name}.{os.getpid()}-{threading.get_ident()}.tmp")
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
-        try:
-            if os.fstat(fd).st_mode & 0o077:
-                os.fchmod(fd, 0o600)
-            with os.fdopen(fd, "wb") as fh:
-                fh.write(body)
-            os.replace(tmp, path)
-        except BaseException:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-            raise
+        _write_private(path, body)
     except OSError:
         pass  # the index is an optimisation: without it the next write seeds again (bounded)
 

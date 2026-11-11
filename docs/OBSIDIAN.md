@@ -56,7 +56,8 @@ an `obsidian://` link (it runs nothing). `hermes nocap doctor` shows the bridge 
   per write), and `hermes nocap obsidian sync` writes it from the store in any case (every line is idempotent by its
   receipt id). `status` shows how many are waiting. Cost: a line can land a turn late, or only at `sync` if Hermes
   exits first.
-- **New files in No Cap's own data folder** (next to `receipts.jsonl`, 0600, temp file + `os.replace`):
+- **New files in No Cap's own data folder** (next to `receipts.jsonl`, 0600, a new randomly named temp file opened with `O_EXCL` + `os.replace`, so a file or link
+  already at the temp name is never written through):
   `obsidian-lessons.json`, the lesson cache (per agent: pattern id -> 🧢 count, plus the store's inode, the byte offset
   counted up to and hashes of the store's first 256 bytes and the 64 before that offset; no claim, evidence or reply text), only with `obsidian_learn: true`, removed by
   `/nocap purge`; and `obsidian-board-<dev>-<inode>.json` per board folder, No Cap's index of the board notes it wrote

@@ -127,7 +127,10 @@ def test_b3_separate_stores_preserve_both_appends(tmp_path):
         except Exception as ex:  # pragma: no cover - reported by the assert
             errors.append(repr(ex))
 
-    with patch.object(O, "_read_nofollow", read):
+    # This test is about the lost update, not about how long a writer waits (tests/test_obsidian_review2.py, r1,
+    # covers the bound). With the real 120 ms budget the waiter gave up on a busy machine whenever the holder's
+    # fsync was slow (10 failures in 40 runs), so the waiter gets a generous budget here.
+    with patch.object(O, "_read_nofollow", read), patch.object(O, "LOCK_BUDGET", 10.0):
         ts = [threading.Thread(target=run, args=(i,)) for i in range(2)]
         for t in ts:
             t.start()
