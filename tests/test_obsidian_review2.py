@@ -353,7 +353,7 @@ def test_r3_cache_file_is_private_and_holds_no_claim_text(tmp_path):
     cache = tmp_path / "data" / O.LESSONS_FILE
     assert _stat.S_IMODE(cache.stat().st_mode) == 0o600
     raw = cache.read_text(encoding="utf-8")
-    assert marker not in raw
+    assert marker not in raw and marker.encode().hex() not in raw  # not even as the store's raw tail bytes
     got = json.loads(raw)
     assert set(got["counts"]) == {"alpha"} and set(got["counts"]["alpha"]) <= set(BY_ID)
 
@@ -495,3 +495,18 @@ def test_r4_board_index_is_private_and_holds_no_claim_text(tmp_path):
     assert marker not in raw
     got = json.loads(raw)
     assert set(got["keys"]) == {"alpha:tests.failed_run"} and got["next"] == 2
+
+
+def test_r3_store_rewritten_in_place_is_rebuilt(tmp_path):
+    """Same inode, same or larger size, different bytes before the cached offset: counted again, not added on."""
+    v = tmp_path / "vault"
+    v.mkdir()
+    e = make_engine(tmp_path, cfg_for(v))
+    store = _store_of(tmp_path, 3000)  # alpha, many 🧢 tests.failed_run
+    assert e.on_turn_start(session_id="s", model="m")
+    other = (json.dumps(dict(REC, profile="bravo")) + "\n").encode()
+    with open(store, "r+b") as fh:  # rewritten through the same file: inode unchanged
+        fh.write(other * (3000 // len(other) + 1))
+    for _ in range(3):
+        got = e.on_turn_start(session_id="s", model="m")
+    assert got is None

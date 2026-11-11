@@ -14,6 +14,15 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
   destination folder; an unknown profile gets no note and no lesson; every field is redacted again at the sink.
   Commands: `hermes nocap obsidian status|sync|open`; doctor reports the bridge in one line. Docs: `docs/OBSIDIAN.md`.
   Tests: `tests/test_obsidian.py`, `tests/test_obsidian_review.py`, `tests/test_obsidian_sink.py`.
+- Obsidian bridge, second cross-family review (Sol, R1-R4). R1: a destination folder locked by another writer never
+  holds a reply: non-blocking lock tries for at most 120 ms per write, then the export is skipped, retried by the next
+  write and always recoverable with `hermes nocap obsidian sync`. R2: right before each write commits, the path is
+  walked again with `O_NOFOLLOW` and the vault and every pinned folder must still be the same inode; a folder moved
+  out of the vault gets nothing (the microsecond window between re-check and write is documented). R3: the per-agent
+  lesson line reads a small cache (`obsidian-lessons.json`, 0600, pattern ids and counts only) caught up with the
+  appended store bytes under a 15 ms CPU budget, instead of parsing the whole store every turn. R4: board writes use
+  No Cap's own index (`obsidian-board-<dev>-<inode>.json`) and the next-id hint with exclusive creates and stat probes;
+  a big board folder is never listed. Tests: `tests/test_obsidian_review2.py`.
 
 ## 0.2.1
 

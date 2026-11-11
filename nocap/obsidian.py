@@ -60,7 +60,8 @@ LESSONS_FILE = "obsidian-lessons.json"  # per-agent 🧢 pattern counts (ids and
 LEARN_CPU = 0.015  # seconds of CPU one pre_llm_call may spend catching the cache up with the store
 LEARN_BLOCK = 256 * 1024  # store bytes read per step while catching up
 LEARN_MAX_READ = 8 * 1024 * 1024  # store bytes read per pre_llm_call at most, whatever the CPU clock says
-LEARN_TAIL = 64  # bytes before the cached offset compared each turn: a store rewritten in place is rebuilt
+LEARN_TAIL = 64  # bytes before the cached offset re-hashed each turn: a store rewritten in place is rebuilt
+LEARN_HEAD = 256  # and the store's first bytes (a rewrite often keeps the line ends the same)
 MAX_CACHE_BYTES = 256 * 1024
 MAX_CACHE_AGENTS = 256
 SCAN_DIR_BYTES = 64 * 1024  # a board folder is listed (once, on its first write) only when its size is this or less
@@ -490,7 +491,7 @@ def _load_cache(path: Path) -> Optional[Dict[str, Any]]:
         return None
     try:
         out = {"v": 1, "dev": int(got["dev"]), "ino": int(got["ino"]), "offset": int(got["offset"]),
-               "tail": bytes.fromhex(str(got["tail"])), "done": bool(got["done"]),
+               "tailh": str(got["tailh"]), "headh": str(got["headh"]), "tail": b"", "done": bool(got["done"]),
                "counts": _clean_counts(got["counts"]), "prev": _clean_counts(got["prev"]) if got.get("prev") else None}
     except (KeyError, TypeError, ValueError):
         return None
@@ -509,7 +510,8 @@ def _clean_counts(c: Any) -> Dict[str, Dict[str, int]]:
 
 def _save_cache(path: Path, c: Dict[str, Any]) -> None:
     """0600, temp file + os.replace in the plugin's own data folder. Agent names, pattern ids and counts only."""
-    body = json.dumps({"v": 1, "dev": c["dev"], "ino": c["ino"], "offset": c["offset"], "tail": c["tail"].hex(),
+    body = json.dumps({"v": 1, "dev": c["dev"], "ino": c["ino"], "offset": c["offset"], "tailh": _tail_hash(c["tail"]),
+                       "headh": c["headh"],
                        "done": c["done"], "counts": c["counts"], "prev": c["prev"]}, sort_keys=True).encode()
     tmp = path.with_name(f".{path.name}.{os.getpid()}-{threading.get_ident()}.tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
@@ -525,6 +527,12 @@ def _save_cache(path: Path, c: Dict[str, Any]) -> None:
         except OSError:
             pass
         raise
+
+
+def _tail_hash(b: bytes) -> str:
+    """A digest of the last LEARN_TAIL store bytes before the offset: detects a store rewritten in place without
+    keeping any of its text in the cache."""
+    return hashlib.sha256(b).hexdigest()[:32]
 
 
 def _tally(block: bytes, counts: Dict[str, Dict[str, int]]) -> None:
@@ -564,11 +572,14 @@ def lesson_counts(store: Path, cache: Path) -> Dict[str, Dict[str, int]]:
         if not stale and c["offset"]:
             n = min(LEARN_TAIL, c["offset"])
             fh.seek(c["offset"] - n)
-            stale = fh.read(n) != c["tail"][-n:]
+            c["tail"] = fh.read(n)
+            fh.seek(0)
+            stale = (_tail_hash(c["tail"]) != c["tailh"]
+                     or _tail_hash(fh.read(min(LEARN_HEAD, c["offset"]))) != c["headh"])
         if stale:
             prev = (c["counts"] if c["done"] else c["prev"]) if c else None
-            c = {"v": 1, "dev": st.st_dev, "ino": st.st_ino, "offset": 0, "tail": b"", "done": False,
-                 "counts": {}, "prev": prev or None}
+            c = {"v": 1, "dev": st.st_dev, "ino": st.st_ino, "offset": 0, "tail": b"", "tailh": "", "headh": "",
+                 "done": False, "counts": {}, "prev": prev or None}
         changed = stale
         if c["offset"] < st.st_size:
             fh.seek(c["offset"])
@@ -594,6 +605,8 @@ def lesson_counts(store: Path, cache: Path) -> Dict[str, Dict[str, int]]:
         elif not c["done"]:
             c["done"], c["prev"], changed = True, None, True
         if changed:
+            fh.seek(0)
+            c["headh"] = _tail_hash(fh.read(min(LEARN_HEAD, c["offset"])))
             try:
                 _save_cache(cache, c)
             except OSError:
