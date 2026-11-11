@@ -148,6 +148,14 @@ hermes config set plugins.entries.no-cap.settings.obsidian_learn true    # optio
 hermes nocap obsidian sync     # backfill the caps already in the store
 ```
 
+<p align="center">
+  <img src="docs/media/obsidian-run/01-nocap-agent-note.png" width="400" alt="Obsidian showing the note No Cap/default.md: three lines, each 2026-11-11 🧢 tests.failed_run claim: “All tests pass.” · evidence: “1 failed, 1 passed in 0.01s (exit 1)”">
+  <img src="docs/media/obsidian-run/02-abb-mistakes-board.png" width="400" alt="The Agent Black Box Mistakes board in Obsidian: Open · 1, card M-0001 HIGH default, Claims tests pass while the latest run failed, with the rule Never say the tests pass when the latest test run in this turn failed, tags #nocap #cap #tests, buttons Edit, Open note, Mark fixed"><br>
+  <sub>A real local model (Qwen3-4B) told to say “All tests pass.” after a failing run: three 🧢 lines in its note, one
+  lesson on the board. The claim was prompt-induced; the test run and the verdicts were real.
+  <a href="docs/media/obsidian-run/">How this was captured</a>.</sub>
+</p>
+
 Off by default; with `obsidian_vault` empty nothing in any vault is read or written. Writes stay inside the vault you
 name (symlink-safe, locked, never blocks a reply). Whether the lesson line changes a model's behaviour has **not**
 been measured yet. Setup, settings and the full disclosure: [docs/OBSIDIAN.md](docs/OBSIDIAN.md).
