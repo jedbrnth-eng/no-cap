@@ -102,8 +102,10 @@ def test_b3_separate_stores_preserve_both_appends(tmp_path):
     cfg = cfg_for(v)
     bridge(tmp_path / "data0", cfg).record([R], "s", "t0")
     # Both writers try to read the note at the same moment. Without a per-note lock both read the same old bytes
-    # and the second replace drops the first append. With the lock the second blocks, the barrier times out
-    # (tolerated) and it reads the first writer's result.
+    # and the second replace drops the first append. With the lock the second waits, the barrier times out
+    # (tolerated) and it reads the first writer's result. Review 2 (R1): the lock wait is bounded (LOCK_BUDGET,
+    # 120 ms per record call), so the holder's barrier timeout is 30 ms, inside that budget (it was 1.5 s while the
+    # lock blocked forever). Without the lock both threads still meet at the barrier at once: the lost update shows.
     barrier = threading.Barrier(2)
     original = O._read_nofollow
     errors = []
@@ -112,7 +114,7 @@ def test_b3_separate_stores_preserve_both_appends(tmp_path):
         old = original(path, limit, **kw)
         if str(path) == "alpha.md":
             try:
-                barrier.wait(timeout=1.5)
+                barrier.wait(timeout=0.03)
             except threading.BrokenBarrierError:
                 pass
         return old

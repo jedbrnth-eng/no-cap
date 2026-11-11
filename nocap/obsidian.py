@@ -52,6 +52,10 @@ LEARN_MAX_RULES = 3
 BOARD_MODES = ("auto", "on", "off")
 HEADER_SCAN = 4096  # bytes of a board note read to find its source key
 BOARD_OPEN_MAX = 32  # board notes opened per cap write (only those named like the pattern)
+LOCK_BUDGET = 0.12  # seconds one record() call may wait for destination locks IN ALL (both folders, the retries)
+LOCK_PAUSE = (0.002, 0.004, 0.008, 0.016, 0.032)  # pauses between non-blocking lock tries
+PENDING_MAX = 64  # exports skipped on a busy folder, kept in memory for the next write (sync covers the rest)
+PENDING_FLUSH = 4  # skipped exports retried per write, so one turn's work stays bounded
 
 _AGENT_RE = re.compile(r"[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
 _PART_RE = re.compile(r"[^\x00-\x1f\x7f/\\:*?\"<>|]{1,80}")
@@ -244,13 +248,32 @@ def _vault_fd(real: str):
         os.close(fd)
 
 
+class Busy(Refused):
+    """The destination folder is locked by another writer: this optional export is skipped, never waited for."""
+
+
 @contextmanager
-def _flock(fd: int):
+def _flock(fd: int, deadline: Optional[float] = None):
     """Exclusive lock on a pinned destination folder, shared by every Hermes home and thread writing into it (an
-    flock on its own open file description). Fails closed: no lock, no write."""
+    flock on its own open file description). Never blocks: non-blocking tries with short pauses until `deadline`
+    (time.monotonic(); one record() call shares LOCK_BUDGET across all its locks), then Busy: the export is skipped
+    and picked up later, the reply is never held. Fails closed: no lock, no write."""
     if fcntl is None:
         raise Refused("Obsidian writes require POSIX directory handles and flock")
-    fcntl.flock(fd, fcntl.LOCK_EX)
+    if deadline is None:
+        deadline = time.monotonic() + LOCK_BUDGET
+    k = 0
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except (BlockingIOError, InterruptedError):
+            pause = LOCK_PAUSE[min(k, len(LOCK_PAUSE) - 1)]
+            k += 1
+            if time.monotonic() + pause > deadline:
+                raise Busy("destination folder busy (another writer holds its lock); export skipped, not waited "
+                           "for: the next write or `hermes nocap obsidian sync` picks it up")
+            time.sleep(pause)
     try:
         yield fd
     finally:
@@ -367,6 +390,8 @@ class Bridge:
         self.setting = setting
         self.agent = agent
         self.last_error = ""
+        self._pending: List[Tuple[Any, ...]] = []  # exports skipped on a busy folder (R1), retried by the next write
+        self._plock = threading.Lock()
 
     # -- settings --
     def _get(self, key: str, default: Any) -> Any:
@@ -459,7 +484,11 @@ class Bridge:
     # -- writing --
     def record(self, receipts: List[Dict[str, Any]], session_id: str = "", turn_id: str = "",
                ts: Optional[float] = None, agent: Optional[str] = None) -> Dict[str, Any]:
-        """Append one line per 🧢 in `receipts` to the agent's note, and the first board note per pattern."""
+        """Append one line per 🧢 in `receipts` to the agent's note, and the first board note per pattern.
+
+        A destination folder locked by another writer is never waited for (R1): the export is skipped, kept in a
+        small in-memory queue and written by the next write that gets the lock (at most PENDING_FLUSH per call);
+        `hermes nocap obsidian sync` writes it from the store in any case (each line is idempotent by receipt id)."""
         out: Dict[str, Any] = {"written": 0, "board": [], "skipped": ""}
         caps = [r for r in receipts or [] if isinstance(r, dict) and r.get("verdict") == CAP]
         if not caps or not self.enabled():
@@ -470,13 +499,49 @@ class Bridge:
             out["skipped"] = "agent name refused"
             self.last_error = "agent unknown or name refused (letters, digits, . _ - only); nothing attributed"
             return out
+        item = (caps, str(session_id or ""), str(turn_id or ""), ts if ts is not None else time.time(), who)
+        deadline = time.monotonic() + LOCK_BUDGET  # every lock this call takes shares one short budget
+        out = self._record_one(*item, deadline=deadline)
+        if out.pop("busy", False):
+            self._queue(item)
+            return out
+        for _ in range(PENDING_FLUSH):  # the lock was free just now: earlier skipped exports, a few per write
+            with self._plock:
+                if not self._pending:
+                    break
+                prev = self._pending.pop(0)
+            got = self._record_one(*prev, deadline=deadline)
+            if got.pop("busy", False):
+                self._queue(prev, front=True)
+                break
+            out["written"] += got["written"]
+            out["board"] += got["board"]
+        return out
+
+    def pending(self) -> int:
+        with self._plock:
+            return len(self._pending)
+
+    def _queue(self, item: Tuple[Any, ...], front: bool = False) -> None:
+        with self._plock:
+            if any(p[1:3] == item[1:3] and p[4] == item[4] and p[0] == item[0] for p in self._pending):
+                return
+            if front:
+                self._pending.insert(0, item)
+            else:
+                self._pending.append(item)
+            del self._pending[:-PENDING_MAX]  # oldest out first; `sync` still finds them in the store
+
+    def _record_one(self, caps: List[Dict[str, Any]], session_id: str, turn_id: str, ts: float,
+                    who: str, deadline: Optional[float] = None) -> Dict[str, Any]:
+        out: Dict[str, Any] = {"written": 0, "board": [], "skipped": ""}
         try:
             root = self.vault()
             parts = safe_folder(self.folder())
             if parts is None:
                 raise Refused("obsidian_folder must be a plain vault-relative folder")
             with _vault_fd(root) as vfd:
-                with _pinned_dir(vfd, parts) as note_fd, _flock(note_fd):  # one lock per destination folder
+                with _pinned_dir(vfd, parts) as note_fd, _flock(note_fd, deadline):  # one lock per destination folder
                     path = Path(f"{who}.md")
                     old = _read_nofollow(path, MAX_NOTE_BYTES, dir_fd=note_fd)
                     buf = old if old is not None else note_header(who)
@@ -502,7 +567,11 @@ class Bridge:
                 link = "/".join(parts) + f"/{who}"
                 for pid, r in firsts.items():
                     try:
-                        made = self._board(vfd, who, pid, date, r, link)
+                        made = self._board(vfd, who, pid, date, r, link, deadline)
+                    except Busy as exc:  # skipped, not waited for: the whole item is retried later (idempotent)
+                        out["busy"] = True
+                        self.last_error = f"board: {exc}"
+                        break
                     except (Refused, OSError) as exc:
                         self.last_error = f"board: {exc}"
                         continue
@@ -511,14 +580,16 @@ class Bridge:
         except (Refused, OSError) as exc:
             out["written"] = 0
             out["skipped"] = str(exc)
+            out["busy"] = isinstance(exc, Busy)
             self.last_error = str(exc)
         return out
 
-    def _board(self, vfd: int, who: str, pid: str, date: str, r: Dict[str, Any], link: str) -> Optional[str]:
+    def _board(self, vfd: int, who: str, pid: str, date: str, r: Dict[str, Any], link: str,
+               deadline: Optional[float] = None) -> Optional[str]:
         parts = self.board_parts(vfd)
         if parts is None:
             return None
-        with _pinned_dir(vfd, parts) as board_fd, _flock(board_fd):
+        with _pinned_dir(vfd, parts) as board_fd, _flock(board_fd, deadline):
             return self._board_at(board_fd, who, pid, date, r, link)
 
     def _board_at(self, board_fd: int, who: str, pid: str, date: str,
@@ -676,6 +747,9 @@ class Bridge:
             lines.append("learn: off (obsidian_learn: true turns on the per-agent lesson line)")
         if self.last_error:
             lines.append(f"last refusal: {self.last_error}")
+        if self.pending():
+            lines.append(f"waiting: {self.pending()} 🧢 export(s) skipped on a busy folder; the next write or "
+                         "`hermes nocap obsidian sync` writes them")
         return "\n".join(lines)
 
     def doctor_line(self) -> Tuple[str, bool]:
