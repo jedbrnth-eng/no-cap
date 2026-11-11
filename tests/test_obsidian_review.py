@@ -221,6 +221,7 @@ def test_b7_yaml_profile_is_still_a_string(name):
 
 # ---- break-it: the fixes under harder versions of the same attacks ---------------------------------------------
 def _own_store_append(vault, data, i):
+    O.LOCK_BUDGET = 30.0  # a spawned child. This test is about lost appends, not the 120 ms production wait (r1 tests)
     cfg = {"obsidian_vault": str(vault), "obsidian_board": "on"}
     got = O.Bridge(lambda: Path(data), lambda k, d=None: cfg.get(k, d), lambda: "alpha").record([R], "p", f"t{i}")
     assert got["written"] == 1, got
