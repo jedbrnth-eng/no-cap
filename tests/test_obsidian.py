@@ -232,7 +232,12 @@ def test_receipt_id_is_stable():
     assert obsidian.receipt_id("s", "t", r) != obsidian.receipt_id("s", "t2", r)
 
 
-def test_concurrent_appends_lose_nothing(tmp_path):
+# These tests check that concurrent writers lose nothing while they WAIT for each other. The production lock wait
+# is 120 ms (LOCK_BUDGET), after which a writer skips and the line is picked up later: that path has its own
+# tests (tests/test_obsidian_review2.py, r1). On a slow runner the 120 ms was missed and a writer skipped, so
+# the writers here get a long budget.
+def test_concurrent_appends_lose_nothing(tmp_path, monkeypatch):
+    monkeypatch.setattr(obsidian, "LOCK_BUDGET", 30.0)
     v = make_vault(tmp_path)
     e = engine(tmp_path, v)
     bridge = e.obsidian
@@ -259,6 +264,7 @@ def test_concurrent_appends_lose_nothing(tmp_path):
 
 
 def _process_append(vault, data, i):
+    obsidian.LOCK_BUDGET = 30.0  # a spawned child: see the note above test_concurrent_appends_lose_nothing
     bridge = obsidian.Bridge(lambda: Path(data), lambda k, d=None: str(vault) if k == "obsidian_vault" else d,
                              lambda: "alpha")
     r = {"kind": "tests", "verdict": "CAP", "text": "All tests pass.", "quote": FAIL_OUT,
