@@ -4,6 +4,17 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
 [jedbrnth-eng/no-cap](https://github.com/jedbrnth-eng/no-cap/pulls?q=is%3Apr+is%3Amerged), by PR number
 (`gh pr list -R jedbrnth-eng/no-cap --state merged`).
 
+## 0.3.1 (unreleased)
+
+- Skim composition: Hermes keeps only the first `transform_llm_output` rewrite, so on turns where No Cap appended
+  receipts, the Skim plugin's highlighting (bold key words, TL;DR) was dropped. When Skim is loaded and enabled for the
+  profile (`ctx.has_plugin("skim")`), No Cap now runs Skim's `skimlib.glue.transform` on the reply body before
+  composing the footer; the footer is rendered exactly as before. Skim's own settings apply (`/skim off`, intensity,
+  skip_platforms, `cli` skipped by default). Skim is found by manifest name under `<HERMES_HOME>/plugins`, its pure
+  `skimlib` is imported under a private module name, and any failure returns the unhighlighted body. Without Skim the
+  reply is byte-identical. `doctor` reports Skim as composed instead of as a conflict. Code: `nocap/peers.py`.
+  Tests: `tests/test_skim_peer.py` (real Skim engine with `NOCAP_TEST_SKIM_DIR`).
+
 ## 0.3.0
 
 - Release: the Obsidian lessons bridge below ships, opt-in and off by default. README section "Agents that learn from

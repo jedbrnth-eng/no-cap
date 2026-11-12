@@ -68,7 +68,7 @@ installed Hermes Desktop app (v0.23.0) and `hermes dashboard` against that home.
 | Hermes surface | What No Cap does with it |
 |---|---|
 | `post_tool_call` hook | Records each tool result into a per-turn ledger in memory: exit code, parsed test summary (pytest, jest, vitest, go, cargo, Gradle/Maven…), push refs, PR state, HTTP status, paths written. Never the full output; only the matched summary/error line (≤160 chars, masked). |
-| `transform_llm_output` hook | Finds the claims in the final reply (tests, CI, build, pushed, merged, committed, PR opened, deployed, URL live, file written, SHAs, counts), judges each against that turn's ledger, and **appends** the receipt footer. The reply text is never edited except to remove a forged `::nocap` directive and append the footer, so the classic CLI doesn't reprint it. |
+| `transform_llm_output` hook | Finds the claims in the final reply (tests, CI, build, pushed, merged, committed, PR opened, deployed, URL live, file written, SHAs, counts), judges each against that turn's ledger, and **appends** the receipt footer. The reply text is never edited except to remove a forged `::nocap` directive and append the footer, so the classic CLI doesn't reprint it. When the Skim plugin is enabled, No Cap applies Skim's highlighting to the body above the footer (Skim skips the CLI by default). |
 | `pre_verify` hook | Strict mode only: when a turn that edited files is about to end with an unproven claim, the agent is told to run the check or drop the claim. At most 2 nudges per turn. |
 | `pre_llm_call` hook | Two things, both labelled, API-time context only (never a system-prompt edit, never stored in the transcript): **Cap Coach** adds the coach rules **you approved**, only for the agent, model and loaded skill they were approved for; the **footer hint** (`footer_hint: auto`, default) adds one fixed line, *only* when an earlier assistant reply in the history ends with a No Cap footer, telling the model the footer is added by the plugin and not to write it. Hermes replays the rewritten reply as the model's own words, and on a real install models often copied the footer into their own Discord replies. `footer_hint: off` stops it. With neither, it returns nothing. |
 | `/cap` | Re-checks what it can locally (read-only `git rev-parse` / `cat-file`, a file's existence for "created X"), then asks the agent to prove or retract the rest. The next reply is re-scored (🔁 lines). It never overrules a 🧢 from the turn's own output. |
@@ -328,7 +328,7 @@ above are the ones to quote.
 - Strict mode can only nudge turns that edited files: Hermes fires `pre_verify` only after a file edit in the turn. A
   turn that claims "fixed it, all tests pass" with no edit still gets its 🧢 stamp, but no nudge.
 - Hermes keeps only the first plugin's `transform_llm_output` rewrite per turn. `doctor` warns when another enabled
-  plugin also rewrites replies.
+  plugin also rewrites replies. Skim is the exception: No Cap runs Skim on the body itself, so both show.
 - The API server surface shows the footer but has no `/cap` or `/nocap`: Hermes passes slash commands sent there to
   the model as text.
 - A real model runs real commands. In one recorded run Qwen3-4B ran `git config --global user.email ...` and a `curl`

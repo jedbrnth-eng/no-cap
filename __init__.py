@@ -20,6 +20,7 @@ from typing import Any, Optional
 
 from .nocap import compare_card, export, ladder, verdict_card
 from .nocap.engine import Engine, is_local
+from .nocap.peers import SkimPeer
 from .nocap.surfaces.discord import DiscordSurface
 
 logger = logging.getLogger("hermes_plugins.no_cap")
@@ -82,8 +83,13 @@ def _make_engine(ctx: Any) -> Engine:
         on = plugins.get("enabled")
         return (name in on) if isinstance(on, list) else None
 
+    def loaded(name: str):
+        probe = getattr(ctx, "has_plugin", None)  # documented PluginContext probe; older hosts: never compose
+        return probe(name) if callable(probe) else None
+
     return Engine(data_dir, setting, inject=inject, cwd=cwd, home=home, entry=entry, enabled=enabled,
-                  broadcast=lambda event, payload: _broadcast(event, payload))
+                  broadcast=lambda event, payload: _broadcast(event, payload),
+                  peer_format=SkimPeer(loaded, home, config))
 
 
 def register(ctx: Any) -> None:
