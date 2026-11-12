@@ -1,7 +1,8 @@
 """`/nocap doctor` (any surface) and `hermes nocap doctor` (terminal): setup checks that explain why a stamp
 might not show. Read-only except one probe file in the store directory, removed straight away.
 
-Checks: another plugin that also rewrites replies (transform_llm_output: only one rewrite survives a turn),
+Checks: another plugin that also rewrites replies (transform_llm_output: only one rewrite survives a turn; Skim is
+the exception, No Cap composes its highlighting into the body),
 whether /cap may inject its steer (allow_gateway_injection), whether the store can be written, and the
 current mode and show_uncertain level.
 """
@@ -81,6 +82,10 @@ def check(home: Path, mode: str, entry: Dict[str, Any], store_path: Path, record
     problems = 0
     others = reply_transform_owners(home)
     live = [o for o in others if enabled(o) is not False]
+    if "skim" in live:  # composed, not competing: nocap/peers.py runs Skim on the body above the receipts
+        live.remove("skim")
+        lines.append("✅ Skim installed: on turns with receipts No Cap applies Skim's highlighting to the reply above "
+                     "the footer (Skim's own /skim settings apply), so neither rewrite is lost.")
     if live:
         problems += 1
         lines.append(f"⚠️ Other reply transforms installed: {', '.join(live)}. Hermes keeps only the first plugin's "
