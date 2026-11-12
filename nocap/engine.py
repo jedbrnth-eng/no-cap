@@ -117,7 +117,10 @@ class Engine:
                  inject: Optional[Callable[..., bool]] = None, cwd: Optional[Callable[[], str]] = None,
                  home: Optional[Callable[[], Path]] = None, entry: Optional[Callable[[], Dict[str, Any]]] = None,
                  enabled: Optional[Callable[[str], Any]] = None,
-                 broadcast: Optional[Callable[[str, Dict[str, Any]], None]] = None):
+                 broadcast: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+                 peer_format: Optional[Callable[[str, str], str]] = None):
+        # Skim (nocap/peers.py): highlights the body above the footer on turns No Cap rewrites. Identity by default.
+        self.peer_format = peer_format or (lambda text, platform: text)
         self.home = home or (lambda: Path(data_dir()).parents[1])
         self.entry = entry or (lambda: {})
         self.enabled = enabled or (lambda name: None)
@@ -303,12 +306,17 @@ class Engine:
         elif not issued and stamp_like(response_text):
             notes = [NONE_ISSUED]
         notes = self.coach.add_tip(notes, receipts)
+        mode = self.mode()
+        if planted or (mode != "quiet" and (visible or rescore or notes)):
+            # No Cap rewrites this turn, so Hermes drops any other plugin's rewrite: compose Skim's highlighting into
+            # the body first (claims above were judged on the unhighlighted text; the footer is rendered as always).
+            response_text = self.peer_format(response_text, platform or "")
         surface = self.surfaces.get((platform or "").strip().lower())
         if surface is not None:
-            out = surface(response_text, visible, self.mode(), rescore, streak, notes, session_id=session_id,
+            out = surface(response_text, visible, mode, rescore, streak, notes, session_id=session_id,
                           turn_id=turn_id)
         else:
-            out = compose(response_text, visible, self.mode(), rescore, streak, notes,
+            out = compose(response_text, visible, mode, rescore, streak, notes,
                           plain=(platform or "").lower() == "cli", chips=chips)
         if out is None and planted:  # quiet mode: no footer, but a planted directive still never goes out
             return response_text

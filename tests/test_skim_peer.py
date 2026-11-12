@@ -92,7 +92,7 @@ def footer_of(out, body):
 def test_skim_highlights_the_body_and_the_footer_is_unchanged(tmp_path, hermes_config):
     plain = run(tmp_path / "a", skim=False)
     both = run(tmp_path / "b")
-    assert plain is not None and "No Cap" in plain
+    assert plain is not None and "Receipts" in plain
     skimmed = BODY.replace("passed", "**passed**", 1)
     assert footer_of(both, skimmed) == footer_of(plain, BODY)
 
@@ -126,7 +126,10 @@ def test_skim_legacy_config_subtree_is_respected(tmp_path, hermes_config):
 def test_skim_skip_platforms_is_respected(tmp_path, hermes_config):
     hermes_config["plugins"]["entries"]["skim"] = {"settings": {"skip_platforms": "telegram"}}
     assert run(tmp_path).startswith(BODY + "\n\n")
-    assert run(tmp_path / "cli", platform="cli").startswith(BODY + "\n\n")  # cli skipped by Skim's default
+
+
+def test_skims_default_cli_skip_is_respected(tmp_path, hermes_config):
+    assert run(tmp_path, platform="cli").startswith(BODY + "\n\n")
 
 
 def test_skim_raising_fails_open_to_todays_reply(tmp_path, hermes_config):
