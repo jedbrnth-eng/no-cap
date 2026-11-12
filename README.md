@@ -99,7 +99,7 @@ No Cap checks receipts, not correctness. The negative results, stated as plainly
 | Hook | What No Cap does |
 |---|---|
 | `post_tool_call` | Records each tool result in a per-turn ledger: exit code, parsed test summary (pytest, jest, vitest, go, cargo, Gradle/Maven…), push refs, PR state, HTTP status, paths written. Never the full output; only the matched summary/error line (≤160 chars, masked). |
-| `transform_llm_output` | Finds the claims in the final reply (tests, CI, build, pushed, merged, committed, PR, deployed, URL live, file written, SHAs, counts), judges each against the ledger, and appends the footer: **🧾 NO CAP** (proven), **🧢 CAP** (the output says the opposite), **🤔 NO RECEIPT** (opt-in). The reply text is never edited except to remove a forged `::nocap` directive and append the footer. |
+| `transform_llm_output` | Finds the claims in the final reply (tests, CI, build, pushed, merged, committed, PR, deployed, URL live, file written, SHAs, counts), judges each against the ledger, and appends the footer: **🧾 NO CAP** (proven), **🧢 CAP** (the output says the opposite), **🤔 NO RECEIPT** (opt-in). The reply text is never edited except to remove a forged `::nocap` directive and append the footer (and, when the Skim plugin is enabled, to apply Skim's highlighting to the body above it). |
 | `pre_verify` | Strict mode: when a turn that edited files is about to end on an unproven claim, the agent is sent back to run the check (at most 2 nudges). |
 | `pre_llm_call` | Only labelled, API-time lines: the Cap Coach rules you approved, and a one-line hint that the footer is the plugin's. |
 | `/cap` | Read-only local re-checks, then the agent must prove or retract the rest; the next reply is re-scored (🔁). |
