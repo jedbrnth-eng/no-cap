@@ -45,7 +45,10 @@ ARTIFACT_TIMEOUT = 3
 MAX_ARTIFACT_CHECKS = 8  # git calls per reply at most (each well under 50 ms on a normal repo)
 GIT_ENV_KEEP = ("PATH", "HOME", "LANG", "LC_ALL", "SYSTEMROOT")  # the only inherited variables a git child gets
 HARDEN = ("-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "protocol.allow=never",
-          "-c", "core.pager=cat", "-c", "credential.helper=", "-c", "core.sshCommand=false")
+          "-c", "core.pager=cat", "-c", "credential.helper=", "-c", "core.sshCommand=false",
+          # a signed commit must not make git run the program the repo's own config names as its verifier
+          "-c", "log.showSignature=false", "-c", "gpg.program=false", "-c", "gpg.ssh.program=false",
+          "-c", "gpg.x509.program=false")
 
 
 def git_env() -> Dict[str, str]:
