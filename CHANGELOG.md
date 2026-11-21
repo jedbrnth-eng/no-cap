@@ -7,12 +7,12 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
 ## 0.3.1
 
 - Release: the security fix and the Skim composition below ship; version strings bumped together. If you run
-  0.3.0, update: `hermes plugins update no-cap`, then restart running sessions and the gateway.
+  0.3.0 or 0.2.1, update: `hermes plugins update no-cap`, then restart running sessions and the gateway.
 - Security: a repo's own `.git/config` could make a `/cap` re-check run a program. With `log.showSignature=true` and
   `gpg.program=<path>` set in the repo, re-checking a commit claim on a commit that carries a signature made
   `git show -s` start that program. Every git call now also passes `-c log.showSignature=false -c gpg.program=false
   -c gpg.ssh.program=false -c gpg.x509.program=false`. The automatic per-reply check (`verify_artifacts`) was not
-  affected. Present in 0.3.0. Code: `nocap/verify.py` (`HARDEN`). Tests: `tests/test_git_env.py`.
+  affected. Present in 0.2.1 and 0.3.0. Code: `nocap/verify.py` (`HARDEN`). Tests: `tests/test_git_env.py`.
 - Skim composition: Hermes keeps only the first `transform_llm_output` rewrite, so on turns where No Cap appended
   receipts, the Skim plugin's highlighting (bold key words, TL;DR) was dropped. When Skim is loaded and enabled for the
   profile (`ctx.has_plugin("skim")`), No Cap now runs Skim's `skimlib.glue.transform` on the reply body before
