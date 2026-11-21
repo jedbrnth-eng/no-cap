@@ -4,8 +4,10 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
 [jedbrnth-eng/no-cap](https://github.com/jedbrnth-eng/no-cap/pulls?q=is%3Apr+is%3Amerged), by PR number
 (`gh pr list -R jedbrnth-eng/no-cap --state merged`).
 
-## 0.3.1 (unreleased)
+## 0.3.1
 
+- Release: the security fix and the Skim composition below ship; version strings bumped together. If you run
+  0.3.0, update: `hermes plugins update no-cap`, then restart running sessions and the gateway.
 - Security: a repo's own `.git/config` could make a `/cap` re-check run a program. With `log.showSignature=true` and
   `gpg.program=<path>` set in the repo, re-checking a commit claim on a commit that carries a signature made
   `git show -s` start that program. Every git call now also passes `-c log.showSignature=false -c gpg.program=false
