@@ -4,6 +4,29 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
 [jedbrnth-eng/no-cap](https://github.com/jedbrnth-eng/no-cap/pulls?q=is%3Apr+is%3Amerged), by PR number
 (`gh pr list -R jedbrnth-eng/no-cap --state merged`).
 
+## 0.3.2 (unreleased)
+
+- Wrong verdicts on URL claims ("https://x is live", "returns 200"), found with an 83-case transcript corpus
+  (`tests/test_transcript_corpus.py`): 12 of its 13 wrong stamps were here. A claim was judged on any call that merely contained the URL. A `write_file` that
+  put the URL in a README, a `read_file`, a `patch` or a search result stamped it 🧾 "<tool> fetched it"; a failed
+  write that named the URL, or a fetch tool that broke for its own reasons (no API key, a rate limit), stamped it 🧢;
+  and one command's last HTTP status was credited to every URL the call mentioned, so `curl -sI A B` with 200 then
+  404 capped A and proved B's neighbour. Now a URL claim is judged only on calls that requested that URL, and on
+  that URL's own status: a shell command with the URL in a segment that is not `echo`/`cat`/`git`/..., a script line
+  that prints the URL beside its status, or a fetch tool (`web_extract`, `browser_navigate`, ...) with the URL in
+  its arguments. Several URLs in one command get one status each, in order, or none. A fetch tool's per-URL error is
+  read; an error only contradicts when it names an HTTP 4xx/5xx or a DNS / connection-refused failure. Everything
+  else is 🤔 with the reason. wget's `awaiting response... 404` is read as a status. Code: `nocap/evidence.py`
+  (`url_checks`), `nocap/verdict.py` (`_url`). Tests: `tests/test_url_receipts.py`.
+
+- Parallel tool calls: every call gets its own number. Hermes reports a parallel batch from its worker threads, and
+  the call number was read from the ledger's last entry before the output was parsed, so two results in flight
+  shared a number (8 parallel calls were numbered 1, 2, 1, 2, 3, 4, 5, 6) and a slow result landing late made the
+  next call reuse an old one. Receipts then cited an ambiguous `call N`, and a failing test run after such a batch
+  could count as older than the batch's edit, so "All tests pass." went out with a hidden 🤔 instead of 🧢. The
+  number is now handed out under the lock when the result arrives, and the turn's ledger is kept in that order.
+  Code: `nocap/engine.py` (`on_tool`). Tests: `tests/test_parallel_calls.py`.
+
 ## 0.3.1
 
 - Release: the security fix and the Skim composition below ship; version strings bumped together. If you run

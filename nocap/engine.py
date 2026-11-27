@@ -135,6 +135,7 @@ class Engine:
         self.store = Store(data_dir, lambda: setting("retention_days", 30))
         self.ledger = Ledger(data_dir, lambda: setting("retention_days", 30))  # cross-turn receipts, per session
         self._turns: "OrderedDict[Tuple[str, str], List[Dict[str, Any]]]" = OrderedDict()
+        self._seq: Dict[Tuple[str, str], int] = {}  # per open turn: the last call number handed out
         self._pending_cap: Dict[str, List[Dict[str, Any]]] = {}
         self._lock = threading.Lock()
         # platform -> composer(text, receipts, mode, rescore, streak, notes, session_id=, turn_id=): a surface's own
@@ -151,8 +152,10 @@ class Engine:
             calls = self._turns.setdefault(key, [])
             self._turns.move_to_end(key)
             while len(self._turns) > MAX_OPEN_TURNS:
-                self._turns.popitem(last=False)
-            index = (calls[-1]["i"] + 1) if calls else 1
+                self._seq.pop(self._turns.popitem(last=False)[0], None)
+            # The number is handed out here, before the output is parsed: Hermes reports a parallel batch from its
+            # worker threads, so a second result can arrive while the first is still being parsed outside the lock.
+            index = self._seq[key] = self._seq.get(key, 0) + 1
         try:
             cwd = self.cwd() or ""  # where a file-scoped test run looks for the repo's other test files
         except Exception:
@@ -164,6 +167,8 @@ class Engine:
             ev["skill"] = safe_skill(args.get("name"))  # an identifier: never a sentence a rule could carry
         with self._lock:
             calls.append(ev)
+            if len(calls) > 1 and calls[-2]["i"] > index:  # a slower call of the same batch landed late
+                calls.sort(key=lambda e: e["i"])
             if len(calls) > MAX_CALLS:  # keep the newest calls: the latest run is the one that matters
                 del calls[0]
 
@@ -214,6 +219,7 @@ class Engine:
         with self._lock:
             for key in ((session_id, turn_id), (session_id, "")):
                 if key in self._turns:
+                    self._seq.pop(key, None)
                     return self._turns.pop(key)
         return []
 
