@@ -287,6 +287,10 @@ above are the ones to quote.
   last 32 KB and up to 600-character fragments around summary-like lines between, and a secret that sits across one
   of those edges (or whose marker word, such as `curl` or `password`, falls outside a fragment) is seen only in part
   and may not be recognised. It needs a credential on or beside a test-summary line in a very long output.
+- A URL claim ("https://x is live") is judged only on a call that requested that URL: a shell command with the URL
+  in it (not `echo`, `cat`, `git`, ...), a script line that prints the URL beside its status, or a tool whose name
+  says it fetches (`web_extract`, `browser_navigate`, `fetch`, `open`, ...) with the URL in its arguments. A fetch
+  made by a tool with another name, or a URL passed through a shell variable, leaves the claim 🤔.
 - No Cap only sees a model turn that ends with a reply. A profile whose only activity is no-agent cron scripts,
   gateway reconnects or plugin reloads, or whose turns failed before any reply (an HTTP 429 from the provider, an auth
   error), has no `receipts.jsonl` and no `ledger.jsonl`, and that is expected: on a real multi-profile install, the profiles

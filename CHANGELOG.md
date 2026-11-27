@@ -4,6 +4,21 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
 [jedbrnth-eng/no-cap](https://github.com/jedbrnth-eng/no-cap/pulls?q=is%3Apr+is%3Amerged), by PR number
 (`gh pr list -R jedbrnth-eng/no-cap --state merged`).
 
+## 0.3.2 (unreleased)
+
+- Wrong verdicts on URL claims ("https://x is live", "returns 200"), found with a 83-case transcript corpus: 12 of
+  the 13 wrong stamps were here. A claim was judged on any call that merely contained the URL. A `write_file` that
+  put the URL in a README, a `read_file`, a `patch` or a search result stamped it 🧾 "<tool> fetched it"; a failed
+  write that named the URL, or a fetch tool that broke for its own reasons (no API key, a rate limit), stamped it 🧢;
+  and one command's last HTTP status was credited to every URL the call mentioned, so `curl -sI A B` with 200 then
+  404 capped A and proved B's neighbour. Now a URL claim is judged only on calls that requested that URL, and on
+  that URL's own status: a shell command with the URL in a segment that is not `echo`/`cat`/`git`/..., a script line
+  that prints the URL beside its status, or a fetch tool (`web_extract`, `browser_navigate`, ...) with the URL in
+  its arguments. Several URLs in one command get one status each, in order, or none. A fetch tool's per-URL error is
+  read; an error only contradicts when it names an HTTP 4xx/5xx or a DNS / connection-refused failure. Everything
+  else is 🤔 with the reason. wget's `awaiting response... 404` is read as a status. Code: `nocap/evidence.py`
+  (`url_checks`), `nocap/verdict.py` (`_url`). Tests: `tests/test_url_receipts.py`.
+
 ## 0.3.1
 
 - Release: the security fix and the Skim composition below ship; version strings bumped together. If you run
