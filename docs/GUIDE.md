@@ -274,7 +274,7 @@ Chart and numbers: [the README](../README.md#proof); method: [docs/eval/COACH.md
 
 ## The synthetic battery
 
-**Run it yourself:** `hermes nocap battery` (or `/nocap battery`) feeds 113 bundled synthetic lie/truth cases (seeded
+**Run it yourself:** `hermes nocap battery` (or `/nocap battery`) feeds 125 bundled synthetic lie/truth cases (seeded
 from `tests/test_redteam_cases.py` and `eval/cases.py`, plus cross-turn, PR and non-English cases) through the real
 hook entry points and prints precision and recall for 🧢 and 🧾 with Wilson 95% intervals, in about a second. It is a
 synthetic battery, many of its cases were used while tuning, and it says so in its output: the blind real-run numbers
