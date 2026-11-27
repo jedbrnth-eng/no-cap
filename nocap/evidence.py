@@ -109,7 +109,9 @@ def runner_segment(cmd: str, cut: bool = False) -> str:
     return ""
 DEPLOY_CMD_RE = re.compile(
     r"(?<![\w./-])(vercel(?:@[\w.]+)?\s+(?:deploy|--prod|--yes)|netlify\s+deploy|fly(?:ctl)?\s+deploy|wrangler\s+(?:deploy|publish|pages)|firebase\s+deploy|"
-    r"gcloud\b(?:(?!gcloud\b).)*\bdeploy|kubectl\s+(?:apply|rollout)|helm\s+(?:upgrade|install)|railway\s+up|heroku\b|"
+    r"gcloud\b(?:(?!gcloud\b).)*\bdeploy|kubectl\s+(?:(?:-n|--namespace|--context|--kubeconfig)[\s=]\S+\s+)*(?:apply|rollout)|"
+    r"helm\s+(?:upgrade|install)|railway\s+up|git\s+push\s+(?:-\S+\s+)*heroku\b|"
+    r"heroku\s+(?:container:(?:push|release)|deploy\S*|builds:create|releases:rollback|pipelines:promote)|"
     r"eb\s+deploy|serverless\s+deploy|sls\s+deploy|terraform\s+apply|gh-pages|surge\b|"
     r"(?:npm|pnpm|yarn)\s+publish|cargo\s+publish|twine\s+upload|gh\s+release\s+create|docker\s+push|"
     r"(?:npm|pnpm|yarn)\s+run\s+deploy|(?:^|[;&|]\s*|\s)(?:\./|bash\s+|sh\s+)?(?:scripts/)?deploy(?:\.sh)?(?=\s|$))\b", re.I)
@@ -117,6 +119,57 @@ BUILD_CMD_RE = re.compile(
     r"\b((?:npm|pnpm|yarn|bun)\s+run\s+build|(?:npm|pnpm|yarn)\s+build|make\b|cargo\s+build|go\s+build|tsc\b|"
     r"xcodebuild|swift\s+build|gradlew?\s+(?:build|assemble)|mvn\s+(?:package|install)|vite\s+build|next\s+build|"
     r"build\.sh)", re.I)
+# A command that names a deploy or a build without doing it: a dry run, --help, a trailing --version, a config dump.
+_NOT_DONE_RE = re.compile(r"(?:^|\s)(?:--dry-?run(?:=\S+)?|--just-print|--recon|--what-if|--help|--showConfig|--init|"
+                          r"--version\s*$)(?=\s|$)")
+_MAKE_VALUE_FLAGS = {"-C", "-f", "-I", "-o", "-W", "--directory", "--file", "--makefile"}
+_MAKE_DRY_FLAGS = {"-n", "-q", "-p", "--question", "--print-data-base"}
+_MAKE_OTHER_TARGETS = {"clean", "distclean", "mostlyclean", "lint", "fmt", "format", "help", "doc", "docs", "deps", "run",
+                       "serve", "dev", "watch", "tidy", "vet", "typecheck", "coverage", "bench", "logs", "shell",
+                       "migrate", "seed", "setup", "init", "bootstrap"}
+_PREVIEW_HOST_RE = re.compile(r"(?<![\w./-])(?:vercel|netlify)(?![\w./-])")
+_PROD_FLAG_RE = re.compile(r"(?:^|\s)(?:--prod(?:uction)?|--target[\s=]production|-p)(?=\s|$)")
+
+
+def _make_builds(seg: str) -> bool:
+    """`make`, `make all`, `make -j8 build`: yes. `make -n`, `make clean`, `make lint`: no (`make clean all`: yes)."""
+    toks = seg.split()
+    start = next((k for k, t in enumerate(toks) if t == "make" or t.endswith("/make")), None)
+    if start is None:
+        return True
+    targets, skip = [], False
+    for t in toks[start + 1:]:
+        if skip:
+            skip = False
+        elif t in _MAKE_DRY_FLAGS:
+            return False
+        elif t in _MAKE_VALUE_FLAGS:
+            skip = True
+        elif not t.startswith("-") and "=" not in t:
+            targets.append(t)
+    return not targets or any(t not in _MAKE_OTHER_TARGETS for t in targets)
+
+
+def done_segments(rx: "re.Pattern", cmd: str) -> List[str]:
+    """The shell segments of `cmd` that match `rx` (a deploy or a build command) and really run it. Quoted text is
+    blanked first, so a flag inside a commit message or an echo is not read as the command's own."""
+    out = []
+    for seg in re.split(r"&&|\|\||;|\||\n", cmd or "")[:MAX_SEGS]:
+        seg = seg[:MAX_SEG].strip()
+        m = rx.search(seg)
+        if not m:
+            continue
+        bare = re.sub(r"'[^']*'|\"[^\"]*\"", " ", seg)
+        if _NOT_DONE_RE.search(bare):
+            continue
+        if re.search(r"\bgh\s+release\s+create\b", bare) and re.search(r"\s--draft(?=\s|$)", bare):
+            continue  # a draft release is not published
+        if m.group(0).strip().lower() == "make" and not _make_builds(bare):
+            continue
+        out.append(bare)
+    return out
+
+
 WRITE_CMD_RE = re.compile(
     r"(>>?|\btee\b|\bcp\b|\bmv\b|\btouch\b|\bmkdir\b|\bsed\s+-i|\bperl\s+-[a-z]*i|\bffmpeg\b|\s-o\s|--out(?:put)?\b|"
     r"\bgit\s+mv\b|\brm\b|\bunzip\b|\btar\b|\bwget\b|\bcurl\b(?:(?!\bcurl\b).)*\s-o\b|\binstall\b|\bln\b|\bconvert\b|\bmagick\b)")
@@ -840,7 +893,8 @@ def parse_git(cmd: str, text: str, exit_code: Optional[int]) -> Dict[str, Any]:
         g["push_line"] = next((ln.strip() for ln in text.splitlines() if "->" in ln or "rejected" in ln
                                or "up-to-date" in ln or "error" in ln), "")
         g["push_line"] = _cut(g["push_line"])
-    if re.search(r"\bgit\b(?:(?!\bgit\b)[^|;&])*\bcommit\b", cmd):
+    if re.search(r"\bgit\b(?:(?!\bgit\b)[^|;&])*\bcommit\b", cmd) and not re.search(
+            r"\bcommit\b(?:(?!\bcommit\b)[^|;&])*?\s(?:--dry-run|--help)(?=\s|$)", re.sub(r"'[^']*'|\"[^\"]*\"", " ", cmd)):
         m = re.search(r"^\[([^\]\s]+)(?:\s+\(root-commit\))?\s+([0-9a-f]{7,40})\]", text, re.M)
         clean = bool(re.search(r"nothing to commit|nothing added to commit", text))  # already committed: not a failure
         failed = bool(re.search(r"^(?:error|fatal):", text, re.M)) and not m and not clean
@@ -1227,8 +1281,8 @@ def extract(tool_name: str, args: Any, result: Any, status: Optional[str] = None
         "error": redact(err or (error_message or ""))[:160],
         "tests": parse_tests(text),
         "test_cmd": bool(runner_segment(cmd, cut)) if shell or tool_name == "run_command" else False,
-        "deploy_cmd": bool(DEPLOY_CMD_RE.search(cmd)),
-        "build_cmd": bool(BUILD_CMD_RE.search(cmd)) and not TEST_CMD_RE.search(cmd),
+        "deploy_cmd": bool(done_segments(DEPLOY_CMD_RE, cmd)),
+        "build_cmd": bool(done_segments(BUILD_CMD_RE, cmd)) and not TEST_CMD_RE.search(cmd),
         "git": parse_git(cmd, text, exit_code) if cmd else {},
         "paths_written": [],
         "paths_seen": [],
@@ -1239,6 +1293,10 @@ def extract(tool_name: str, args: Any, result: Any, status: Optional[str] = None
         "windowed": windowed,  # the output was longer than the scan window (see HEAD): only part of it was parsed
         "ts": round(time.time(), 3),  # when the call's result arrived (the /cap re-check's session start)
     }
+    deploys = done_segments(DEPLOY_CMD_RE, cmd)
+    # `vercel deploy` / `netlify deploy` without --prod makes a preview: no receipt for "deployed to production"
+    ev["deploy_preview"] = bool(deploys) and all(_PREVIEW_HOST_RE.search(d) and not _PROD_FLAG_RE.search(d)
+                                                 for d in deploys)
     test_cmd = ev["test_cmd"]
     seg = runner_segment(cmd, cut) if test_cmd else ""
     ev["suite"] = _cut(" ".join(t for t in re.sub(r"\s[12]?>&?\S*", " ", seg).split() if not t.startswith("-")), 120)
@@ -1390,7 +1448,8 @@ def summary(ev: Dict[str, Any]) -> Dict[str, Any]:
 
 # The session ledger (cross-turn receipts) keeps, per call, the facts a later turn's claim can be judged on:
 # flags, exit codes, test summaries, git facts, SHAs and written paths. Never raw output, numbers or URLs.
-_FACT_FLAGS = ("i", "tool", "cmd", "exit", "ok", "error", "test_cmd", "deploy_cmd", "build_cmd", "background", "edit",
+_FACT_FLAGS = ("i", "tool", "cmd", "exit", "ok", "error", "test_cmd", "deploy_cmd", "deploy_preview", "build_cmd",
+               "background", "edit",
                "any_edit", "skip_added", "check_cmd", "where", "suite", "baseline", "chained", "masked", "subset",
                "stopped", "tail_only", "partial", "fail_text", "quiet_silent", "out_empty", "windowed", "no_tests",
                "head_sha", "diff_files", "workdir", "ts")

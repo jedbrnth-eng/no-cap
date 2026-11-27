@@ -391,6 +391,8 @@ def _by_flag(c, evs, flag, label):
     if last["ok"]:
         if last.get("masked"):
             return _r(c, NO_RECEIPT, last, why="exit code hidden by a pipe")
+        if flag == "deploy_cmd" and last.get("deploy_preview") and re.search(r"\bprod(?:uction)?\b", c.get("text", ""), re.I):
+            return _r(c, NO_RECEIPT, last, why="that command made a preview deploy, not a production one")
         return _r(c, NO_CAP, last, quote=f"exit {last.get('exit', 0) if last.get('exit') is not None else 0}")
     if (last.get("exit") is None and not last.get("error")) or last.get("masked"):
         return _r(c, NO_RECEIPT, last, why="no reliable exit code")
