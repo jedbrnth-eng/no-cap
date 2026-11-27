@@ -497,13 +497,18 @@ def _norm_url(u: str) -> str:
 
 
 def _url(c, evs):
+    """Judged only on calls that requested this URL (evidence.url_checks) and on this URL's own status. A call that
+    merely names the URL (a file write or read, a search result, `git remote -v`) proves and contradicts nothing."""
     want = _norm_url(c["url"])
-    cands = [e for e in evs if any(_norm_url(u) == want for u in e.get("urls", []))]
-    if not cands:
+    checks = [(e, k) for e in evs for k in e.get("url_checks", []) if _norm_url(k["url"]) == want]
+    if not checks:
+        named = [e for e in evs if any(_norm_url(u) == want for u in e.get("urls", []))]
+        if named:
+            return _r(c, NO_RECEIPT, named[-1], why="the URL was only named or printed by that call, not requested")
         return _r(c, NO_RECEIPT, why="URL not fetched in this turn")
-    for e in reversed(cands):
-        if e.get("http"):
-            code = e["http"][-1]
+    for e, k in reversed(checks):  # the latest check that says something decides; an inconclusive one is skipped
+        code = k.get("code")
+        if code is not None:
             if c.get("status") and code == c["status"]:
                 return _r(c, NO_CAP, e, quote=f"HTTP {code}")  # an honest 404/503 report matches
             if c.get("status") and code != c["status"]:
@@ -511,13 +516,14 @@ def _url(c, evs):
             if code < 400:
                 return _r(c, NO_CAP, e, quote=f"HTTP {code}")
             return _r(c, CAP, e, quote=f"HTTP {code}")
-    e = cands[-1]
-    if e["tool"] != "terminal":
-        if e["ok"]:
+        if k.get("fetched"):
             return _r(c, NO_CAP, e, quote=f"{e['tool']} fetched it")
-        if e.get("error"):
-            return _r(c, CAP, e, quote=e["error"])
-    return _r(c, NO_RECEIPT, e, why="no HTTP status in the output")
+        if k.get("down"):  # DNS failure or connection refused, reported by the tool that requested it
+            return _r(c, CAP, e, quote=k.get("error") or "")
+    e, k = checks[-1]
+    if k.get("error"):  # the fetch broke without saying anything about the site (no API key, rate limit, timeout)
+        return _r(c, NO_RECEIPT, e, why="the fetch failed without a status for that URL", quote=k["error"])
+    return _r(c, NO_RECEIPT, e, why=k.get("why") or "no HTTP status in the output")
 
 
 def _path_match(claim_path: str, seen: str) -> bool:

@@ -505,7 +505,109 @@ NUM_RE = re.compile(r"(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?(?![\d.]\d|\
 HTTP_RES = [
     re.compile(r"\bHTTP/[\d.]+\s+(\d{3})\b"),
     re.compile(r"(?i)[\"']?(?:status(?:_?code)?|http_code)[\"']?\s*[:=]\s*(\d{3})\b"),
+    re.compile(r"\bawaiting response\.\.\. (\d{3})\b"),  # wget
 ]
+
+# ---- URL checks: which call REQUESTED a URL, and which status is that URL's own --------------------------------------
+# A URL claim ("https://x is live") is judged only on these. A call that merely names a URL (a file write, a file read,
+# a search result, `git remote -v`, `echo`) is not a fetch, and one command's last status is not every URL's status.
+# Tools whose job is to request a URL, by a word in the tool name (MCP prefixes included); the URL must be in the args.
+FETCH_TOOL_RE = re.compile(r"(?:^|[_.:/-])(?:web_extract|web_fetch|fetch|navigate|browse|browser|goto|open|new_tab|"
+                           r"http|request|curl|crawl|scrape|download)(?:$|[_.:/-])")
+NOT_FETCH_TOOL_RE = re.compile(r"search|" + "|".join(("write", "patch", "edit", "create", "save", "replace", "insert",
+                                                       "apply", "append", "delete", "rename", "move", "modify")))
+# shell words that name a URL without requesting it
+_NOT_FETCH_CMD_RE = re.compile(r"^(?:echo|printf|cat|grep|rg|egrep|git|sed|awk|ls|export|cd|open|xdg-open|touch|mkdir|"
+                               r"tee|rm|cp|mv|read|test|head|tail|less|more|wc|jq|sort|uniq|cut|find|#)(?![\w-])")
+_HTTP_CLIENT_RE = re.compile(r"(?<![\w./-])(?:curl|wget|https?|xh|httpie)(?![\w./:-])")
+_ERR_STATUS_RE = re.compile(r"(?i)\b(?:HTTP|status(?: code)?)\D{0,3}([45]\d\d)\b|^\s*([45]\d\d)\b|"
+                            r"\b([45]\d\d) (?:client|server) error\b")
+_DOWN_RE = re.compile(r"(?i)could not resolve|name or service not known|nodename nor servname|ENOTFOUND|NXDOMAIN|"
+                      r"ECONNREFUSED|connection refused|ERR_NAME_NOT_RESOLVED|ERR_CONNECTION_REFUSED")
+_LINE_STATUS_RE = re.compile(r"^\s*([1-5]\d\d)\s|(?:\s|->|=>|→|:|,|\|)\s*([1-5]\d\d)(?:\s+[A-Za-z][A-Za-z ]{0,24})?\s*$")
+MAX_URL_CHECKS = 20
+
+
+def _url_key(u: str) -> str:
+    return u.rstrip(".,;:'\"").rstrip("/").lower()
+
+
+def _err_status(err: str) -> Optional[int]:
+    m = _ERR_STATUS_RE.search(err or "")
+    return int(next(g for g in m.groups() if g)) if m else None
+
+
+def _failed_fetch(url: str, err: str) -> Dict[str, Any]:
+    """A fetch that reported an error: a status if the error names one, `down` for DNS / connection refused, else
+    only the error (the tool may have broken for its own reasons: no API key, a rate limit, a timeout)."""
+    err = (err or "")[:2000]
+    return {"url": url, "code": _err_status(err), "down": bool(_DOWN_RE.search(err)), "error": _cut(err)}
+
+
+def _shell_url_checks(flat: str, text: str, codes: List[int]) -> List[Dict[str, Any]]:
+    segs = [re.sub(r"^\s*(?:(?:[A-Za-z_][A-Za-z0-9_]*=\S*|sudo|time|command|env)\s+)*", "", s[:MAX_SEG])
+            for s in re.split(r"&&|\|\||;|\||\n", flat)[:MAX_SEGS]]
+    asked: List[str] = []
+    for seg in segs:
+        if _NOT_FETCH_CMD_RE.match(seg):
+            continue
+        for u in URL_RE.findall(seg):
+            if _url_key(u) not in [_url_key(a) for a in asked]:
+                asked.append(u.rstrip(".,;:'\""))
+    asked = asked[:MAX_URL_CHECKS]
+    out: List[Dict[str, Any]] = []
+    if len(asked) == 1:
+        # one literal URL: its last status (a redirect chain, a wait-until-healthy loop), unless the command also
+        # runs a client against something that isn't a literal URL (`curl $OTHER`) and the statuses differ
+        clients = len(_HTTP_CLIENT_RE.findall(flat))
+        mixed = clients > 1 and len(set(c for c in codes if not 300 <= c < 400)) > 1
+        out.append({"url": asked[0], "code": None if mixed or not codes else codes[-1],
+                    "why": "several requests in that command; can't tell which status is this URL's" if mixed else ""})
+    elif asked:  # several URLs: one status each, in order, or no attribution at all
+        match = len(codes) == len(asked)
+        out += [{"url": u, "code": codes[k] if match else None,
+                 "why": "" if match else "several URLs in that command; can't tell which status is this one's"}
+                for k, u in enumerate(asked)]
+    if any(seg and not _NOT_FETCH_CMD_RE.match(seg) for seg in segs):
+        # a script's own report: a line that holds a URL and its status ("https://x -> status: 200", "200 https://x")
+        have = {_url_key(c["url"]) for c in out}
+        for line in text.splitlines()[:2000]:
+            if len(out) >= MAX_URL_CHECKS:
+                break
+            urls = URL_RE.findall(line[:MAX_LINE]) if "http" in line else []
+            if len(urls) != 1 or _url_key(urls[0]) in have:
+                continue
+            rest = URL_RE.sub(" ", line[:MAX_LINE])
+            m = next((m for m in (rx.search(rest) for rx in HTTP_RES + [_LINE_STATUS_RE]) if m), None)
+            if m:
+                have.add(_url_key(urls[0]))
+                out.append({"url": urls[0].rstrip(".,;:'\""), "code": int(next(g for g in m.groups() if g))})
+    return out
+
+
+def url_checks(name: str, shell: bool, flat: str, arg_text: str, text: str, codes: List[int], parsed: Any,
+               ok: bool, error: str) -> List[Dict[str, Any]]:
+    """The URLs this call requested: {"url", "code" (that URL's status or None), "fetched" (a fetch tool got it),
+    "down", "error", "why"}. Empty for calls that only name a URL."""
+    if shell or name == "run_command":
+        return _shell_url_checks(flat, text, codes)
+    if not FETCH_TOOL_RE.search(name) or NOT_FETCH_TOOL_RE.search(name):
+        return []
+    asked = list(dict.fromkeys(u.rstrip(".,;:'\"") for u in URL_RE.findall(arg_text)))[:MAX_URL_CHECKS]
+    per_url: Dict[str, str] = {}
+    rows = parsed.get("results") if isinstance(parsed, dict) else None
+    for row in rows[:MAX_ITEMS] if isinstance(rows, list) else []:
+        if isinstance(row, dict) and isinstance(row.get("url"), str) and row.get("error"):
+            per_url[_url_key(row["url"])] = str(row["error"])
+    out = []
+    for u in asked:
+        if _url_key(u) in per_url:
+            out.append(_failed_fetch(u, per_url[_url_key(u)]))
+        elif not ok:
+            out.append(_failed_fetch(u, error))
+        else:
+            out.append({"url": u, "code": codes[-1] if codes and len(asked) == 1 else None, "fetched": True})
+    return out
 
 _TOKEN = r"(?<![\d,])(\d{1,3}(?:,\d{3})+|\d+)\s+(passed|failed|errors?|error|skipped|xfailed|xpassed|deselected|failures?|todo|total|passing|failing|pending)"
 
@@ -1352,6 +1454,7 @@ def extract(tool_name: str, args: Any, result: Any, status: Optional[str] = None
     ev["http"] = codes[:MAX_ITEMS]
     urls = URL_RE.findall(cmd + "\n" + arg_text) + URL_RE.findall(text)
     ev["urls"] = list(dict.fromkeys(u.rstrip(".,;:'\"") for u in urls))[:MAX_ITEMS]
+    ev["url_checks"] = url_checks(name, shell, flat, arg_text, text, codes, parsed, ok, err or (error_message or ""))
     ev["shas"] = list(dict.fromkeys(s for s in SHA_RE.findall(text + "\n" + cmd)
                                     if re.search(r"\d", s) and re.search(r"[a-f]", s)))[:MAX_ITEMS]
     ev["numbers"] = _numbers(text)
