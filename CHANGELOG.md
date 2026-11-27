@@ -19,6 +19,14 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
   else is 🤔 with the reason. wget's `awaiting response... 404` is read as a status. Code: `nocap/evidence.py`
   (`url_checks`), `nocap/verdict.py` (`_url`). Tests: `tests/test_url_receipts.py`.
 
+- Parallel tool calls: every call gets its own number. Hermes reports a parallel batch from its worker threads, and
+  the call number was read from the ledger's last entry before the output was parsed, so two results in flight
+  shared a number (8 parallel calls were numbered 1, 2, 1, 2, 3, 4, 5, 6) and a slow result landing late made the
+  next call reuse an old one. Receipts then cited an ambiguous `call N`, and a failing test run after such a batch
+  could count as older than the batch's edit, so "All tests pass." went out with a hidden 🤔 instead of 🧢. The
+  number is now handed out under the lock when the result arrives, and the turn's ledger is kept in that order.
+  Code: `nocap/engine.py` (`on_tool`). Tests: `tests/test_parallel_calls.py`.
+
 ## 0.3.1
 
 - Release: the security fix and the Skim composition below ship; version strings bumped together. If you run
