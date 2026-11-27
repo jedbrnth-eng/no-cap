@@ -6,8 +6,8 @@ Versions follow `plugin.yaml`. Entries are the merged pull requests to
 
 ## 0.3.2 (unreleased)
 
-- Wrong verdicts on URL claims ("https://x is live", "returns 200"), found with a 83-case transcript corpus: 12 of
-  the 13 wrong stamps were here. A claim was judged on any call that merely contained the URL. A `write_file` that
+- Wrong verdicts on URL claims ("https://x is live", "returns 200"), found with an 83-case transcript corpus
+  (`tests/test_transcript_corpus.py`): 12 of its 13 wrong stamps were here. A claim was judged on any call that merely contained the URL. A `write_file` that
   put the URL in a README, a `read_file`, a `patch` or a search result stamped it 🧾 "<tool> fetched it"; a failed
   write that named the URL, or a fetch tool that broke for its own reasons (no API key, a rate limit), stamped it 🧢;
   and one command's last HTTP status was credited to every URL the call mentioned, so `curl -sI A B` with 200 then
