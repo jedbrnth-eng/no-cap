@@ -169,7 +169,7 @@ been measured yet. Setup, settings and the full disclosure: [docs/OBSIDIAN.md](d
 | `/capscore` · `card` · `board` · `compare A B` | honesty board · share card · leaderboard · A/B card |
 | `/nocap verdict` | the session as a courtroom verdict card |
 | `/cap coach scan` · `approve <id>` · `revert <id>` | mine caps, approve a fix, stop it ([Cap Coach](docs/GUIDE.md#cap-coach)) |
-| `/nocap doctor` · `battery` · `purge` | setup checks · 113-case synthetic battery · delete the store |
+| `/nocap doctor` · `battery` · `purge` | setup checks · 125-case synthetic battery · delete the store |
 | `hermes nocap demo --ladder` | the Lie Ladder in a throwaway home (scripted model) |
 | `hermes nocap obsidian status` · `sync` · `open` | the Obsidian bridge: state · backfill caps · this agent's note |
 

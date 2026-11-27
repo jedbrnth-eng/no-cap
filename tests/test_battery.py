@@ -87,3 +87,12 @@ def test_cli_and_slash_command_registered(tmp_path):
     mod.register(Ctx())
     assert "battery" in seen["subs"].names and "battery" in seen["cmds"]["nocap"][1]
     assert seen["cmds"]["nocap"][0]("battery").startswith("## No Cap battery")
+
+
+def test_docs_state_the_bundled_case_count():
+    """README and the guide name how many cases `hermes nocap battery` runs; the number is the asset's."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    n = len(battery.load())
+    assert f"{n}-case synthetic battery" in (root / "README.md").read_text(encoding="utf-8")
+    assert f"feeds {n} bundled synthetic" in (root / "docs" / "GUIDE.md").read_text(encoding="utf-8")
